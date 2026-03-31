@@ -14,13 +14,16 @@ export default function Home() {
   const [textId, setTextId] = useState<string>('')
   const [readyMode, setReadyMode] = useState(false)
 
+  const [uploadProgress, setUploadProgress] = useState(0)
+ 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       setFile(e.target.files[0])
       setError(null)
+      setUploadProgress(0)
     }
   }
-
+ 
   const handleUpload = async () => {
     if (!file) return
     if (!textId.trim()) {
@@ -29,48 +32,75 @@ export default function Home() {
     }
     setLoading(true)
     setError(null)
-
+    setUploadProgress(5) // Start at 5%
+ 
     const formData = new FormData()
     formData.append('file', file)
     formData.append('text_id', textId.trim())
-
+ 
     try {
       const url = `http://localhost:8000/upload?mode=${readyMode ? 'ready' : 'auto'}`
-      const res = await fetch(url, {
-        method: 'POST',
-        body: formData,
+      
+      // Use XMLHttpRequest for progress tracking
+      const xhr = new XMLHttpRequest()
+      
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 90)
+            setUploadProgress(percent)
+          }
+        })
+ 
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploadProgress(100)
+            resolve(JSON.parse(xhr.responseText))
+          } else {
+            reject(new Error('Файлни қайта ишлашда хатолик'))
+          }
+        })
+ 
+        xhr.addEventListener('error', () => reject(new Error('Сарвер билан боғланишда хатолик')))
+        xhr.open('POST', url)
+        xhr.send(formData)
       })
-      if (!res.ok) throw new Error('Файлни қайта ишлашда хатолик')
-      const result = await res.json()
-
+ 
+      const result: any = await uploadPromise
+ 
       // Inject user-provided textId into every row
       const rows = (result.data || []).map((row: any) => ({
         ...row,
         text_id: textId.trim()
       }))
-
-      setData(rows)
-      setFilename(result.filename)
+ 
+      setTimeout(() => {
+        setData(rows)
+        setFilename(result.filename)
+      }, 500)
+ 
     } catch (err: any) {
       setError(err.message || 'Хатолик юз берди')
+      setUploadProgress(0)
     } finally {
       setLoading(false)
     }
   }
-
+ 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const dropped = e.dataTransfer.files?.[0]
     if (dropped && dropped.name.endsWith('.docx')) {
       setFile(dropped)
       setError(null)
+      setUploadProgress(0)
     }
   }
-
+ 
   if (data) {
     return <TableEditor initialData={data} filename={filename} textId={textId} />
   }
-
+ 
   return (
     <main style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f0f4ff 0%, #f8faff 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
       <div style={{ width: '100%', maxWidth: '520px' }}>
@@ -89,7 +119,7 @@ export default function Home() {
             </Link>
           </div>
         </div>
-
+ 
         {/* Card */}
         <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', boxShadow: '0 4px 32px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
           
@@ -105,7 +135,7 @@ export default function Home() {
                 value={textId}
                 onChange={e => { setTextId(e.target.value); setError(null) }}
                 placeholder="масалан: 1243, USP-2.9.17, GMP-001 ..."
-                style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e2e8f0', borderRadius: '8px', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s', fontFamily: 'inherit' }}
+                style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e2e8f0', borderRadius: '8px', fontSize: '0.9rem', outline: 'none', boxSBox: 'border-box', transition: 'border-color 0.15s', fontFamily: 'inherit' }}
                 onFocus={e => e.target.style.borderColor = '#3b82f6'}
                 onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                 onKeyDown={e => e.key === 'Enter' && handleUpload()}
@@ -113,21 +143,55 @@ export default function Home() {
             </div>
             <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '4px' }}>Бу рақам маълумотлар базасида ҳар бир гапга бириктирилади</div>
           </div>
-
-          {/* File drop zone */}
+ 
+          {/* File drop zone - Clickable entire area */}
           <div
             onDrop={handleDrop}
             onDragOver={e => e.preventDefault()}
-            style={{ border: `2px dashed ${file ? '#3b82f6' : '#cbd5e1'}`, borderRadius: '12px', padding: '1.5rem', marginBottom: '1.25rem', background: file ? '#eff6ff' : '#fafafa', transition: 'all 0.2s', cursor: 'default' }}
+            onClick={() => document.getElementById('file-upload')?.click()}
+            style={{ 
+              position: 'relative',
+              border: `2px dashed ${file ? '#3b82f6' : '#cbd5e1'}`, 
+              borderRadius: '12px', 
+              padding: '1.5rem', 
+              marginBottom: '1.25rem', 
+              background: file ? '#eff6ff' : '#fafafa', 
+              transition: 'all 0.2s', 
+              cursor: 'pointer',
+              overflow: 'hidden'
+            }}
           >
+            {/* Progress Bar Background */}
+            {uploadProgress > 0 && uploadProgress < 100 && (
+              <div style={{ 
+                position: 'absolute', 
+                bottom: 0, 
+                left: 0, 
+                height: '4px', 
+                width: `${uploadProgress}%`, 
+                background: '#10b981', 
+                transition: 'width 0.3s ease-out',
+                zIndex: 5
+              }} />
+            )}
+            
             <input type="file" accept=".docx" onChange={handleFileChange} style={{ display: 'none' }} id="file-upload" />
-            <label htmlFor="file-upload" style={{ cursor: 'pointer', display: 'block', textAlign: 'center' }}>
-              <Upload size={28} color={file ? '#3b82f6' : '#94a3b8'} style={{ margin: '0 auto 8px' }} />
-              <div style={{ color: file ? '#2563eb' : '#475569', fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>
-                {file ? file.name : 'DOCX файл танланг ёки тортинг'}
-              </div>
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx (3 устунли жадвал)</div>
-            </label>
+            <div style={{ textAlign: 'center' }}>
+              {loading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>{uploadProgress}%</div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Файл юкланмоқда...</div>
+                </div>
+              ) : (
+                <>
+                  <Upload size={28} color={file ? '#3b82f6' : '#94a3b8'} style={{ margin: '0 auto 8px' }} />
+                  <div style={{ color: file ? '#2563eb' : '#475569', fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>
+                    {file ? file.name : 'DOCX файл танланг ёки тортинг'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx (3 устунли жадвал)</div>
+                </>
+              )}
+            </div>
           </div>
 
           {error && (
