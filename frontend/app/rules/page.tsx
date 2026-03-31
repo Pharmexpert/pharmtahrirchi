@@ -81,7 +81,7 @@ export default function RulesPage() {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: json.stringify({
+        body: JSON.stringify({
           ...editingRule,
           lang // ensure language is preserved
         })
