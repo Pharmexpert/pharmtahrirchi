@@ -297,11 +297,115 @@ class ParagraphAligner:
         return res
 
     # ──────────────────────────────────────────────
+    # Detect language of a text block
+    # ──────────────────────────────────────────────
+    def detect_language(self, text: str) -> str:
+        """Detect if text is English, Russian, or Uzbek. Returns 'en', 'ru', or 'uz'."""
+        if not text or len(text.strip()) < 3:
+            return 'en'
+        try:
+            lang = detect(text)
+            # langdetect returns 'en', 'ru', 'uk', 'tr', etc.
+            if lang == 'ru' or lang == 'uk' or lang == 'bg':
+                return 'ru'
+            elif lang == 'tr' or lang == 'uz' or lang == 'az':
+                return 'uz'
+            else:
+                return 'en'
+        except Exception:
+            # Fallback: check for Cyrillic characters
+            cyrillic_count = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+            latin_count = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+            if cyrillic_count > latin_count:
+                # Distinguish RU from UZ-Cyrillic by checking for Uzbek-specific letters
+                uz_chars = sum(1 for c in text if c in 'ҳҚқҒғЎўҲ')
+                if uz_chars > 0:
+                    return 'uz'
+                return 'ru'
+            return 'en'
+
+    # ──────────────────────────────────────────────
+    # Extract all text from document (paragraphs + tables)
+    # ──────────────────────────────────────────────
+    def extract_all_text(self) -> List[str]:
+        """Extract all text paragraphs from the document body."""
+        paragraphs = []
+        for p in self.doc.paragraphs:
+            text = p.text.strip()
+            if text:
+                paragraphs.append(text)
+        # Also extract from any tables (single-column or otherwise)
+        if self.table:
+            for row in self.table.rows:
+                for cell in row.cells:
+                    text = cell.text.strip()
+                    if text and text not in paragraphs:
+                        paragraphs.append(text)
+        return paragraphs
+
+    # ──────────────────────────────────────────────
+    # Process single-language document (no 3-column table)
+    # ──────────────────────────────────────────────
+    def process_single_language(self) -> List[Dict[str, Any]]:
+        """Process a document that is in a single language without column separation."""
+        text_id = os.path.basename(self.file_path).replace(".docx", "")
+        paragraphs = self.extract_all_text()
+        
+        if not paragraphs:
+            raise ValueError("Ҳужжатда матн топилмади / No text found in document")
+        
+        # Detect language from combined text
+        combined = " ".join(paragraphs[:10])  # Use first 10 paragraphs for detection
+        lang = self.detect_language(combined)
+        
+        aligned_data = []
+        for idx, para_text in enumerate(paragraphs):
+            row = {
+                "type": "content",
+                "en": "",
+                "ru_v1": "",
+                "ru_proposed": "",
+                "uz_v1": "",
+                "uz_proposed": "",
+                "status": "review",
+                "sentence_no": idx + 1,
+                "display_no": str(idx + 1),
+                "text_id": text_id,
+                "notes": ""
+            }
+            # Map text to the detected language column
+            if lang == 'en':
+                row["en"] = para_text
+            elif lang == 'ru':
+                row["ru_v1"] = para_text
+                row["ru_proposed"] = para_text
+            else:  # uz
+                row["uz_v1"] = para_text
+                row["uz_proposed"] = para_text
+            
+            aligned_data.append(row)
+        
+        return aligned_data
+
+    # ──────────────────────────────────────────────
+    # Check if document has a valid 3-column table
+    # ──────────────────────────────────────────────
+    def has_three_column_table(self) -> bool:
+        """Check if the document contains a table with at least 3 columns."""
+        if not self.table:
+            return False
+        for row in self.table.rows:
+            if len(row.cells) >= 3:
+                return True
+        return False
+
+    # ──────────────────────────────────────────────
     # Process "Ready Form" (Skip alignment, 1 row = 1 row)
     # ──────────────────────────────────────────────
     def process_ready_form(self) -> List[Dict[str, Any]]:
-        if not self.table:
-            raise ValueError("No table found in document")
+        # If no 3-column table, fall back to single-language processing
+        if not self.has_three_column_table():
+            return self.process_single_language()
         
         aligned_data = []
         text_id = os.path.basename(self.file_path).replace(".docx", "")
@@ -349,10 +453,9 @@ class ParagraphAligner:
     # Main process: build aligned data (AUTO alignment)
     # ──────────────────────────────────────────────
     def process(self) -> List[Dict[str, Any]]:
-        if not self.table:
-            raise ValueError("No table found in document")
-        if len(self.table.rows) < 2:
-            raise ValueError("Table must have at least 2 rows")
+        # If no 3-column table, fall back to single-language processing
+        if not self.has_three_column_table():
+            return self.process_single_language()
 
         # Dynamically find the first row with at least 3 cells (main content row)
         content_row = None
@@ -362,7 +465,7 @@ class ParagraphAligner:
                 break
         
         if not content_row:
-            raise ValueError("Could not find a row with 3 columns (EN, RU, UZ) for alignment")
+            return self.process_single_language()
 
         en_blocks = self.get_blocks(content_row.cells[0])
         ru_blocks = self.get_blocks(content_row.cells[1])
