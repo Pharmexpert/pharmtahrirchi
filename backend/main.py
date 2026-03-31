@@ -73,8 +73,12 @@ def get_client():
             _anthropic_client = Anthropic(api_key=api_key)
     return _anthropic_client
 
+# ═══════════════════════════════════════════════════
+# CORE: Upload & Process
+# ═══════════════════════════════════════════════════
+
 @app.post("/upload")
-@app.post("/upload-docx") # frontend uses this alias
+@app.post("/upload-docx")
 async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
     file_path = os.path.join(TEMP_DIR, file.filename)
     with open(file_path, "wb") as buffer:
@@ -92,8 +96,6 @@ async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
             row["text_id"] = text_id
         
         db.update_project_metadata(text_id, "Yangi Mutaxassis")
-        
-        # Save alignment data to DB
         db.save_alignments(data)
         
         return {"filename": file.filename, "data": data, "text_id": text_id}
@@ -101,6 +103,10 @@ async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+# ═══════════════════════════════════════════════════
+# AI: Document Alignment
+# ═══════════════════════════════════════════════════
 
 @app.post("/align-document")
 async def align_document(payload: Dict[str, Any]):
@@ -130,6 +136,7 @@ async def align_document(payload: Dict[str, Any]):
 
     for batch_start in range(0, len(blocks), BATCH_SIZE):
         batch = blocks[batch_start: batch_start + BATCH_SIZE]
+        
         batch_data = []
         for bi, blk in enumerate(batch):
             batch_data.append({
@@ -147,6 +154,7 @@ Blocks:
 
 Rules:
 - Each en sentence must get exactly one best-matching ru and uz sentence
+- If ru/uz has fewer sentences, merge the extras into the closest English sentence
 - Return ONLY a JSON array:
 [
   {{
@@ -161,7 +169,7 @@ Rules:
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-3-5-sonnet-20241022",
                 max_tokens=6000,
                 temperature=0,
                 system="You are a trilingual pharmaceutical document alignment engine. Output valid JSON only.",
@@ -190,108 +198,270 @@ Rules:
 
     result_data = []
     for blk in aligned_blocks:
-        if blk["marker"]: result_data.append(blk["marker"])
+        if blk["marker"]:
+            result_data.append(blk["marker"])
         result_data.extend(blk["rows"])
 
     return {"data": result_data}
 
+# ═══════════════════════════════════════════════════
+# AI: Improve Row (V.6 Expert Prompt)
+# ═══════════════════════════════════════════════════
+
 @app.post("/improve-row")
 async def improve_row(payload: Dict[str, Any]):
+    """Uses the expert pharmaceutical AI prompt to improve a single row."""
     client = get_client()
-    if not client: raise HTTPException(status_code=503, detail="AI client not configured")
+    if not client:
+        raise HTTPException(status_code=503, detail="AI client not configured")
     
     en_text = payload.get("en", "")
     ru_text = payload.get("ru_proposed", "") or payload.get("ru_v1", "")
     uz_text = payload.get("uz_proposed", "") or payload.get("uz_v1", "")
     target_lang = payload.get("target_lang", "")
     
-    system_prompt = "Role: Farmautika va xalqaro standartlar bo'yicha ekspert-muharrir. Ilmiy tahrir qiling."
-    user_prompt = f"EN: {en_text}\nRU: {ru_text}\nUZ: {uz_text}\nTarget: {target_lang}\nReturn JSON: {{'ru_v2': '...', 'uz_v2': '...', 'rationale': '...'}}"
+    EXPERT_SYSTEM_PROMPT = """Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир ва таржимонсиз.
+
+Task: Сизга берилган инглиз тилидаги ОРИГИНАЛ (Ground Truth) матн ҳамда унинг таржимасини ўзаро солиштириб, илмий таҳрир қилинг.
+
+Илмий таҳрир мезонлари:
+1. Инглизча матн - асосий манба. Таржима унинг маъносини ва фармацевтик терминологиясини 100% аниқликда ифодалаши шарт.
+2. Услуб - матн қатъий равишда фармакопея мақолалари услубида, илмий ва терминологик жиҳатдан бенуқсон бўлиши керак.
+3. Агар таржимада инглизча асл матнга зид ёки ноаниқ жойлар бўлса, уларни инглизча матнга мувофиқлаштириб тузатинг.
+
+Ўзгартирилган сўз ёки иборалар КИРИЛЛЧА ёзувида <b>...тегларда</b> ажратиб кўрсатилсин."""
     
+    if target_lang == 'ru':
+        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
+Русча матн (таҳрир учун лойиҳа): {ru_text}
+
+ФАҚАТ рус тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
+{{"ru_v2": "инглизча матнга мос тўғриланган рус матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
+    elif target_lang == 'uz':
+        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
+Ўзбекча матн (таҳрир учун лойиҳа): {uz_text}
+
+ФАҚАТ ўзбек тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
+{{"uz_v2": "инглизча матнга мос тўғриланган ўзбек матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
+    else:
+        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
+Русча матн: {ru_text}
+Ўзбекча матн: {uz_text}
+
+Иккала тилдаги матнни ҳам инглизча асл матнга асосланиб, таҳрир қилинг ва JSON форматида қайтаринг:
+{{"ru_v2": "тўғриланган рус матн", "uz_v2": "тўғриланган ўзбек матн", "rationale": "тузатишлар изоҳи"}}"""
+
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=2000,
-            system=system_prompt,
+            temperature=0,
+            system=EXPERT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}]
         )
-        match = re.search(r'\{.*\}', response.content[0].text, re.DOTALL)
-        return json.loads(match.group()) if match else {}
+        text = response.content[0].text
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if not match:
+            raise HTTPException(status_code=500, detail="AI response format error")
+        return json.loads(match.group())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse AI response")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ═══════════════════════════════════════════════════
+# AI: Suggest Edits / Synonyms (V.6 Expert Prompt)
+# ═══════════════════════════════════════════════════
 
 @app.post("/suggest-edits")
 @app.post("/synonyms")
 async def suggest_edits(payload: Dict[str, Any]):
     client = get_client()
-    if not client: raise HTTPException(status_code=503, detail="AI client not configured")
-    
-    word = payload.get("word", "")
-    lang = payload.get("lang", "ru")
-    prompt = f"Phrase: '{word}' in {lang}. Context: {payload.get('context_en')}. Give 5 pharma-style variants in JSON: {{'variants': [...]}}"
-    
+    if not client:
+        raise HTTPException(status_code=503, detail="AI client not configured")
+
+    word        = payload.get("word", "")
+    lang        = payload.get("lang", "ru")
+    context_en  = payload.get("context_en", payload.get("context", ""))
+    context_ru  = payload.get("context_ru", "")
+    context_uz  = payload.get("context_uz", "")
+    lang_label  = "рус" if lang == "ru" else "ўзбек"
+    current_txt = context_ru if lang == "ru" else context_uz
+
+    prompt = f"""Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир сизсиз.
+
+Инглизча оригинал гап: {context_en}
+Таҳрир қилинаётган {lang_label} матн: {current_txt}
+Танланган ифода: "{word}"
+
+Task: Ушbu танланган ифода учун матннинг тўлиқ контекстидан ва инглизча оригиналдан келиб чиқиб, фармакология стандартларига мос, илмий жиҳатдан оптимал таҳрир вариантларини эҳтимоллик юқоридан пастга қараб 5 та беринг.
+
+Мезонлар:
+1. Фармакопея терминологиясига мослик
+2. Инглизча оригинал билан маъновий мувофиқлик  
+3. {lang_label} илмий услуб ва стилистика
+4. Грамматик аниқлик
+
+Фақат JSON форматида жавоб беринг:
+{{"variants": ["энг эҳтимолли", "2-вариант", "3-вариант", "4-вариант", "5-вариант"], "note": "қисқача асослама"}}"""
+
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=600,
-            system="Pharmaceutical expert editor.",
+            temperature=0,
+            system="You are a pharmaceutical expert editor. Return only valid JSON, no extra text.",
             messages=[{"role": "user", "content": prompt}]
         )
-        match = re.search(r'\{.*\}', response.content[0].text, re.DOTALL)
-        result = json.loads(match.group()) if match else {"variants": []}
+        text = response.content[0].text
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if not match:
+            return {"variants": [], "synonyms": [], "note": ""}
+        result = json.loads(match.group())
         result["synonyms"] = result.get("variants", [])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ═══════════════════════════════════════════════════
+# SAYQALLASH: Hybrid GEC (V.6 Full Expert Prompt)
+# ═══════════════════════════════════════════════════
+
 @app.post("/sayqallash")
 async def sayqallash(payload: Dict[str, Any]):
+    """Grammatical Error Correction (GEC) for Uzbek text. HYBRID: Local rules DB + AI (Claude)."""
     text = payload.get("text", "").strip()
     lang = payload.get("lang", "uz")
-    if not text: return {"annotations": [], "corrected_text": "", "rules_count": 0}
+    if not text:
+        return {"annotations": [], "corrected_text": "", "rules_count": 0}
 
+    # Step 1: Check local rules database first
     local_annotations = db.get_rules_for_text(text, lang)
     rules_count = db.get_rules_count(lang)
+
+    # Step 2: Call AI for comprehensive check
     client = get_client()
     ai_annotations = []
     corrected_text = text
 
     if client:
+        known_rules = db.get_all_rules(lang, limit=50)
+        rules_examples = ""
+        if known_rules:
+            examples = [f"  «{r['wrong_form']}» → «{r['correct_form']}» [{r['error_type']}]" 
+                       for r in known_rules[:20]]
+            rules_examples = f"\n\nОлдинги тузатишлар базасидан намуналар (буларни ҳисобга олинг):\n" + "\n".join(examples)
+
+        SAYQALLASH_PROMPT = f"""Сиз ўзбек тили грамматикаси, имлоси ва фармацевтик терминология бўйича юқори малакали эксперт-таҳрирчисиз.
+
+Сизга ўзбекча матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг.
+ 
+МУҲИМ: Фармацевтик матнларда ҳарф тушиб қолиши (масалан: "синаладган" -> "синаладиган") энг кўп учрайдиган хато. Ҳар бир сўзнинг морфологик тузилишини ЭЪТИБОР билан текширинг.
+ 
+Хато турлари:
+- Имловий хатолар (S/Spelling) — ТУШИБ ҚОЛГАН ҲАРФЛАРГА алоҳида эътибор беринг!
+- Контекстга номос сўз (S/Context)
+- Катта/кичик ҳарф (S/LowerUpper)
+- Тиниш белгилари (Punctuation)
+- Келишик қўшимчалари (G/Case)
+- Эгалик қўшимчалари (G/Possessive)  
+- Бирга ёзиш (G/Merge)
+- Ажратиб ёзиш (G/Split)
+- Замон шакли (G/VerbTense)
+- Бошқа грамматик хато (G/Other)
+- Аниқлик/маъно (F/Clarity)
+- Услубий хато (F/Style)
+- Калька таржима (F/Calque)
+{rules_examples}
+
+МУҲИМ ҚОИДАЛАР:
+1. old_value = матндаги хатоли сўз/фраза (АЙНАН шу шаклда)
+2. new_value = тўғриланган шакл
+3. Олдинги тузатишлар базасидан (rules_examples) фойдаланиб, янги хатоларни ҳам изланг.
+4. Хатосиз матн учун бўш массив қайтаринг.
+
+Фақат JSON форматида жавоб беринг:
+{{"annotations": [{{"old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
+
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-3-5-sonnet-20241022",
                 max_tokens=4000,
-                system="Uzbek grammar/pharma corrector.",
-                messages=[{"role": "user", "content": f"Check: {text}. JSON: {{'annotations': [{{'old_value': '...', 'new_value': '...', 'error_type': '...'}}], 'corrected_text': '...'}}"}]
+                temperature=0,
+                system=SAYQALLASH_PROMPT,
+                messages=[{"role": "user", "content": f"Матнни текширинг:\n\n{text}"}]
             )
-            match = re.search(r'\{.*\}', response.content[0].text, re.DOTALL)
+            resp_text = response.content[0].text
+            match = re.search(r'\{.*\}', resp_text, re.DOTALL)
             if match:
                 result = json.loads(match.group())
                 for ann in result.get("annotations", []):
-                    old_val = ann.get("old_value")
-                    if old_val:
-                        idx = text.find(old_val)
-                        if idx != -1:
-                            ann.update({"from_index": idx, "to_index": idx + len(old_val), "source": "ai"})
-                            ai_annotations.append(ann)
+                    old_val = ann.get("old_value", "")
+                    if not old_val: continue
+                    
+                    start_search = 0
+                    while True:
+                        idx = text.find(old_val, start_search)
+                        if idx == -1: break
+                        
+                        instance_ann = ann.copy()
+                        instance_ann["from_index"] = idx
+                        instance_ann["to_index"] = idx + len(old_val)
+                        instance_ann["source"] = "ai"
+                        ai_annotations.append(instance_ann)
+                        start_search = idx + len(old_val)
                 corrected_text = result.get("corrected_text", text)
-        except Exception: pass
+        except Exception as e:
+            print(f"AI sayqallash error: {e}")
 
-    all_annotations = local_annotations + [a for a in ai_annotations if not any(la['from_index'] == a['from_index'] for la in local_annotations)]
+    # Step 3: Merge local + AI annotations (deduplicate)
+    all_annotations = []
+    seen_positions = set()
+    
+    for ann in local_annotations:
+        key = (ann['from_index'], ann['to_index'])
+        if key not in seen_positions:
+            seen_positions.add(key)
+            ann['source'] = 'rules_db'
+            all_annotations.append(ann)
+    
+    for ann in ai_annotations:
+        key = (ann.get('from_index', 0), ann.get('to_index', 0))
+        if key not in seen_positions:
+            seen_positions.add(key)
+            all_annotations.append(ann)
+
     all_annotations.sort(key=lambda a: a.get("from_index", 0))
-    return {"annotations": all_annotations, "corrected_text": corrected_text, "rules_count": rules_count}
+    
+    return {
+        "annotations": all_annotations,
+        "corrected_text": corrected_text,
+        "rules_count": rules_count,
+        "local_matches": len(local_annotations),
+        "ai_matches": len(ai_annotations)
+    }
 
 # ═══════════════════════════════════════════════════
-# Sayqallash Rules CRUD
+# Auto-Notes & Sayqallash Rules CRUD
 # ═══════════════════════════════════════════════════
+
+@app.post("/auto-notes")
+async def auto_notes(payload: Dict[str, Any]):
+    """Generate diff notes by comparing V1 with Proposed text."""
+    v1 = payload.get("v1", "")
+    proposed = payload.get("proposed", "")
+    lang = payload.get("lang", "uz")
+    notes = db.generate_diff_notes(v1, proposed, lang)
+    return {"notes": notes}
 
 @app.get("/sayqallash-rules")
 async def get_sayqallash_rules(lang: str = "uz", limit: int = 500):
     rules = db.get_all_rules(lang, limit)
-    return {"rules": rules}
+    count = db.get_rules_count(lang)
+    return {"rules": rules, "total": count}
 
 @app.post("/sayqallash-rules")
-async def add_sayqallash_rule(payload: Dict[str, Any]):
+async def add_sayqallash_rule_endpoint(payload: Dict[str, Any]):
     try:
         db.add_sayqallash_rule(
             wrong=payload.get("wrong_form", ""),
@@ -306,7 +476,7 @@ async def add_sayqallash_rule(payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/sayqallash-rules/{rule_id}")
-async def update_sayqallash_rule(rule_id: int, payload: Dict[str, Any]):
+async def update_sayqallash_rule_endpoint(rule_id: int, payload: Dict[str, Any]):
     try:
         db.update_sayqallash_rule(rule_id, payload)
         return {"success": True}
@@ -314,32 +484,40 @@ async def update_sayqallash_rule(rule_id: int, payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/sayqallash-rules/{rule_id}")
-async def delete_sayqallash_rule(rule_id: int):
+async def delete_sayqallash_rule_endpoint(rule_id: int):
     try:
         db.delete_sayqallash_rule(rule_id)
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/auto-notes")
-async def auto_notes(payload: Dict[str, Any]):
-    notes = db.generate_diff_notes(payload.get("v1", ""), payload.get("proposed", ""), payload.get("lang", "uz"))
-    return {"notes": notes}
-
+# ═══════════════════════════════════════════════════
+# Data Persistence: Save / Export / History / Delete
+# ═══════════════════════════════════════════════════
 
 @app.post("/save")
 async def save_data(payload: Dict[str, Any]):
     try:
         db.save_alignments(payload.get("data", []))
         return {"status": "success"}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/save-row")
 async def save_single_row(payload: Dict[str, Any]):
     try:
         new_id = db.save_single_row(payload)
         return {"status": "success", "new_id": new_id}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/delete-row/{text_id}/{sentence_no}")
+async def delete_row(text_id: str, sentence_no: int):
+    try:
+        db.delete_row(sentence_no, text_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/history/{text_id}")
 async def get_history(text_id: str):
@@ -348,11 +526,73 @@ async def get_history(text_id: str):
 @app.post("/export")
 async def export_data(payload: Dict[str, Any]):
     filename = payload.get("filename", "aligned_output.docx")
-    output_path = os.path.abspath(os.path.join(TEMP_DIR, f"confirmed_{filename}"))
+    data = payload.get("data", [])
+    file_basename = os.path.basename(filename)
+    output_path = os.path.abspath(os.path.join(TEMP_DIR, f"confirmed_{file_basename}"))
     try:
-        export_to_docx(payload.get("data", []), output_path)
-        return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=f"confirmed_{filename}")
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+        export_to_docx(data, output_path)
+        download_name = f"confirmed_{file_basename}"
+        if not download_name.endswith(".docx"):
+            download_name += ".docx"
+        return FileResponse(
+            output_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=download_name,
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/specialists")
+async def get_specialists():
+    try:
+        names = db.get_unique_specialists()
+        return {"specialists": names}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ═══════════════════════════════════════════════════
+# Split / Merge Rows
+# ═══════════════════════════════════════════════════
+
+@app.post("/api/split-row")
+async def split_row(payload: Dict[str, Any]):
+    row = payload.get("row")
+    if not row: raise HTTPException(status_code=400, detail="Row data required")
+    
+    client = get_client()
+    if client:
+        try:
+            prompt = f"""Split this trilingual pharma row into two logical parts (sentence breaks).
+EN: {row['en']}
+RU: {row.get('ru_proposed') or row['ru_v1']}
+UZ: {row.get('uz_proposed') or row['uz_v1']}
+
+Return JSON only: {{"part1": {{"en": "...", "ru": "...", "uz": "..."}}, "part2": {{"en": "...", "ru": "...", "uz": "..."}}}}"""
+            
+            response = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1000,
+                system="Trilingual Splitter.",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            match = re.search(r'\{.*\}', response.content[0].text, re.DOTALL)
+            if match:
+                parts = json.loads(match.group())
+                row1 = {**row, "en": parts["part1"]["en"], "ru_v1": parts["part1"]["ru"], "uz_v1": parts["part1"]["uz"], "ru_proposed": "", "uz_proposed": ""}
+                row2 = {**row, "en": parts["part2"]["en"], "ru_v1": parts["part2"]["ru"], "uz_v1": parts["part2"]["uz"], "ru_proposed": "", "uz_proposed": "", "sentence_no": 0}
+                return {"row1": row1, "row2": row2}
+        except Exception as e:
+            print(f"Magic split error: {e}")
+    
+    mid = len(row['en']) // 2
+    row1 = {**row, "en": row['en'][:mid], "ru_proposed": "", "uz_proposed": ""}
+    row2 = {**row, "en": row['en'][mid:], "sentence_no": 0, "ru_proposed": "", "uz_proposed": ""}
+    return {"row1": row1, "row2": row2}
+
+# ═══════════════════════════════════════════════════
+# AUTH & ADMIN PANEL
+# ═══════════════════════════════════════════════════
 
 @app.post("/api/auth/google")
 async def auth_google(payload: Dict[str, Any]):

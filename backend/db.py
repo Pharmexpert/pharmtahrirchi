@@ -618,10 +618,21 @@ def update_user_role(user_id: str, role: str):
     conn.commit()
     conn.close()
 
-def update_user_status(user_id: str, status: str):
+def reorder_alignments(text_id: str):
+    """Ensure sentence_no and display_no are sequential for a project."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+    cursor.execute("SELECT id FROM alignments WHERE text_id = ? ORDER BY id ASC", (text_id,))
+    rows = cursor.fetchall()
+    for idx, row in enumerate(rows, 1):
+        cursor.execute("UPDATE alignments SET sentence_no = ?, display_no = ? WHERE id = ?", (idx, str(idx), row[0]))
+    conn.commit()
+    conn.close()
+
+def delete_alignment(alignment_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alignments WHERE id = ?", (alignment_id,))
     conn.commit()
     conn.close()
 
