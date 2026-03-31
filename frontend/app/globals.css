@@ -1,0 +1,157 @@
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #e2e8f0;
+  --accent: #ffb000;
+  --border: #e2e8f0;
+  --radius: 0.75rem;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  margin: 0;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.card {
+  background: white;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to right, #ffffff, #f1f5f9);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.table-container {
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+th {
+  text-align: left;
+  padding: 1rem;
+  background: #f1f5f9;
+  font-weight: 600;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  min-width: 300px;
+}
+
+tr:hover {
+  background: #f8fafc;
+}
+
+.marker-row {
+  background: #fefce8;
+  font-weight: 700;
+}
+
+.marker-row td {
+  border-top: 2px solid #fef08a;
+  border-bottom: 2px solid #fef08a;
+}
+
+.status-review {
+  background: #fff1f2;
+}
+
+.editable-cell {
+  min-height: 24px;
+  outline: none;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.editable-cell:focus {
+  background: #eff6ff;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+
+.actions-panel {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+tr:hover .actions-panel {
+  opacity: 1;
+}
+
+.icon-btn {
+  padding: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.icon-btn:hover {
+  background: white;
+  color: var(--primary);
+  border-color: var(--primary);
+}
