@@ -457,13 +457,16 @@ class ParagraphAligner:
         if not self.has_three_column_table():
             return self.process_single_language()
 
-        # Dynamically find the first row with at least 3 cells (main content row)
-        content_row = None
-        for r in self.table.rows:
-            if len(r.cells) >= 3:
-                content_row = r
-                break
+        # Count actual content rows (3+ cells)
+        content_rows = [r for r in self.table.rows if len(r.cells) >= 3]
         
+        # If multiple rows with 3+ cells, this is a multi-row table
+        # => each row is a separate content unit => use ready_form logic
+        if len(content_rows) > 1:
+            return self.process_ready_form()
+
+        # Single content row: all text for each language is in one big cell
+        content_row = content_rows[0] if content_rows else None
         if not content_row:
             return self.process_single_language()
 
