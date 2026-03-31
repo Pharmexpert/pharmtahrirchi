@@ -332,8 +332,14 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       const blob = await res.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = 'confirmed_' + filename
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      let downloadName = filename ? 'confirmed_' + filename : 'confirmed_output.docx'
+      if (!downloadName.endsWith('.docx')) downloadName += '.docx'
+      a.href = url
+      a.download = downloadName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
       notify('DOCX yuklandi')
     } catch { notify('Export xatolik') }
   }
