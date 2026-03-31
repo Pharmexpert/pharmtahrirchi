@@ -352,10 +352,19 @@ class ParagraphAligner:
         if len(self.table.rows) < 2:
             raise ValueError("Table must have at least 2 rows")
 
-        row = self.table.rows[1]
-        en_blocks = self.get_blocks(row.cells[0])
-        ru_blocks = self.get_blocks(row.cells[1])
-        uz_blocks = self.get_blocks(row.cells[2])
+        # Dynamically find the first row with at least 3 cells (main content row)
+        content_row = None
+        for r in self.table.rows:
+            if len(r.cells) >= 3:
+                content_row = r
+                break
+        
+        if not content_row:
+            raise ValueError("Could not find a row with 3 columns (EN, RU, UZ) for alignment")
+
+        en_blocks = self.get_blocks(content_row.cells[0])
+        ru_blocks = self.get_blocks(content_row.cells[1])
+        uz_blocks = self.get_blocks(content_row.cells[2])
 
         aligned_data = []
         sentence_counter = 1
