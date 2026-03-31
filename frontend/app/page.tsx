@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash } from 'lucide-react'
+import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen } from 'lucide-react'
+import Link from 'next/link'
 import TableEditor from '../components/TableEditor'
 
 export default function Home() {
@@ -79,7 +80,14 @@ export default function Home() {
             <FileText size={32} color="white" />
           </div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1e293b', margin: '0 0 0.4rem' }}>Scientific Pharma Editor</h1>
-          <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>Учтилли (EN, RU, UZ) фармацевтик ҳужжатларни таҳлил қилиш ва таҳрир платформаси</p>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 1rem' }}>Учтилли (EN, RU, UZ) фармацевтик ҳужжатларни таҳлил қилиш ва таҳрир платформаси</p>
+          
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Link href="/rules" style={{ color: '#2563eb', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: '#eff6ff', borderRadius: '8px', transition: 'all 0.2s' }}>
+              <BookOpen size={16} />
+              Correction Rules Database
+            </Link>
+          </div>
         </div>
 
         {/* Card */}

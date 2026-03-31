@@ -408,6 +408,40 @@ async def get_sayqallash_rules(lang: str = "uz", limit: int = 100):
     count = db.get_rules_count(lang)
     return {"rules": rules, "total": count}
 
+@app.post("/sayqallash-rules")
+async def add_sayqallash_rule(payload: Dict[str, Any]):
+    """Manually add a new correction rule."""
+    try:
+        db.add_sayqallash_rule(
+            wrong=payload.get("wrong_form", ""),
+            correct=payload.get("correct_form", ""),
+            error_type=payload.get("error_type", "S/Spelling"),
+            context=payload.get("context", ""),
+            lang=payload.get("lang", "uz"),
+            source="manual"
+        )
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/sayqallash-rules/{rule_id}")
+async def update_sayqallash_rule(rule_id: int, payload: Dict[str, Any]):
+    """Update an existing rule."""
+    try:
+        db.update_sayqallash_rule(rule_id, payload)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/sayqallash-rules/{rule_id}")
+async def delete_sayqallash_rule(rule_id: int):
+    """Delete a rule."""
+    try:
+        db.delete_sayqallash_rule(rule_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/save")
 async def save_data(payload: Dict[str, Any]):
     data = payload.get("data", [])

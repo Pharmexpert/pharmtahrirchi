@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen } from 'lucide-react'
+import Link from 'next/link'
 
 interface RowData {
   type: 'marker' | 'content'
@@ -344,7 +345,13 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         {textId && <span style={{ background: '#334155', padding: '2px 9px', borderRadius: 20, fontSize: '0.72rem', color: '#93c5fd', fontWeight: 700, flexShrink: 0 }}>ID: {textId}</span>}
         <span style={{ fontSize: '0.73rem', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>
         {saveStatus && <span style={{ background: '#22c55e', color: 'white', padding: '2px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>{saveStatus}</span>}
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+          <Link href="/rules" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#334155', color: '#94a3b8', padding: '5px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none', transition: 'all 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'white', e.currentTarget.style.background = '#475569')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8', e.currentTarget.style.background = '#334155')}>
+            <BookOpen size={14} />
+            Rules DB
+          </Link>
           <button onClick={aiAlign} disabled={isAiAligning} style={{ padding: '5px 10px', background: isAiAligning ? '#4b5563' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: isAiAligning ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
             {isAiAligning ? 'Moslashtirilmoqda...' : 'AI Moslash'}
           </button>

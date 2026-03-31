@@ -158,6 +158,37 @@ def get_rules_count(lang: str = 'uz') -> int:
     conn.close()
     return count
 
+def delete_sayqallash_rule(rule_id: int):
+    """Delete a rule by ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sayqallash_rules WHERE id = ?", (rule_id,))
+    conn.commit()
+    conn.close()
+
+def update_sayqallash_rule(rule_id: int, data: Dict[str, Any]):
+    """Update an existing rule."""
+    if not data:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Dynamically build the UPDATE statement
+    fields = []
+    values = []
+    for k, v in data.items():
+        if k in ['wrong_form', 'correct_form', 'error_type', 'context', 'lang', 'frequency']:
+            fields.append(f"{k} = ?")
+            values.append(v)
+    
+    if fields:
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        values.append(rule_id)
+        query = f"UPDATE sayqallash_rules SET {', '.join(fields)} WHERE id = ?"
+        cursor.execute(query, tuple(values))
+        conn.commit()
+    conn.close()
+
 # ═══════════════════════════════════════════════════
 # Auto-diff: extract correction rules from V1 vs Proposed
 # ═══════════════════════════════════════════════════
