@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 from anthropic import Anthropic
 from dotenv import load_dotenv
 import json
+from langdetect import detect, DetectorFactory
+DetectorFactory.seed = 0 # Consistent detection
 
 load_dotenv()
 

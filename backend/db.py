@@ -19,14 +19,17 @@ def init_db():
         confirmed_uz_text TEXT,
         text_id TEXT,
         notes TEXT,
+        specialist_name TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
-    # Migrate: add display_no if not exists
+    # Migrate: add display_no/specialist_name if not exists
     try:
         cursor.execute("ALTER TABLE alignments ADD COLUMN display_no TEXT")
-    except Exception:
-        pass
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN specialist_name TEXT")
+    except Exception: pass
 
     # ═══════════════════════════════════════════════
     # Sayqallash Rules — self-learning correction DB
@@ -344,7 +347,7 @@ def save_alignments(data: List[Dict[str, Any]]):
             cursor.execute('''
             UPDATE alignments SET 
                 en_text = ?, confirmed_ru_text = ?, confirmed_uz_text = ?,
-                notes = ?, display_no = ?
+                notes = ?, display_no = ?, specialist_name = ?
             WHERE id = ?
             ''', (
                 item.get("en", ""),
@@ -352,12 +355,13 @@ def save_alignments(data: List[Dict[str, Any]]):
                 item.get("uz_proposed", ""),
                 item.get("notes", ""),
                 item.get("display_no", str(sentence_no)),
+                item.get("specialist_name", ""),
                 row[0]
             ))
         else:
             cursor.execute('''
-            INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 sentence_no,
                 item.get("display_no", str(sentence_no)),
@@ -365,7 +369,8 @@ def save_alignments(data: List[Dict[str, Any]]):
                 item.get("ru_proposed", ""),
                 item.get("uz_proposed", ""),
                 text_id,
-                item.get("notes", "")
+                item.get("notes", ""),
+                item.get("specialist_name", "")
             ))
     conn.commit()
     conn.close()
@@ -391,7 +396,7 @@ def save_single_row(item: Dict[str, Any]) -> int:
             cursor.execute('''
             UPDATE alignments SET
                 en_text = ?, confirmed_ru_text = ?, confirmed_uz_text = ?,
-                notes = ?, display_no = ?
+                notes = ?, display_no = ?, specialist_name = ?
             WHERE id = ?
             ''', (
                 item.get("en", ""),
@@ -399,6 +404,7 @@ def save_single_row(item: Dict[str, Any]) -> int:
                 item.get("uz_proposed", ""),
                 item.get("notes", ""),
                 item.get("display_no", str(sentence_no)),
+                item.get("specialist_name", ""),
                 row[0]
             ))
             conn.commit()
@@ -407,8 +413,8 @@ def save_single_row(item: Dict[str, Any]) -> int:
 
     # New row — INSERT
     cursor.execute('''
-    INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         sentence_no if sentence_no and sentence_no > 0 else None,
         item.get("display_no", ""),
@@ -416,7 +422,8 @@ def save_single_row(item: Dict[str, Any]) -> int:
         item.get("ru_proposed", ""),
         item.get("uz_proposed", ""),
         text_id,
-        item.get("notes", "")
+        item.get("notes", ""),
+        item.get("specialist_name", "")
     ))
     new_id = cursor.lastrowid
     # Store DB id as sentence_no for future updates
@@ -446,4 +453,13 @@ def get_history(text_id: str):
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_unique_specialists() -> List[str]:
+    """Get sorted list of unique specialist names for autocomplete."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT specialist_name FROM alignments WHERE specialist_name IS NOT NULL AND specialist_name != '' ORDER BY specialist_name ASC")
+    names = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return names
 
