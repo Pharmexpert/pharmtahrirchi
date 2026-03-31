@@ -414,8 +414,11 @@ class ParagraphAligner:
         start_idx = 0
         if len(self.table.rows) > 1:
             # Check if first row is just headers
-            cell0 = self.table.rows[0].cells[0].text.lower()
-            if 'english' in cell0 or 'en' == cell0.strip():
+            cell0 = self.table.rows[0].cells[0].text.strip().lower()
+            header_keywords = ['english', 'en', 'инглиз', 'англ', 'original', 
+                             'оригинал', 'матн', 'english (original)', 'тилида']
+            if any(kw in cell0 for kw in header_keywords) or len(cell0) < 25:
+                # Short cell text = likely a header, not content
                 start_idx = 1
 
         for idx, row in enumerate(self.table.rows[start_idx:]):
@@ -457,18 +460,37 @@ class ParagraphAligner:
         if not self.has_three_column_table():
             return self.process_single_language()
 
-        # Count actual content rows (3+ cells)
-        content_rows = [r for r in self.table.rows if len(r.cells) >= 3]
-        
-        # If multiple rows with 3+ cells, this is a multi-row table
-        # => each row is a separate content unit => use ready_form logic
-        if len(content_rows) > 1:
-            return self.process_ready_form()
+        # Analyze table structure: find rows with actual content
+        content_rows = []
+        header_row_idx = -1
+        for i, r in enumerate(self.table.rows):
+            if len(r.cells) < 3:
+                continue
+            # Check if this is a header row (short text in all cells)
+            cell_texts = [r.cells[j].text.strip() for j in range(3)]
+            max_len = max(len(t) for t in cell_texts)
+            if max_len < 30 and i == 0:
+                header_row_idx = i
+                continue
+            # Check if row has any actual content
+            if any(t for t in cell_texts):
+                content_rows.append(r)
 
-        # Single content row: all text for each language is in one big cell
-        content_row = content_rows[0] if content_rows else None
-        if not content_row:
+        if not content_rows:
             return self.process_single_language()
+        
+        # Check if content is "one big row" (all text per language in 1 cell)
+        # vs "many rows" (each row = 1 sentence/paragraph per language)
+        first_content = content_rows[0]
+        first_cell_len = len(first_content.cells[0].text.strip())
+        
+        # If only 1 content row OR first content row is very long (>200 chars),
+        # it's a "merge" format: use get_blocks() to split by paragraphs
+        if len(content_rows) == 1 or first_cell_len > 200:
+            content_row = content_rows[0]
+        else:
+            # Multiple short rows — each row is a content unit
+            return self.process_ready_form()
 
         en_blocks = self.get_blocks(content_row.cells[0])
         ru_blocks = self.get_blocks(content_row.cells[1])
