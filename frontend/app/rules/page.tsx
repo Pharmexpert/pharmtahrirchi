@@ -1,317 +1,379 @@
-"use client";
+'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'
 import { 
-  ArrowLeft, 
-  Trash2, 
-  Edit2, 
-  Plus, 
-  Search, 
-  BookOpen, 
-  RefreshCcw,
-  Languages,
-  CheckCircle2,
-  AlertCircle
-} from 'lucide-react';
-import Link from 'next/link';
+  Trash2, Edit2, Plus, Search, BookOpen, RefreshCcw,
+  Languages, CheckCircle2, AlertCircle, Loader2, X
+} from 'lucide-react'
+import { useAuth } from '../../components/LoginGuard'
 
 interface Rule {
-  id: number;
-  wrong_form: string;
-  correct_form: string;
-  error_type: string;
-  lang: string;
-  frequency: number;
-  updated_at: string;
+  id: number
+  wrong_form: string
+  correct_form: string
+  error_type: string
+  lang: string
+  frequency: number
+  updated_at: string
 }
 
 export default function RulesPage() {
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [lang, setLang] = useState("uz");
-  const [editingRule, setEditingRule] = useState<Partial<Rule> | null>(null);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const { token } = useAuth()
+  const [rules, setRules] = useState<Rule[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [lang, setLang] = useState('uz')
+  const [editingRule, setEditingRule] = useState<Partial<Rule> | null>(null)
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
 
-  const API_BASE = (typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_API_URL) || "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-  useEffect(() => {
-    fetchRules();
-  }, [lang]);
+  useEffect(() => { fetchRules() }, [lang])
 
   const fetchRules = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/sayqallash-rules?lang=${lang}&limit=500`);
-      const data = await res.json();
-      setRules(data.rules || []);
+      const res = await fetch(`${API_BASE}/sayqallash-rules?lang=${lang}&limit=500`)
+      const data = await res.json()
+      setRules(data.rules || [])
     } catch (err) {
-      console.error("Failed to fetch rules:", err);
+      console.error('Failed to fetch rules:', err)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const showMessage = (text: string, type: 'success' | 'error' = 'success') => {
-    setMessage({ text, type });
-    setTimeout(() => setMessage(null), 3000);
-  };
+    setMessage({ text, type })
+    setTimeout(() => setMessage(null), 3000)
+  }
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this rule?")) return;
+    if (!confirm("Bu qoidani o'chirishni tasdiqlaysizmi?")) return
     try {
-      const res = await fetch(`${API_BASE}/sayqallash-rules/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/sayqallash-rules/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        setRules(rules.filter(r => r.id !== id));
-        showMessage("Rule deleted successfully");
+        setRules(rules.filter(r => r.id !== id))
+        showMessage('Qoida muvaffaqiyatli o\'chirildi')
       }
-    } catch (err) {
-      showMessage("Failed to delete rule", "error");
-    }
-  };
+    } catch { showMessage("O'chirishda xatolik", 'error') }
+  }
 
   const handleSave = async () => {
-    if (!editingRule?.wrong_form || !editingRule?.correct_form) return;
-
-    const isNew = !editingRule.id;
-    const url = isNew ? `${API_BASE}/sayqallash-rules` : `${API_BASE}/sayqallash-rules/${editingRule.id}`;
-    const method = isNew ? 'POST' : 'PUT';
-
+    if (!editingRule?.wrong_form || !editingRule?.correct_form) return
+    const isNew = !editingRule.id
+    const url = isNew ? `${API_BASE}/sayqallash-rules` : `${API_BASE}/sayqallash-rules/${editingRule.id}`
+    const method = isNew ? 'POST' : 'PUT'
     try {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...editingRule,
-          lang // ensure language is preserved
-        })
-      });
-
+        body: JSON.stringify({ ...editingRule, lang })
+      })
       if (res.ok) {
-        fetchRules();
-        setEditingRule(null);
-        showMessage(isNew ? "Rule added" : "Rule updated");
+        fetchRules()
+        setEditingRule(null)
+        showMessage(isNew ? 'Yangi qoida qo\'shildi' : 'Qoida yangilandi')
       }
-    } catch (err) {
-      showMessage("Save failed", "error");
-    }
-  };
+    } catch { showMessage('Saqlashda xatolik', 'error') }
+  }
 
-  const filteredRules = rules.filter(r => 
-    r.wrong_form.toLowerCase().includes(search.toLowerCase()) || 
+  const filteredRules = rules.filter(r =>
+    r.wrong_form.toLowerCase().includes(search.toLowerCase()) ||
     r.correct_form.toLowerCase().includes(search.toLowerCase())
-  );
+  )
+
+  const errorTypeColors: Record<string, { bg: string; color: string }> = {
+    'S/Spelling': { bg: 'var(--warning-bg)', color: 'var(--warning)' },
+    'S/Context': { bg: 'var(--info-bg)', color: 'var(--info)' },
+    'G/Grammar': { bg: 'var(--danger-bg)', color: 'var(--danger)' },
+    'Terminology': { bg: 'var(--success-bg)', color: 'var(--success)' },
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="animate-fadeIn" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      {/* Status Toast */}
+      {message && (
+        <div style={{ 
+          position: 'fixed', bottom: '32px', right: '32px', zIndex: 1000,
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '16px 24px', borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-lg)', animation: 'fadeIn 0.3s',
+          background: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
+          color: 'white', fontWeight: 600, fontSize: '0.9rem'
+        }}>
+          {message.type === 'success' ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+          {message.text}
+        </div>
+      )}
+
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-              <ArrowLeft className="w-5 h-5 text-slate-600" />
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-                <BookOpen className="w-5 h-5 text-white" />
-              </div>
-              <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-indigo-600">
-                Correction Database
-              </h1>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <div className="flex bg-slate-100 p-1 rounded-lg">
-              <button 
-                onClick={() => setLang('uz')}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${lang === 'uz' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                O'zbekcha
-              </button>
-              <button 
-                onClick={() => setLang('ru')}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${lang === 'ru' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Русский
-              </button>
-            </div>
-            
-            <button 
-              onClick={() => setEditingRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang })}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-md transition-all active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              Add Rule
-            </button>
+      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '8px', letterSpacing: '-1px' }}>
+            Sayqallash Qoidalari 📖
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
+            Imlo xatoliklari va tuzatish qoidalari bazasi.
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: '12px',
+            background: 'var(--bg-card)', padding: '12px 20px', borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)'
+          }}>
+            <BookOpen size={20} color="var(--accent-primary)" />
+            <span style={{ fontWeight: 800, fontSize: '1.1rem' }}>{rules.length}</span>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Qoida</span>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Status Message */}
-        {message && (
-          <div className={`fixed bottom-8 right-8 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-5 duration-300 z-50 ${message.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
-            {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-            <span className="font-medium">{message.text}</span>
+      {/* Controls */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Language Toggle */}
+          <div style={{ 
+            display: 'flex', background: 'var(--bg-card)', padding: '4px',
+            borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)'
+          }}>
+            {[
+              { id: 'uz', label: "O'zbekcha" },
+              { id: 'ru', label: 'Русский' }
+            ].map(l => (
+              <button
+                key={l.id}
+                onClick={() => setLang(l.id)}
+                style={{
+                  padding: '10px 20px', borderRadius: 'var(--radius-sm)', border: 'none',
+                  fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s',
+                  background: lang === l.id ? 'white' : 'transparent',
+                  color: lang === l.id ? 'var(--accent-primary)' : 'var(--text-muted)',
+                  boxShadow: lang === l.id ? 'var(--shadow-sm)' : 'none'
+                }}
+              >
+                {l.label}
+              </button>
+            ))}
           </div>
-        )}
 
-        {/* Search & Stats */}
-        <div className="mb-8 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search rules..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex items-center gap-6 text-sm text-slate-500 bg-white px-6 py-2.5 rounded-xl border border-slate-100 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-              Total Rules: <span className="font-bold text-slate-900">{rules.length}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              Active
-            </div>
-            <button onClick={fetchRules} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
-              <RefreshCcw className="w-4 h-4" />
-            </button>
-          </div>
+          {/* Add Rule Button */}
+          <button 
+            onClick={() => setEditingRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang })}
+            style={{ 
+              padding: '10px 20px', background: 'var(--accent-gradient)', color: 'white',
+              border: 'none', borderRadius: 'var(--radius-md)', fontWeight: 700,
+              fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+              boxShadow: 'var(--shadow-glow)'
+            }}
+          >
+            <Plus size={18} /> Yangi qoida
+          </button>
+
+          {/* Refresh */}
+          <button 
+            onClick={fetchRules}
+            style={{ 
+              padding: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer', color: 'var(--text-muted)'
+            }}
+          >
+            <RefreshCcw size={18} />
+          </button>
         </div>
 
-        {/* Rules Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-200">
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Original (Wrong)</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Correction (Correct)</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Type</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Frequency</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+        {/* Search */}
+        <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input 
+            type="text" placeholder="Qoidalarni qidirish..."
+            value={search} onChange={e => setSearch(e.target.value)}
+            style={{ 
+              width: '100%', padding: '12px 12px 12px 48px',
+              borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)',
+              background: 'var(--bg-card)', fontSize: '0.95rem',
+              boxShadow: 'var(--shadow-sm)', outline: 'none', transition: 'border-color 0.2s'
+            }}
+            onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
+            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
+          />
+        </div>
+      </div>
+
+      {/* Rules Table */}
+      <div style={{ 
+        background: 'var(--bg-card)', borderRadius: 'var(--radius-xl)',
+        border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)', overflow: 'hidden'
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Хато шакл</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тўғри шакл</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тури</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Частота</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Amallar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={5} style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <Loader2 className="animate-spin" size={32} style={{ margin: '0 auto 16px' }} />
+                  <p style={{ fontWeight: 600 }}>Yuklanmoqda...</p>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-6 py-6"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
-                  </tr>
-                ))
-              ) : filteredRules.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center text-slate-400">
-                    <div className="flex flex-col items-center gap-4">
-                      <BookOpen className="w-12 h-12 text-slate-200" />
-                      <p className="text-lg font-medium">No rules found</p>
-                      <p className="text-sm">Try a different search or language</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredRules.map((rule) => (
-                  <tr key={rule.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-sm inline-block px-2 py-1 bg-rose-50 text-rose-700 rounded-md border border-rose-100">
+            ) : filteredRules.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: '80px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <BookOpen size={64} style={{ marginBottom: '16px', opacity: 0.2 }} />
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Qoidalar topilmadi</h3>
+                  <p style={{ fontSize: '0.9rem', marginTop: '8px' }}>Yangi qoida qo'shish uchun "Yangi qoida" tugmasini bosing.</p>
+                </td>
+              </tr>
+            ) : (
+              filteredRules.map(rule => {
+                const typeColor = errorTypeColors[rule.error_type] || { bg: 'var(--bg-secondary)', color: 'var(--text-muted)' }
+                return (
+                  <tr 
+                    key={rule.id} 
+                    className="hover-row"
+                    style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}
+                  >
+                    <td style={{ padding: '20px 24px' }}>
+                      <span style={{ 
+                        fontFamily: 'monospace', fontSize: '0.9rem', padding: '4px 10px',
+                        background: 'var(--danger-bg)', color: 'var(--danger)',
+                        borderRadius: 'var(--radius-sm)', border: '1px solid rgba(196, 77, 77, 0.15)'
+                      }}>
                         {rule.wrong_form}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-sm inline-block px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100">
+                    <td style={{ padding: '20px 24px' }}>
+                      <span style={{ 
+                        fontFamily: 'monospace', fontSize: '0.9rem', padding: '4px 10px',
+                        background: 'var(--success-bg)', color: 'var(--success)',
+                        borderRadius: 'var(--radius-sm)', border: '1px solid rgba(59, 155, 110, 0.15)'
+                      }}>
                         {rule.correct_form}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    <td style={{ padding: '20px 24px' }}>
+                      <span style={{ 
+                        padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem',
+                        fontWeight: 700, textTransform: 'uppercase',
+                        background: typeColor.bg, color: typeColor.color
+                      }}>
                         {rule.error_type}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">
+                    <td style={{ padding: '20px 24px', textAlign: 'center' }}>
+                      <span style={{ 
+                        fontWeight: 800, fontSize: '0.9rem', color: 'var(--accent-primary)',
+                        background: 'var(--accent-bg)', padding: '4px 12px', borderRadius: '8px'
+                      }}>
                         {rule.frequency}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td style={{ padding: '20px 24px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                         <button 
                           onClick={() => setEditingRule(rule)}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                          style={{ padding: '8px', borderRadius: '8px', background: 'var(--accent-bg)', color: 'var(--accent-primary)', border: 'none', cursor: 'pointer' }}
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 size={16} />
                         </button>
                         <button 
                           onClick={() => handleDelete(rule.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                          style={{ padding: '8px', borderRadius: '8px', background: 'var(--danger-bg)', color: 'var(--danger)', border: 'none', cursor: 'pointer' }}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </main>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* Edit/Add Modal */}
       {editingRule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setEditingRule(null)}></div>
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-slate-900">
-                {editingRule.id ? 'Edit Correction Rule' : 'Add New Correction Rule'}
+        <div style={{ 
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(61, 43, 31, 0.4)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{ 
+            background: 'var(--bg-card)', borderRadius: 'var(--radius-xl)',
+            width: '100%', maxWidth: '520px', boxShadow: 'var(--shadow-lg)',
+            border: '1px solid var(--border)', overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{ 
+              padding: '24px 32px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 800 }}>
+                {editingRule.id ? 'Qoidani tahrirlash' : 'Yangi qoida qo\'shish'}
               </h2>
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full">
-                <Languages className="w-3 h-3" />
-                {lang === 'uz' ? 'O\'zbekcha' : 'Русский'}
+              <div style={{ 
+                display: 'flex', alignItems: 'center', gap: '8px', 
+                fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '1px',
+                background: 'var(--bg-secondary)', padding: '6px 12px', borderRadius: '20px'
+              }}>
+                <Languages size={12} />
+                {lang === 'uz' ? "O'zbekcha" : 'Русский'}
               </div>
             </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-500" />
-                  Original Form (Incorrect)
+
+            {/* Modal Body */}
+            <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  <AlertCircle size={14} color="var(--danger)" /> Хато шакли
                 </label>
                 <input 
-                  type="text" 
-                  value={editingRule.wrong_form}
-                  onChange={e => setEditingRule({...editingRule, wrong_form: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-sm"
-                  placeholder="e.g. аниқлик"
+                  type="text" value={editingRule.wrong_form || ''}
+                  onChange={e => setEditingRule({ ...editingRule, wrong_form: e.target.value })}
+                  placeholder="мас: аниқлик"
+                  style={{ 
+                    width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                    fontFamily: 'monospace', fontSize: '0.95rem', outline: 'none'
+                  }}
                 />
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  Corrected Form
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  <CheckCircle2 size={14} color="var(--success)" /> Тўғри шакли
                 </label>
                 <input 
-                  type="text" 
-                  value={editingRule.correct_form}
-                  onChange={e => setEditingRule({...editingRule, correct_form: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-sm"
-                  placeholder="e.g. аниқлиги"
+                  type="text" value={editingRule.correct_form || ''}
+                  onChange={e => setEditingRule({ ...editingRule, correct_form: e.target.value })}
+                  placeholder="мас: аниқлиги"
+                  style={{ 
+                    width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                    fontFamily: 'monospace', fontSize: '0.95rem', outline: 'none'
+                  }}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">Type</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Хато тури</label>
                   <select 
-                    value={editingRule.error_type}
-                    onChange={e => setEditingRule({...editingRule, error_type: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    value={editingRule.error_type || 'S/Spelling'}
+                    onChange={e => setEditingRule({ ...editingRule, error_type: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      fontSize: '0.9rem', outline: 'none'
+                    }}
                   >
                     <option value="S/Spelling">Spelling</option>
                     <option value="S/Context">Context</option>
@@ -319,35 +381,53 @@ export default function RulesPage() {
                     <option value="Terminology">Terminology</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">Frequency</label>
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Частота</label>
                   <input 
-                    type="number" 
-                    value={editingRule.frequency || 1}
-                    onChange={e => setEditingRule({...editingRule, frequency: parseInt(e.target.value)})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    type="number" value={editingRule.frequency || 1}
+                    onChange={e => setEditingRule({ ...editingRule, frequency: parseInt(e.target.value) })}
+                    style={{ 
+                      width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      fontSize: '0.9rem', outline: 'none'
+                    }}
                   />
                 </div>
               </div>
             </div>
 
-            <div className="px-8 py-6 bg-slate-50 flex items-center justify-end gap-3">
+            {/* Modal Footer */}
+            <div style={{ 
+              padding: '20px 32px', borderTop: '1px solid var(--border)',
+              background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'flex-end', gap: '12px'
+            }}>
               <button 
                 onClick={() => setEditingRule(null)}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-all"
+                style={{ 
+                  padding: '10px 24px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+                  background: 'white', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-secondary)'
+                }}
               >
-                Cancel
+                Bekor qilish
               </button>
               <button 
                 onClick={handleSave}
-                className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                style={{ 
+                  padding: '10px 24px', borderRadius: 'var(--radius-md)', border: 'none',
+                  background: 'var(--accent-gradient)', color: 'white',
+                  fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: 'var(--shadow-glow)'
+                }}
               >
-                Save Changes
+                Saqlash
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        .hover-row:hover { background-color: var(--bg-secondary) !important; }
+      `}</style>
     </div>
-  );
+  )
 }

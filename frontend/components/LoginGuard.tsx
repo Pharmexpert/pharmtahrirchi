@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, createContext, useContext } from 'react'
-import { ShieldCheck, AlertCircle, Loader2, Database, ShieldAlert } from 'lucide-react'
+import { ShieldCheck, AlertCircle, Loader2, Database, ShieldAlert, LogIn, UserPlus, Mail, Lock, User } from 'lucide-react'
 
 const AuthContext = createContext<{
   user: any | null
@@ -78,9 +78,14 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
     }
   }, [loading, user])
 
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'google'>('login')
+  const [formData, setFormData] = useState({ name: '', email: '', password: '' })
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
   const handleGoogleResponse = async (response: any) => {
     setLoading(true)
     setError(null)
+    setSuccessMsg(null)
     try {
       const res = await fetch(`${API_BASE}/api/auth/google`, {
         method: 'POST',
@@ -92,6 +97,40 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
         login(data.token, data.user)
       } else {
         setError(data.detail || 'Киришда хатолик юз берди')
+      }
+    } catch (err) {
+      setError('Серверга уланишда хатолик')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSpecialistAuth = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccessMsg(null)
+    
+    const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
+    
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+      const data = await res.json()
+      
+      if (res.ok) {
+        if (authMode === 'register') {
+          setSuccessMsg(data.message)
+          setAuthMode('login')
+          setFormData({ ...formData, password: '' })
+        } else {
+          login(data.token, data.user)
+        }
+      } else {
+        setError(data.detail || 'Хатолик юз берди')
       }
     } catch (err) {
       setError('Серверга уланишда хатолик')
@@ -173,35 +212,154 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
             </div>
           </div>
           
-          <div style={{ padding: '40px' }}>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', textAlign: 'center' }}>
-              Хуш келибсиз!
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', textAlign: 'center', fontSize: '0.92rem', lineHeight: '1.6' }}>
-              Давом этиш учун Google ҳисобингиз орқали тизимга киринг.
-            </p>
-            
+          <div style={{ padding: '30px' }}>
+            {/* Tabs */}
+            <div style={{ 
+              display: 'flex', background: 'var(--bg-primary)', padding: '4px', 
+              borderRadius: 'var(--radius-lg)', marginBottom: '24px', gap: '4px'
+            }}>
+              {[
+                { id: 'google', icon: <LogIn size={16}/>, label: 'Google' },
+                { id: 'login', icon: <LogIn size={16}/>, label: 'Кириш' },
+                { id: 'register', icon: <UserPlus size={16}/>, label: 'Рўйхат' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setAuthMode(tab.id as any); setError(null); setSuccessMsg(null); }}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '10px', borderRadius: 'var(--radius-md)', border: 'none',
+                    fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    background: authMode === tab.id ? 'var(--bg-card)' : 'transparent',
+                    color: authMode === tab.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    boxShadow: authMode === tab.id ? 'var(--shadow-sm)' : 'none'
+                  }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {error && (
               <div style={{ 
                 background: 'var(--danger-bg)', border: '1px solid rgba(196, 77, 77, 0.15)', 
                 color: 'var(--danger)', padding: '14px', borderRadius: 'var(--radius-md)', 
-                marginBottom: '24px', fontSize: '0.85rem', display: 'flex', gap: '10px', alignItems: 'flex-start'
+                marginBottom: '20px', fontSize: '0.85rem', display: 'flex', gap: '10px', alignItems: 'flex-start'
               }}>
-                <ShieldCheck size={18} style={{ marginTop: '2px' }} />
+                <ShieldAlert size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
                 <span style={{ fontWeight: 500 }}>{error}</span>
               </div>
             )}
+
+            {successMsg && (
+              <div style={{ 
+                background: 'rgba(52, 199, 89, 0.1)', border: '1px solid rgba(52, 199, 89, 0.2)', 
+                color: '#34c759', padding: '14px', borderRadius: 'var(--radius-md)', 
+                marginBottom: '20px', fontSize: '0.85rem', display: 'flex', gap: '10px', alignItems: 'flex-start'
+              }}>
+                <ShieldCheck size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
+                <span style={{ fontWeight: 500 }}>{successMsg}</span>
+              </div>
+            )}
             
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
-              <div id="google-btn"></div>
-            </div>
+            {authMode === 'google' ? (
+              <div style={{ padding: '10px 0 30px' }}>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', textAlign: 'center', fontSize: '0.9rem' }}>
+                  Google ҳисобингиз орқали тизимга киринг.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <div id="google-btn"></div>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSpecialistAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {authMode === 'register' && (
+                  <div style={{ position: 'relative' }}>
+                    <User size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input 
+                      type="text" 
+                      placeholder="Исм ва Фамилия"
+                      required
+                      value={formData.name}
+                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                      style={{ 
+                        width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                      }}
+                    />
+                  </div>
+                )}
+                <div style={{ position: 'relative' }}>
+                  <Mail size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="email" 
+                    placeholder="Email почта"
+                    required
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                    }}
+                  />
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="password" 
+                    placeholder="Парол"
+                    required
+                    value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                    }}
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  style={{ 
+                    marginTop: '8px', padding: '12px', background: 'var(--accent-gradient)',
+                    color: 'white', border: 'none', borderRadius: 'var(--radius-md)',
+                    fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    transition: 'all 0.2s ease',
+                    opacity: loading ? 0.7 : 1
+                  }}
+                >
+                  {loading ? 'ЮКЛАНМОҚДА...' : (authMode === 'login' ? 'КИРИШ' : 'РЎЙХАТДАН ЎТИШ')}
+                </button>
+              </form>
+            )}
             
             <div style={{ 
-              paddingTop: '24px', borderTop: '1px solid var(--border)', 
+              marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--border)', 
               textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)',
               fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px'
             }}>
               © 2026 Pharma Translation Platform
+            </div>
+
+            {/* Developer Bypass */}
+            <div style={{ marginTop: '20px', textAlign: 'center' }}>
+              <button 
+                onClick={() => login('dev-token', { id: 'dev', name: 'Admin (Dev)', role: 'admin', email: 'texnopharm@gmail.com' })}
+                style={{ 
+                  background: 'none', border: '1px dashed var(--border)', 
+                  padding: '8px 16px', borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.7rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600
+                }}
+              >
+                DEVELOPER BYPASS (ADMIN)
+              </button>
             </div>
           </div>
         </div>

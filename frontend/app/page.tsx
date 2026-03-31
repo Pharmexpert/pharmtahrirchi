@@ -13,18 +13,21 @@ import {
   ExternalLink,
   UploadCloud,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react'
 import { useAuth } from '../components/LoginGuard'
 import TableEditor from '../components/TableEditor'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 export default function Dashboard() {
   const { user, token, isAdmin } = useAuth()
+  const searchParams = useSearchParams()
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(searchParams?.get('project') || null)
   const [isUploading, setIsUploading] = useState(false)
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -34,6 +37,7 @@ export default function Dashboard() {
       fetchProjects()
     }
   }, [user, selectedProjectId])
+
 
   const fetchProjects = async () => {
     setLoading(true)

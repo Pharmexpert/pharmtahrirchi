@@ -522,11 +522,12 @@ class ParagraphAligner:
                 "ru_proposed": ru_b["marker"] or "",
                 "uz_proposed": uz_b["marker"] or "",
                 "status": "aligned",
-                "sentence_no": 0,
+                "sentence_no": sentence_counter,
                 "display_no": "",
                 "text_id": text_id,
                 "notes": ""
             })
+            sentence_counter += 1
 
             # Content rows — aligned at PARAGRAPH level
             block_rows = self.align_paragraphs(

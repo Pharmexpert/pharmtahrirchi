@@ -23,7 +23,10 @@ import {
   MousePointer2,
   GripVertical,
   History,
-  Languages
+  Languages,
+  ShieldCheck,
+  Check,
+  X
 } from 'lucide-react'
 import { useAuth } from './LoginGuard'
 
@@ -45,6 +48,15 @@ interface SynonymPopup {
   visible: boolean; x: number; y: number
   word: string; lang: 'ru' | 'uz'; rowIdx: number
   synonyms: string[]; loading: boolean
+}
+
+interface SayqallashAnnotation {
+  from_index: number
+  to_index: number
+  old_value: string
+  new_value: string
+  error_type: string
+  source: string
 }
 
 interface Props {
@@ -472,12 +484,13 @@ export default function TableEditor({ initialData = [], filename = 'Untitled.doc
               onSave={() => saveSingleRow(idx)}
               isSaving={savingRow === idx}
               isImproving={improvingRow?.idx === idx}
-              onImprove={(l) => {
+              onImprove={(l: string) => {
                 setImprovingRow({ idx, lang: l })
-                // ... fetch improvement logic ...
                 setTimeout(() => setImprovingRow(null), 2000)
               }}
               onWordClick={handleWordClick}
+              apiBase={API_BASE}
+              token={token}
             />
           ))}
         </div>
@@ -527,9 +540,53 @@ export default function TableEditor({ initialData = [], filename = 'Untitled.doc
   )
 }
 
-function EditorRow({ row, idx, colWidths, onUpdate, onSave, isSaving, isImproving, onImprove, onWordClick }: any) {
+function EditorRow({ row, idx, colWidths, onUpdate, onSave, isSaving, isImproving, onImprove, onWordClick, apiBase, token }: any) {
   const isMarker = row.type === 'marker'
+  const [sayqallashData, setSayqallashData] = useState<{ annotations: SayqallashAnnotation[]; corrected_text: string; loading: boolean } | null>(null)
   
+  const handleSayqallash = async (text: string) => {
+    setSayqallashData({ annotations: [], corrected_text: '', loading: true })
+    try {
+      const res = await fetch(`${apiBase}/sayqallash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text, lang: 'uz' })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setSayqallashData({ annotations: data.annotations || [], corrected_text: data.corrected_text || text, loading: false })
+      } else {
+        setSayqallashData(null)
+      }
+    } catch {
+      setSayqallashData(null)
+    }
+  }
+
+  const acceptAnnotation = (ann: SayqallashAnnotation) => {
+    const currentVal = row.uz_proposed || row.uz_v1
+    const newVal = currentVal.replace(ann.old_value, ann.new_value)
+    onUpdate(idx, 'uz_proposed', newVal)
+    if (sayqallashData) {
+      setSayqallashData({
+        ...sayqallashData,
+        annotations: sayqallashData.annotations.filter(a => a.from_index !== ann.from_index)
+      })
+    }
+  }
+
+  const acceptAllAnnotations = () => {
+    if (!sayqallashData) return
+    let currentVal = row.uz_proposed || row.uz_v1
+    // Sort by position desc to avoid index shift
+    const sorted = [...sayqallashData.annotations].sort((a, b) => b.from_index - a.from_index)
+    for (const ann of sorted) {
+      currentVal = currentVal.replace(ann.old_value, ann.new_value)
+    }
+    onUpdate(idx, 'uz_proposed', currentVal)
+    setSayqallashData({ ...sayqallashData, annotations: [] })
+  }
+
   if (isMarker) {
     return (
       <div style={{ 
@@ -589,7 +646,7 @@ function EditorRow({ row, idx, colWidths, onUpdate, onSave, isSaving, isImprovin
         onWordClick={(e: any) => onWordClick(e, idx, 'ru')}
       />
 
-      {/* Uzbek Target */}
+      {/* Uzbek Target — with Sayqallash */}
       <TargetCell 
         val={row.uz_proposed || row.uz_v1} 
         v1={row.uz_v1}
@@ -598,6 +655,11 @@ function EditorRow({ row, idx, colWidths, onUpdate, onSave, isSaving, isImprovin
         onImprove={() => onImprove('uz')}
         isImproving={isImproving && row.lang === 'uz'}
         onWordClick={(e: any) => onWordClick(e, idx, 'uz')}
+        onSayqallash={handleSayqallash}
+        sayqallashData={sayqallashData}
+        onAcceptAnnotation={acceptAnnotation}
+        onAcceptAll={acceptAllAnnotations}
+        onDismissSayqallash={() => setSayqallashData(null)}
       />
 
       {/* Notes */}
@@ -617,8 +679,9 @@ function EditorRow({ row, idx, colWidths, onUpdate, onSave, isSaving, isImprovin
   )
 }
 
-function TargetCell({ val, v1, lang, onUpdate, onImprove, isImproving, onWordClick }: any) {
+function TargetCell({ val, v1, lang, onUpdate, onImprove, isImproving, onWordClick, onSayqallash, sayqallashData, onAcceptAnnotation, onAcceptAll, onDismissSayqallash }: any) {
   const isChanged = val !== v1
+  const isUz = lang === 'uz'
   
   return (
     <div style={{ 
@@ -628,28 +691,43 @@ function TargetCell({ val, v1, lang, onUpdate, onImprove, isImproving, onWordCli
       flexDirection: 'column', 
       gap: '12px' 
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
         <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
           {lang.toUpperCase()} {isChanged && <span style={{ color: 'var(--success)', marginLeft: '4px' }}>• Tahrirlangan</span>}
         </div>
-        <button 
-          onClick={onImprove}
-          style={{ 
-            padding: '4px 8px', 
-            background: 'var(--bg-secondary)', 
-            border: '1px solid var(--border)', 
-            borderRadius: '4px', 
-            fontSize: '0.65rem', 
-            fontWeight: 700, 
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          {isImproving ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-          AI Sayqal
-        </button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button 
+            onClick={onImprove}
+            style={{ 
+              padding: '4px 8px', background: 'var(--bg-secondary)', 
+              border: '1px solid var(--border)', borderRadius: '4px', 
+              fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '4px'
+            }}
+          >
+            {isImproving ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+            AI Yaxshilash
+          </button>
+          {isUz && (
+            <button 
+              onClick={() => onSayqallash && onSayqallash(val)}
+              disabled={sayqallashData?.loading}
+              style={{ 
+                padding: '4px 8px', 
+                background: sayqallashData?.annotations?.length ? 'var(--warning-bg)' : 'var(--info-bg)', 
+                border: `1px solid ${sayqallashData?.annotations?.length ? 'rgba(212, 163, 60, 0.3)' : 'rgba(74, 139, 194, 0.2)'}`, 
+                borderRadius: '4px', 
+                fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '4px',
+                color: sayqallashData?.annotations?.length ? 'var(--warning)' : 'var(--info)'
+              }}
+            >
+              {sayqallashData?.loading ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
+              Sayqallash
+              {sayqallashData?.annotations?.length ? ` (${sayqallashData.annotations.length})` : ''}
+            </button>
+          )}
+        </div>
       </div>
       
       <textarea 
@@ -657,28 +735,123 @@ function TargetCell({ val, v1, lang, onUpdate, onImprove, isImproving, onWordCli
         onChange={e => onUpdate(e.target.value)}
         onMouseUp={onWordClick}
         style={{ 
-          width: '100%', 
-          minHeight: '120px', 
-          border: 'none', 
+          width: '100%', minHeight: '120px', border: 'none', 
           background: isChanged ? 'rgba(59, 155, 110, 0.03)' : 'transparent', 
-          fontSize: '0.9rem', 
-          lineHeight: 1.6, 
-          outline: 'none', 
-          resize: 'vertical',
-          padding: '4px',
-          fontFamily: 'inherit'
+          fontSize: '0.9rem', lineHeight: 1.6, outline: 'none', resize: 'vertical',
+          padding: '4px', fontFamily: 'inherit'
         }}
         placeholder="Таржима матни..."
       />
+
+      {/* Sayqallash Annotations Panel */}
+      {isUz && sayqallashData && !sayqallashData.loading && sayqallashData.annotations.length > 0 && (
+        <div style={{ 
+          background: '#FFFBF0', border: '1px solid rgba(212, 163, 60, 0.25)',
+          borderRadius: 'var(--radius-md)', overflow: 'hidden'
+        }}>
+          <div style={{ 
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '8px 12px', background: 'rgba(212, 163, 60, 0.08)', borderBottom: '1px solid rgba(212, 163, 60, 0.15)'
+          }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#A67C30', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              🔍 {sayqallashData.annotations.length} та хатолик топилди
+            </span>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button 
+                onClick={onAcceptAll}
+                style={{ 
+                  padding: '3px 8px', background: 'var(--success)', color: 'white',
+                  border: 'none', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px'
+                }}
+              >
+                <CheckCircle2 size={10} /> Ҳаммасини қабул қилиш
+              </button>
+              <button 
+                onClick={onDismissSayqallash}
+                style={{ 
+                  padding: '3px 6px', background: 'transparent', color: 'var(--text-muted)',
+                  border: '1px solid var(--border)', borderRadius: '4px', fontSize: '0.6rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={10} />
+              </button>
+            </div>
+          </div>
+          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            {sayqallashData.annotations.map((ann: SayqallashAnnotation, i: number) => (
+              <div key={i} style={{ 
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '6px 12px', borderBottom: '1px solid rgba(212, 163, 60, 0.1)',
+                fontSize: '0.78rem'
+              }}>
+                <span style={{ 
+                  fontFamily: 'monospace', padding: '2px 6px', background: 'var(--danger-bg)',
+                  color: 'var(--danger)', borderRadius: '3px', textDecoration: 'line-through',
+                  fontSize: '0.75rem'
+                }}>
+                  {ann.old_value}
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>→</span>
+                <span style={{ 
+                  fontFamily: 'monospace', padding: '2px 6px', background: 'var(--success-bg)',
+                  color: 'var(--success)', borderRadius: '3px', fontWeight: 700,
+                  fontSize: '0.75rem'
+                }}>
+                  {ann.new_value}
+                </span>
+                <span style={{ 
+                  fontSize: '0.6rem', padding: '2px 6px', background: 'var(--bg-secondary)',
+                  borderRadius: '10px', color: 'var(--text-muted)', fontWeight: 600,
+                  marginLeft: 'auto', flexShrink: 0
+                }}>
+                  {ann.error_type}
+                </span>
+                <button 
+                  onClick={() => onAcceptAnnotation(ann)}
+                  title="Қабул қилиш"
+                  style={{ 
+                    padding: '3px 6px', background: 'var(--success-bg)', color: 'var(--success)',
+                    border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0
+                  }}
+                >
+                  <Check size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sayqallash loading indicator */}
+      {isUz && sayqallashData?.loading && (
+        <div style={{ 
+          padding: '12px', textAlign: 'center', background: 'var(--info-bg)',
+          borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--info)', fontWeight: 600
+        }}>
+          <Loader2 size={14} className="animate-spin" />
+          Матн текширилмоқда...
+        </div>
+      )}
+
+      {/* No errors after check */}
+      {isUz && sayqallashData && !sayqallashData.loading && sayqallashData.annotations.length === 0 && (
+        <div style={{ 
+          padding: '8px 12px', textAlign: 'center', background: 'var(--success-bg)',
+          borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--success)', fontWeight: 700
+        }}>
+          <CheckCircle2 size={14} />
+          Хатолик топилмади ✓
+        </div>
+      )}
       
       {isChanged && v1 && (
         <div style={{ 
-          fontSize: '0.75rem', 
-          color: 'var(--text-muted)', 
-          background: 'var(--bg-secondary)', 
-          padding: '8px', 
-          borderRadius: '4px',
-          borderLeft: '2px solid var(--border)'
+          fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-secondary)', 
+          padding: '8px', borderRadius: '4px', borderLeft: '2px solid var(--border)'
         }}>
           <span style={{ fontWeight: 700, display: 'block', marginBottom: '2px' }}>V1 Original:</span>
           {v1}

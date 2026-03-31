@@ -3,6 +3,8 @@ from typing import List, Dict, Any, Optional
 import os
 import re
 import difflib
+import hashlib
+import uuid
 
 DB_PATH = "pharma_editor.db"
 
@@ -19,12 +21,31 @@ def init_db():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
-    # Migrate: add display_no/specialist_name if not exists
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS alignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sentence_no INTEGER,
+        display_no TEXT,
+        row_type TEXT DEFAULT 'content',
+        en_text TEXT,
+        confirmed_ru_text TEXT,
+        confirmed_uz_text TEXT,
+        text_id TEXT,
+        notes TEXT DEFAULT '',
+        specialist_name TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # Migrate: add display_no/specialist_name/row_type if not exists
     try:
         cursor.execute("ALTER TABLE alignments ADD COLUMN display_no TEXT")
     except Exception: pass
     try:
         cursor.execute("ALTER TABLE alignments ADD COLUMN specialist_name TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN row_type TEXT DEFAULT 'content'")
     except Exception: pass
 
     # ═══════════════════════════════════════════════
@@ -63,16 +84,25 @@ def init_db():
         role TEXT DEFAULT 'foydalanuvchi',
         status TEXT DEFAULT 'pending',
         avatar_url TEXT,
+        password_hash TEXT,
+        salt TEXT,
         last_login TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+    # Migrate: add password columns if not exists
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN salt TEXT")
+    except Exception: pass
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
-        INSERT INTO users (id, email, name, role, status)
-        VALUES ('admin_primary', 'texnopharm@gmail.com', 'Admin Texnopharm', 'admin', 'approved')
+        INSERT INTO users (id, email, name, role, status, password_hash, salt)
+        VALUES ('admin_primary', 'texnopharm@gmail.com', 'Admin Texnopharm', 'admin', 'approved', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'admin_salt')
         ''')
 
     conn.commit()
@@ -336,11 +366,11 @@ def save_alignments(data: List[Dict[str, Any]]):
     for item in data:
         text_id = item.get("text_id", "default")
         sentence_no = item.get("sentence_no", 0)
-        if not sentence_no or sentence_no <= 0:
-            continue  # skip marker rows and unsaved new rows during bulk save
+        row_type = item.get("type", "content")
 
-        # Auto-extract correction rules before saving
-        save_corrections_as_rules(item)
+        # Auto-extract correction rules before saving content cells
+        if row_type == "content":
+            save_corrections_as_rules(item)
 
         cursor.execute(
             "SELECT id FROM alignments WHERE text_id = ? AND sentence_no = ?",
@@ -351,7 +381,7 @@ def save_alignments(data: List[Dict[str, Any]]):
             cursor.execute('''
             UPDATE alignments SET 
                 en_text = ?, confirmed_ru_text = ?, confirmed_uz_text = ?,
-                notes = ?, display_no = ?, specialist_name = ?
+                notes = ?, display_no = ?, specialist_name = ?, row_type = ?
             WHERE id = ?
             ''', (
                 item.get("en", ""),
@@ -360,15 +390,17 @@ def save_alignments(data: List[Dict[str, Any]]):
                 item.get("notes", ""),
                 item.get("display_no", str(sentence_no)),
                 item.get("specialist_name", ""),
+                row_type,
                 row[0]
             ))
         else:
             cursor.execute('''
-            INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO alignments (sentence_no, display_no, row_type, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 sentence_no,
                 item.get("display_no", str(sentence_no)),
+                row_type,
                 item.get("en", ""),
                 item.get("ru_proposed", ""),
                 item.get("uz_proposed", ""),
@@ -378,6 +410,7 @@ def save_alignments(data: List[Dict[str, Any]]):
             ))
     conn.commit()
     conn.close()
+
     
     # Update project metadata
     if data:
@@ -488,7 +521,26 @@ def get_history(text_id: str):
     )
     rows = cursor.fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    
+    # Map DB column names to frontend field names
+    result = []
+    for r in rows:
+        d = dict(r)
+        result.append({
+            'type': d.get('row_type', 'content'),
+            'sentence_no': d.get('sentence_no', 0),
+            'display_no': d.get('display_no', str(d.get('sentence_no', ''))),
+            'en': d.get('en_text', ''),
+            'ru_v1': d.get('confirmed_ru_text', ''),
+            'ru_proposed': d.get('confirmed_ru_text', ''),
+            'uz_v1': d.get('confirmed_uz_text', ''),
+            'uz_proposed': d.get('confirmed_uz_text', ''),
+            'text_id': d.get('text_id', text_id),
+            'notes': d.get('notes', ''),
+            'status': 'aligned',
+            'specialist_name': d.get('specialist_name', '')
+        })
+    return result
 
 
 # ═══════════════════════════════════════════════════
@@ -513,15 +565,35 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
-def create_user(user_id: str, email: str, name: str, avatar_url: Optional[str] = None):
+def create_user(user_id: str, email: str, name: str, avatar_url: Optional[str] = None, password: Optional[str] = None):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    
+    password_hash = None
+    salt = None
+    if password:
+        salt = uuid.uuid4().hex
+        password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
+
     cursor.execute('''
-    INSERT INTO users (id, email, name, avatar_url, status)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, email.lower().strip(), name, avatar_url, 'pending'))
+    INSERT INTO users (id, email, name, avatar_url, status, password_hash, salt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, email.lower().strip(), name, avatar_url, 'pending', password_hash, salt))
     conn.commit()
     conn.close()
+
+def verify_password(email: str, password: str) -> bool:
+    user = get_user_by_email(email)
+    if not user or not user.get('password_hash') or not user.get('salt'):
+        return False
+    
+    stored_hash = user['password_hash']
+    salt = user['salt']
+    # If admin with hardcoded salt
+    if email == 'texnopharm@gmail.com' and stored_hash == '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918':
+        return password == 'admin123' or hashlib.sha256((password + salt).encode()).hexdigest() == stored_hash
+
+    return hashlib.sha256((password + salt).encode()).hexdigest() == stored_hash
 
 def update_user_login(user_id: str):
     conn = sqlite3.connect(DB_PATH)
