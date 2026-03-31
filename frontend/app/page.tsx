@@ -13,6 +13,9 @@ export default function Home() {
   const [filename, setFilename] = useState<string>('')
   const [textId, setTextId] = useState<string>('')
   const [readyMode, setReadyMode] = useState(false)
+ 
+  // Determine API URL (Local vs Production)
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const [uploadProgress, setUploadProgress] = useState(0)
  
@@ -39,7 +42,7 @@ export default function Home() {
     formData.append('text_id', textId.trim())
  
     try {
-      const url = `http://localhost:8000/upload?mode=${readyMode ? 'ready' : 'auto'}`
+      const url = `${API_BASE}/upload?mode=${readyMode ? 'ready' : 'auto'}`
       
       // Use XMLHttpRequest for progress tracking
       const xhr = new XMLHttpRequest()

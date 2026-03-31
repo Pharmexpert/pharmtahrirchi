@@ -33,7 +33,7 @@ export default function RulesPage() {
   const [editingRule, setEditingRule] = useState<Partial<Rule> | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = (typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_API_URL) || "http://localhost:8000";
 
   useEffect(() => {
     fetchRules();
