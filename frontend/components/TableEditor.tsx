@@ -31,6 +31,8 @@ interface Props {
 }
 
 export default function TableEditor({ initialData, filename, textId = '' }: Props) {
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   const [data, setData] = useState<RowData[]>(
     initialData.map(r => ({ ...r, display_no: r.display_no || String(r.sentence_no || '') }))
   )
