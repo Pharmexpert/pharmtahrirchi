@@ -148,7 +148,7 @@ export default function Home() {
         method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
       })
       setProjects(projects.filter(p => p.id !== id))
-    } catch {}
+    } catch (_e) {}
   }
  
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {

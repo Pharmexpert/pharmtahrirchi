@@ -56,7 +56,7 @@ export default function RulesPage() {
         setRules(rules.filter(r => r.id !== id))
         showMessage('Qoida muvaffaqiyatli o\'chirildi')
       }
-    } catch { showMessage("O'chirishda xatolik", 'error') }
+    } catch (_e) { showMessage("O'chirishda xatolik", 'error') }
   }
 
   const handleSave = async () => {
@@ -75,7 +75,7 @@ export default function RulesPage() {
         setEditingRule(null)
         showMessage(isNew ? 'Yangi qoida qo\'shildi' : 'Qoida yangilandi')
       }
-    } catch { showMessage('Saqlashda xatolik', 'error') }
+    } catch (_e) { showMessage('Saqlashda xatolik', 'error') }
   }
 
   const filteredRules = rules.filter(r =>

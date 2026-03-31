@@ -55,7 +55,7 @@ export default function HistoryPage() {
       if (res.ok) {
         setProjects(projects.filter(p => p.id !== id))
       }
-    } catch {}
+    } catch (_e) {}
   }
 
   const filteredProjects = projects.filter(p => {
@@ -71,7 +71,7 @@ export default function HistoryPage() {
       return new Date(dateStr).toLocaleDateString('uz-UZ', { 
         day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
       })
-    } catch { return dateStr }
+    } catch (_e) { return dateStr }
   }
 
   if (loading) {

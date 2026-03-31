@@ -63,7 +63,7 @@ export default function AdminPage() {
       if (res.ok) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u))
       }
-    } catch {}
+    } catch (_e) {}
   }
 
   const handleRoleChange = async (userId: string, role: string) => {
@@ -79,7 +79,7 @@ export default function AdminPage() {
       if (res.ok) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
       }
-    } catch {}
+    } catch (_e) {}
   }
 
   const filteredUsers = users.filter(u => {

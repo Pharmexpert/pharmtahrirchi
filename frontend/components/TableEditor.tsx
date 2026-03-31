@@ -154,7 +154,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         await fetch(`${API_BASE}/delete-row/${encodeURIComponent(row.text_id)}/${row.sentence_no}`, { 
           method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
         })
-      } catch { /* ignore */ }
+      } catch (_e) { /* ignore */ }
     }
     setData(prev => prev.filter((_, i) => i !== idx))
     notify('Gap #' + row.display_no + ' ochirildi')
@@ -191,7 +191,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       if (!res.ok) throw new Error()
       const r = await res.json()
       setPopup(p => ({ ...p, synonyms: r.variants || r.synonyms || [], loading: false }))
-    } catch { setPopup(p => ({ ...p, loading: false, synonyms: [] })) }
+    } catch (_e) { setPopup(p => ({ ...p, loading: false, synonyms: [] })) }
   }
 
   const applyVariant = (v: string) => {
@@ -235,7 +235,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         return d
       })
       notify(`${lang.toUpperCase()} #${data[idx].display_no} yaxshilandi`)
-    } catch { notify('AI xatolik') }
+    } catch (_e) { notify('AI xatolik') }
     finally { setImprovingRow(null) }
   }
 
@@ -261,7 +261,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
           })
           if (nRes.ok) { const nr = await nRes.json(); if (nr.notes) autoNotes += nr.notes + '\n' }
         }
-      } catch {}
+      } catch (_e) {}
 
       let finalNotes = row.notes || ''
       if (autoNotes && !finalNotes.includes(autoNotes.trim().split('\n')[0])) {
@@ -279,7 +279,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         setData(prev => { const d = [...prev]; d[idx] = { ...d[idx], sentence_no: r.new_id }; return d })
       }
       notify('Gap #' + data[idx].display_no + ' saqlandi ✓ Qoidalar yangilandi')
-    } catch { notify('Saqlash xatolik') }
+    } catch (_e) { notify('Saqlash xatolik') }
     finally { setSavingRow(null) }
   }
 
@@ -295,7 +295,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       const r = await res.json()
       setData(r.data)
       notify('AI moslashtirildi')
-    } catch { notify('AI xatolik') }
+    } catch (_e) { notify('AI xatolik') }
     finally { setIsAiAligning(false) }
   }
 
@@ -308,7 +308,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       })
       if (!res.ok) throw new Error()
       notify('Barchasi saqlandi')
-    } catch { notify('Saqlash xatolik') }
+    } catch (_e) { notify('Saqlash xatolik') }
     finally { setSavingAll(false) }
   }
 
@@ -342,7 +342,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       a.click()
       setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url) }, 200)
       notify('DOCX yuklandi: ' + downloadName)
-    } catch { notify('Export xatolik') }
+    } catch (_e) { notify('Export xatolik') }
   }
 
   // Magic Split
@@ -367,7 +367,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         setData(prev => { const d = [...prev]; d.splice(idx, 1, row1, row2); return d })
         notify('Fallback bo\'lish')
       }
-    } catch { notify('Xatolik') }
+    } catch (_e) { notify('Xatolik') }
     finally { setSavingRow(null) }
   }
 
@@ -607,7 +607,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
       if (onBlockDrop && (from.rowIdx !== rowIdx || from.field !== toField)) {
         onBlockDrop(from.rowIdx, `${from.lang}_${from.field}`, rowIdx, `${lang}_${toField}`)
       }
-    } catch {}
+    } catch (_e) {}
   }
 
   const runSayqallash = async () => {
@@ -624,7 +624,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
       setAnnotations(r.annotations || [])
       setShowAnnotations(true)
       setRulesCount(r.rules_count || 0)
-    } catch { setAnnotations([]) }
+    } catch (_e) { setAnnotations([]) }
     finally { setIsSayqallash(false) }
   }
 
