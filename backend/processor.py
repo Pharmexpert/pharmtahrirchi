@@ -253,7 +253,14 @@ class ParagraphAligner:
             uz_center = round(i * len(uz_items) / n_en) if len(uz_items) > 0 else 0
             
             ri = find_best(en, ru_items, used_ru, ru_center)
-            ui = find_best(en, uz_items, used_uz, uz_center)
+            
+            # Priority logic: Match UZ to EN if EN exists, else match UZ to RU
+            if en.strip():
+                ui = find_best(en, uz_items, used_uz, uz_center)
+            elif ri != -1 and ru_items[ri].strip():
+                ui = find_best(ru_items[ri], uz_items, used_uz, uz_center)
+            else:
+                ui = find_best(en, uz_items, used_uz, uz_center)
             
             if ri != -1: used_ru.add(ri)
             if ui != -1: used_uz.add(ui)

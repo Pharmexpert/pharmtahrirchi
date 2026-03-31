@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +11,11 @@ import db
 from processor import ParagraphAligner, export_to_docx
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import jwt
+import requests
+from datetime import datetime, timedelta
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.requests import Request
 
 load_dotenv()
 
@@ -25,6 +30,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 TEMP_DIR = "temp_files"
@@ -33,6 +39,30 @@ os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 
 # Serve extracted images as static files
 app.mount("/static", StaticFiles(directory=TEMP_DIR), name="static")
+
+# Security constants
+JWT_SECRET = os.getenv("JWT_SECRET", "pharma_secret_key_2026")
+JWT_ALGORITHM = "HS256"
+GOOGLE_CLIENT_ID = "1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com"
+
+security = HTTPBearer()
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=7)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(res: HTTPAuthorizationCredentials = Request):
+    # This is a helper, but we'll use a more standard FastAPI dependency
+    pass
+
+def verify_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except:
+        return None
 
 # Initialize Anthropic client
 _anthropic_client = None
@@ -149,7 +179,7 @@ Rules:
                                 blk["rows"][en_idx]["ru_proposed"] = aln.get("ru", blk["rows"][en_idx].get("ru_proposed", ""))
                                 blk["rows"][en_idx]["uz_proposed"] = aln.get("uz", blk["rows"][en_idx].get("uz_proposed", ""))
         except Exception as e:
-            print(f"AI alignment error for batch {batch_start}: {e} — keeping proportional alignment")
+            print(f"AI alignment error for batch {batch_start}: {e} вЂ” keeping proportional alignment")
 
         aligned_blocks.extend(batch)
 
@@ -175,36 +205,46 @@ async def improve_row(payload: Dict[str, Any]):
     uz_text = payload.get("uz_proposed", "") or payload.get("uz_v1", "")
     target_lang = payload.get("target_lang", "")  # 'ru', 'uz', or '' for both
     
-    EXPERT_SYSTEM_PROMPT = """Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир ва таржимонсиз.
+    EXPERT_SYSTEM_PROMPT = """Role: РЎРёР· С„Р°СЂРјР°РєРѕР»РѕРіРёСЏ РІР° С…Р°Р»Т›Р°СЂРѕ СЃС‚Р°РЅРґР°СЂС‚Р»Р°СЂ (Pharmacopoeia, GMP, ISO) Р±СћР№РёС‡Р° СЋТ›РѕСЂРё РјР°Р»Р°РєР°Р»Рё СЌРєСЃРїРµСЂС‚-РјСѓТіР°СЂСЂРёСЂ РІР° С‚Р°СЂР¶РёРјРѕРЅСЃРёР·.
 
-Task: Сизга берилган инглиз тилидаги ОРИГИНАЛ (Ground Truth) матн ҳамда унинг таржимасини ўзаро солиштириб, илмий таҳрир қилинг.
+Task: РЎРёР·РіР° Р±РµСЂРёР»РіР°РЅ РёРЅРіР»РёР· С‚РёР»РёРґР°РіРё РћР РР“РРќРђР› (Ground Truth) РјР°С‚РЅ ТіР°РјРґР° СѓРЅРёРЅРі С‚Р°СЂР¶РёРјР°СЃРёРЅРё СћР·Р°СЂРѕ СЃРѕР»РёС€С‚РёСЂРёР±, РёР»РјРёР№ С‚Р°ТіСЂРёСЂ Т›РёР»РёРЅРі.
 
-Илмий таҳрир мезонлари:
-1. Инглизча матн - асосий манба. Таржима унинг маъносини ва фармацевтик терминологиясини 100% аниқликда ифодалаши шарт.
-2. Услуб - матн қатъий равишда фармакопея мақолалари услубида, илмий ва терминологик жиҳатдан бенуқсон бўлиши керак.
-3. Агар таржимада инглизча асл матнга зид ёки ноаниқ жойлар бўлса, уларни инглизча матнга мувофиқлаштириб тузатинг.
+РР»РјРёР№ С‚Р°ТіСЂРёСЂ РјРµР·РѕРЅР»Р°СЂРё:
+1. РРЅРіР»РёР·С‡Р° РјР°С‚РЅ - Р°СЃРѕСЃРёР№ РјР°РЅР±Р°. РўР°СЂР¶РёРјР° СѓРЅРёРЅРі РјР°СЉРЅРѕСЃРёРЅРё РІР° С„Р°СЂРјР°С†РµРІС‚РёРє С‚РµСЂРјРёРЅРѕР»РѕРіРёСЏСЃРёРЅРё 100% Р°РЅРёТ›Р»РёРєРґР° РёС„РѕРґР°Р»Р°С€Рё С€Р°СЂС‚.
+2. РЈСЃР»СѓР± - РјР°С‚РЅ Т›Р°С‚СЉРёР№ СЂР°РІРёС€РґР° С„Р°СЂРјР°РєРѕРїРµСЏ РјР°Т›РѕР»Р°Р»Р°СЂРё СѓСЃР»СѓР±РёРґР°, РёР»РјРёР№ РІР° С‚РµСЂРјРёРЅРѕР»РѕРіРёРє Р¶РёТіР°С‚РґР°РЅ Р±РµРЅСѓТ›СЃРѕРЅ Р±СћР»РёС€Рё РєРµСЂР°Рє.
+3. РђРіР°СЂ С‚Р°СЂР¶РёРјР°РґР° РёРЅРіР»РёР·С‡Р° Р°СЃР» РјР°С‚РЅРіР° Р·РёРґ С‘РєРё РЅРѕР°РЅРёТ› Р¶РѕР№Р»Р°СЂ Р±СћР»СЃР°, СѓР»Р°СЂРЅРё РёРЅРіР»РёР·С‡Р° РјР°С‚РЅРіР° РјСѓРІРѕС„РёТ›Р»Р°С€С‚РёСЂРёР± С‚СѓР·Р°С‚РёРЅРі.
 
-Ўзгартирилган сўз ёки иборалар КИРИЛЛЧА ёзувида <b>...тегларда</b> ажратиб кўрсатилсин."""
+РЋР·РіР°СЂС‚РёСЂРёР»РіР°РЅ СЃСћР· С‘РєРё РёР±РѕСЂР°Р»Р°СЂ РљРР РР›Р›Р§Рђ С‘Р·СѓРІРёРґР° <b>...С‚РµРіР»Р°СЂРґР°</b> Р°Р¶СЂР°С‚РёР± РєСћСЂСЃР°С‚РёР»СЃРёРЅ."""
+    
+    # New Rule: If English is empty but Russian exists, use Russian as source for Uzbek
+    is_russian_only = not en_text.strip() and ru_text.strip()
     
     if target_lang == 'ru':
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Русча матн (таҳрир учун лойиҳа): {ru_text}
+        user_prompt = f"""РРЅРіР»РёР·С‡Р° РјР°С‚РЅ (РђРЎРћРЎРР™ РњРђРќР‘Рђ): {en_text}
+Р СѓСЃС‡Р° РјР°С‚РЅ (С‚Р°ТіСЂРёСЂ СѓС‡СѓРЅ Р»РѕР№РёТіР°): {ru_text}
 
-ФАҚАТ рус тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
-{{"ru_v2": "инглизча матнга мос тўғриланган рус матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
+Р¤РђТљРђРў СЂСѓСЃ С‚РёР»РёРґР°РіРё РјР°С‚РЅРЅРё РёРЅРіР»РёР·С‡Р° Р°СЃР» РјР°С‚РЅРіР° Р°СЃРѕСЃР»Р°РЅРёР±, РёР»РјРёР№ Р¶РёТіР°С‚РґР°РЅ С‚Р°ТіСЂРёСЂ Т›РёР»РёРЅРі РІР° JSON С„РѕСЂРјР°С‚РёРґР° Т›Р°Р№С‚Р°СЂРёРЅРі:
+{{"ru_v2": "РёРЅРіР»РёР·С‡Р° РјР°С‚РЅРіР° РјРѕСЃ С‚СћТ“СЂРёР»Р°РЅРіР°РЅ СЂСѓСЃ РјР°С‚РЅ", "rationale": "РЅРµРіР° Р°Р№РЅР°РЅ С€СѓРЅРґР°Р№ С‚СѓР·Р°С‚РёР»РґРё (С‚РµСЂРјРёРЅРіР° Р°СЃРѕСЃ)"}}"""
     elif target_lang == 'uz':
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Ўзбекча матн (таҳрир учун лойиҳа): {uz_text}
+        if is_russian_only:
+            user_prompt = f"""Р СѓСЃС‡Р° РјР°С‚РЅ (РђРЎРћРЎРР™ РњРђРќР‘Рђ): {ru_text}
+РЋР·Р±РµРєС‡Р° РјР°С‚РЅ (С‚Р°ТіСЂРёСЂ СѓС‡СѓРЅ Р»РѕР№РёТіР°): {uz_text}
 
-ФАҚАТ ўзбек тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
-{{"uz_v2": "инглизча матнга мос тўғриланган ўзбек матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
+РњР°С‚РЅ С„Р°Т›Р°С‚ СЂСѓСЃ С‚РёР»РёРґР° Р±СћР»РіР°РЅР»РёРіРё СЃР°Р±Р°Р±Р»Рё, СћР·Р±РµРє С‚РёР»РёРґР°РіРё РјР°С‚РЅРЅРё Р РЈРЎР§Рђ Р°СЃР» РјР°С‚РЅРіР° Р°СЃРѕСЃР»Р°РЅРёР±, РёР»РјРёР№ Р¶РёТіР°С‚РґР°РЅ С‚Р°ТіСЂРёСЂ Т›РёР»РёРЅРі РІР° JSON С„РѕСЂРјР°С‚РёРґР° Т›Р°Р№С‚Р°СЂРёРЅРі:
+{{"uz_v2": "СЂСѓСЃС‡Р° РјР°С‚РЅРіР° РјРѕСЃ С‚СћТ“СЂРёР»Р°РЅРіР°РЅ СћР·Р±РµРє РјР°С‚РЅ", "rationale": "СЂСѓСЃС‡Р° РјР°С‚РЅРґР°РЅ РєРµР»РёР± С‡РёТ›РёР± РЅРµРіР° Р°Р№РЅР°РЅ С€СѓРЅРґР°Р№ С‚СѓР·Р°С‚РёР»РґРё"}}"""
+        else:
+            user_prompt = f"""РРЅРіР»РёР·С‡Р° РјР°С‚РЅ (РђРЎРћРЎРР™ РњРђРќР‘Рђ): {en_text}
+РЋР·Р±РµРєС‡Р° РјР°С‚РЅ (С‚Р°ТіСЂРёСЂ СѓС‡СѓРЅ Р»РѕР№РёТіР°): {uz_text}
+
+Р¤РђТљРђРў СћР·Р±РµРє С‚РёР»РёРґР°РіРё РјР°С‚РЅРЅРё РёРЅРіР»РёР·С‡Р° Р°СЃР» РјР°С‚РЅРіР° Р°СЃРѕСЃР»Р°РЅРёР±, РёР»РјРёР№ Р¶РёТіР°С‚РґР°РЅ С‚Р°ТіСЂРёСЂ Т›РёР»РёРЅРі РІР° JSON С„РѕСЂРјР°С‚РёРґР° Т›Р°Р№С‚Р°СЂРёРЅРі:
+{{"uz_v2": "РёРЅРіР»РёР·С‡Р° РјР°С‚РЅРіР° РјРѕСЃ С‚СћТ“СЂРёР»Р°РЅРіР°РЅ СћР·Р±РµРє РјР°С‚РЅ", "rationale": "РЅРµРіР° Р°Р№РЅР°РЅ С€СѓРЅРґР°Р№ С‚СѓР·Р°С‚РёР»РґРё (С‚РµСЂРјРёРЅРіР° Р°СЃРѕСЃ)"}}"""
     else:
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Русча матн: {ru_text}
-Ўзбекча матн: {uz_text}
+        user_prompt = f"""РРЅРіР»РёР·С‡Р° РјР°С‚РЅ (РђРЎРћРЎРР™ РњРђРќР‘Рђ): {en_text}
+Р СѓСЃС‡Р° РјР°С‚РЅ: {ru_text}
+РЋР·Р±РµРєС‡Р° РјР°С‚РЅ: {uz_text}
 
-Иккала тилдаги матнни ҳам инглизча асл матнга асосланиб, таҳрир қилинг ва JSON форматида қайтаринг:
-{{"ru_v2": "тўғриланган рус матн", "uz_v2": "тўғриланган ўзбек матн", "rationale": "тузатишлар изоҳи"}}"""
+РРєРєР°Р»Р° С‚РёР»РґР°РіРё РјР°С‚РЅРЅРё ТіР°Рј РёРЅРіР»РёР·С‡Р° Р°СЃР» РјР°С‚РЅРіР° Р°СЃРѕСЃР»Р°РЅРёР±, С‚Р°ТіСЂРёСЂ Т›РёР»РёРЅРі РІР° JSON С„РѕСЂРјР°С‚РёРґР° Т›Р°Р№С‚Р°СЂРёРЅРі:
+{{"ru_v2": "С‚СћТ“СЂРёР»Р°РЅРіР°РЅ СЂСѓСЃ РјР°С‚РЅ", "uz_v2": "С‚СћТ“СЂРёР»Р°РЅРіР°РЅ СћР·Р±РµРє РјР°С‚РЅ", "rationale": "С‚СѓР·Р°С‚РёС€Р»Р°СЂ РёР·РѕТіРё"}}"""
 
     try:
         response = client.messages.create(
@@ -231,7 +271,7 @@ Task: Сизга берилган инглиз тилидаги ОРИГИНАЛ
 async def suggest_edits(payload: Dict[str, Any]):
     """
     Returns 5 optimal edit variants for the selected phrase,
-    ranked by probability (highest → lowest),
+    ranked by probability (highest в†’ lowest),
     using the pharmaceutical expert prompt context.
     """
     client = get_client()
@@ -243,25 +283,25 @@ async def suggest_edits(payload: Dict[str, Any]):
     context_en  = payload.get("context_en", payload.get("context", ""))
     context_ru  = payload.get("context_ru", "")
     context_uz  = payload.get("context_uz", "")
-    lang_label  = "рус" if lang == "ru" else "ўзбек"
+    lang_label  = "СЂСѓСЃ" if lang == "ru" else "СћР·Р±РµРє"
     current_txt = context_ru if lang == "ru" else context_uz
 
-    prompt = f"""Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир сизсиз.
+    prompt = f"""Role: РЎРёР· С„Р°СЂРјР°РєРѕР»РѕРіРёСЏ РІР° С…Р°Р»Т›Р°СЂРѕ СЃС‚Р°РЅРґР°СЂС‚Р»Р°СЂ (Pharmacopoeia, GMP, ISO) Р±СћР№РёС‡Р° СЋТ›РѕСЂРё РјР°Р»Р°РєР°Р»Рё СЌРєСЃРїРµСЂС‚-РјСѓТіР°СЂСЂРёСЂ СЃРёР·СЃРёР·.
 
-Инглизча оригинал гап: {context_en}
-Таҳрир қилинаётган {lang_label} матн: {current_txt}
-Танланган ифода: "{word}"
+РРЅРіР»РёР·С‡Р° РѕСЂРёРіРёРЅР°Р» РіР°Рї: {context_en}
+РўР°ТіСЂРёСЂ Т›РёР»РёРЅР°С‘С‚РіР°РЅ {lang_label} РјР°С‚РЅ: {current_txt}
+РўР°РЅР»Р°РЅРіР°РЅ РёС„РѕРґР°: "{word}"
 
-Task: Ушbu танланган ифода учун матннинг тўлиқ контекстидан ва инглизча оригиналдан келиб чиқиб, фармакология стандартларига мос, илмий жиҳатдан оптимал таҳрир вариантларини эҳтимоллик юқоридан пастга қараб 5 та беринг.
+Task: РЈС€bu С‚Р°РЅР»Р°РЅРіР°РЅ РёС„РѕРґР° СѓС‡СѓРЅ РјР°С‚РЅРЅРёРЅРі С‚СћР»РёТ› РєРѕРЅС‚РµРєСЃС‚РёРґР°РЅ РІР° РёРЅРіР»РёР·С‡Р° РѕСЂРёРіРёРЅР°Р»РґР°РЅ РєРµР»РёР± С‡РёТ›РёР±, С„Р°СЂРјР°РєРѕР»РѕРіРёСЏ СЃС‚Р°РЅРґР°СЂС‚Р»Р°СЂРёРіР° РјРѕСЃ, РёР»РјРёР№ Р¶РёТіР°С‚РґР°РЅ РѕРїС‚РёРјР°Р» С‚Р°ТіСЂРёСЂ РІР°СЂРёР°РЅС‚Р»Р°СЂРёРЅРё СЌТіС‚РёРјРѕР»Р»РёРє СЋТ›РѕСЂРёРґР°РЅ РїР°СЃС‚РіР° Т›Р°СЂР°Р± 5 С‚Р° Р±РµСЂРёРЅРі.
 
-Мезонлар (промт йўриқномасига амал қилинг):
-1. Фармакопея терминологиясига мослик
-2. Инглизча оригинал билан маъновий мувофиқлик  
-3. {lang_label} илмий услуб ва стилистика
-4. Грамматик аниқлик
+РњРµР·РѕРЅР»Р°СЂ (РїСЂРѕРјС‚ Р№СћСЂРёТ›РЅРѕРјР°СЃРёРіР° Р°РјР°Р» Т›РёР»РёРЅРі):
+1. Р¤Р°СЂРјР°РєРѕРїРµСЏ С‚РµСЂРјРёРЅРѕР»РѕРіРёСЏСЃРёРіР° РјРѕСЃР»РёРє
+2. РРЅРіР»РёР·С‡Р° РѕСЂРёРіРёРЅР°Р» Р±РёР»Р°РЅ РјР°СЉРЅРѕРІРёР№ РјСѓРІРѕС„РёТ›Р»РёРє  
+3. {lang_label} РёР»РјРёР№ СѓСЃР»СѓР± РІР° СЃС‚РёР»РёСЃС‚РёРєР°
+4. Р“СЂР°РјРјР°С‚РёРє Р°РЅРёТ›Р»РёРє
 
-Фақат JSON форматида жавоб беринг:
-{{"variants": ["энг эҳтимолли", "2-вариант", "3-вариант", "4-вариант", "5-вариант"], "note": "қисқача асослама"}}"""
+Р¤Р°Т›Р°С‚ JSON С„РѕСЂРјР°С‚РёРґР° Р¶Р°РІРѕР± Р±РµСЂРёРЅРі:
+{{"variants": ["СЌРЅРі СЌТіС‚РёРјРѕР»Р»Рё", "2-РІР°СЂРёР°РЅС‚", "3-РІР°СЂРёР°РЅС‚", "4-РІР°СЂРёР°РЅС‚", "5-РІР°СЂРёР°РЅС‚"], "note": "Т›РёСЃТ›Р°С‡Р° Р°СЃРѕСЃР»Р°РјР°"}}"""
 
     try:
         response = client.messages.create(
@@ -293,11 +333,11 @@ async def sayqallash(payload: Dict[str, Any]):
     if not text:
         return {"annotations": [], "corrected_text": "", "rules_count": 0}
 
-    # ── Step 1: Check local rules database first ──
+    # в”Ђв”Ђ Step 1: Check local rules database first в”Ђв”Ђ
     local_annotations = db.get_rules_for_text(text, lang)
     rules_count = db.get_rules_count(lang)
 
-    # ── Step 2: Call AI for comprehensive check ──
+    # в”Ђв”Ђ Step 2: Call AI for comprehensive check в”Ђв”Ђ
     client = get_client()
     ai_annotations = []
     corrected_text = text
@@ -307,40 +347,40 @@ async def sayqallash(payload: Dict[str, Any]):
         known_rules = db.get_all_rules(lang, limit=50)
         rules_examples = ""
         if known_rules:
-            examples = [f"  «{r['wrong_form']}» → «{r['correct_form']}» [{r['error_type']}]" 
+            examples = [f"  В«{r['wrong_form']}В» в†’ В«{r['correct_form']}В» [{r['error_type']}]" 
                        for r in known_rules[:20]]
-            rules_examples = f"\n\nОлдинги тузатишлар базасидан намуналар (буларни ҳисобга олинг):\n" + "\n".join(examples)
+            rules_examples = f"\n\nРћР»РґРёРЅРіРё С‚СѓР·Р°С‚РёС€Р»Р°СЂ Р±Р°Р·Р°СЃРёРґР°РЅ РЅР°РјСѓРЅР°Р»Р°СЂ (Р±СѓР»Р°СЂРЅРё ТіРёСЃРѕР±РіР° РѕР»РёРЅРі):\n" + "\n".join(examples)
 
-        SAYQALLASH_PROMPT = f"""Сиз ўзбек тили грамматикаси, имлоси ва фармацевтик терминология бўйича юқори малакали эксперт-таҳрирчисиз.
+        SAYQALLASH_PROMPT = f"""РЎРёР· СћР·Р±РµРє С‚РёР»Рё РіСЂР°РјРјР°С‚РёРєР°СЃРё, РёРјР»РѕСЃРё РІР° С„Р°СЂРјР°С†РµРІС‚РёРє С‚РµСЂРјРёРЅРѕР»РѕРіРёСЏ Р±СћР№РёС‡Р° СЋТ›РѕСЂРё РјР°Р»Р°РєР°Р»Рё СЌРєСЃРїРµСЂС‚-С‚Р°ТіСЂРёСЂС‡РёСЃРёР·.
 
-Сизга ўзбекча матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг.
+РЎРёР·РіР° СћР·Р±РµРєС‡Р° РјР°С‚РЅ Р±РµСЂРёР»РіР°РЅ. РЈРЅРґР°РіРё Р‘РђР Р§Рђ С…Р°С‚РѕР»РёРєР»Р°СЂРЅРё С‚СћР»РёТ› Р°РЅРёТ›Р»Р°РЅРі.
  
-МУҲИМ: Фармацевтик матнларда ҳарф тушиб қолиши (масалан: "синаладган" -> "синаладиган") энг кўп учрайдиган хато. Ҳар бир сўзнинг морфологик тузилишини ЭЪТИБОР билан текширинг.
+РњРЈТІРРњ: Р¤Р°СЂРјР°С†РµРІС‚РёРє РјР°С‚РЅР»Р°СЂРґР° ТіР°СЂС„ С‚СѓС€РёР± Т›РѕР»РёС€Рё (РјР°СЃР°Р»Р°РЅ: "СЃРёРЅР°Р»Р°РґРіР°РЅ" -> "СЃРёРЅР°Р»Р°РґРёРіР°РЅ") СЌРЅРі РєСћРї СѓС‡СЂР°Р№РґРёРіР°РЅ С…Р°С‚Рѕ. ТІР°СЂ Р±РёСЂ СЃСћР·РЅРёРЅРі РјРѕСЂС„РѕР»РѕРіРёРє С‚СѓР·РёР»РёС€РёРЅРё Р­РЄРўРР‘РћР  Р±РёР»Р°РЅ С‚РµРєС€РёСЂРёРЅРі.
  
-Хато турлари:
-- Имловий хатолар (S/Spelling) — ТУШИБ ҚОЛГАН ҲАРФЛАРГА алоҳида эътибор беринг!
-- Контекстга номос сўз (S/Context)
-- Катта/кичик ҳарф (S/LowerUpper)
-- Тиниш белгилари (Punctuation)
-- Келишик қўшимчалари (G/Case)
-- Эгалик қўшимчалари (G/Possessive)  
-- Бирга ёзиш (G/Merge)
-- Ажратиб ёзиш (G/Split)
-- Замон шакли (G/VerbTense)
-- Бошқа грамматик хато (G/Other)
-- Аниқлик/маъно (F/Clarity)
-- Услубий хато (F/Style)
-- Калька таржима (F/Calque)
+РҐР°С‚Рѕ С‚СѓСЂР»Р°СЂРё:
+- РРјР»РѕРІРёР№ С…Р°С‚РѕР»Р°СЂ (S/Spelling) вЂ” РўРЈРЁРР‘ ТљРћР›Р“РђРќ ТІРђР Р¤Р›РђР Р“Рђ Р°Р»РѕТіРёРґР° СЌСЉС‚РёР±РѕСЂ Р±РµСЂРёРЅРі!
+- РљРѕРЅС‚РµРєСЃС‚РіР° РЅРѕРјРѕСЃ СЃСћР· (S/Context)
+- РљР°С‚С‚Р°/РєРёС‡РёРє ТіР°СЂС„ (S/LowerUpper)
+- РўРёРЅРёС€ Р±РµР»РіРёР»Р°СЂРё (Punctuation)
+- РљРµР»РёС€РёРє Т›СћС€РёРјС‡Р°Р»Р°СЂРё (G/Case)
+- Р­РіР°Р»РёРє Т›СћС€РёРјС‡Р°Р»Р°СЂРё (G/Possessive)  
+- Р‘РёСЂРіР° С‘Р·РёС€ (G/Merge)
+- РђР¶СЂР°С‚РёР± С‘Р·РёС€ (G/Split)
+- Р—Р°РјРѕРЅ С€Р°РєР»Рё (G/VerbTense)
+- Р‘РѕС€Т›Р° РіСЂР°РјРјР°С‚РёРє С…Р°С‚Рѕ (G/Other)
+- РђРЅРёТ›Р»РёРє/РјР°СЉРЅРѕ (F/Clarity)
+- РЈСЃР»СѓР±РёР№ С…Р°С‚Рѕ (F/Style)
+- РљР°Р»СЊРєР° С‚Р°СЂР¶РёРјР° (F/Calque)
 {rules_examples}
 
-МУҲИМ ҚОИДАЛАР:
-1. old_value = матндаги хатоли сўз/фраза (АЙНАН шу шаклда)
-2. new_value = тўғриланган шакл
-3. Олдинги тузатишлар базасидан (rules_examples) фойдаланиб, янги хатоларни ҳам изланг.
-4. Хатосиз матн учун бўш массив қайтаринг.
+РњРЈТІРРњ ТљРћРР”РђР›РђР :
+1. old_value = РјР°С‚РЅРґР°РіРё С…Р°С‚РѕР»Рё СЃСћР·/С„СЂР°Р·Р° (РђР™РќРђРќ С€Сѓ С€Р°РєР»РґР°)
+2. new_value = С‚СћТ“СЂРёР»Р°РЅРіР°РЅ С€Р°РєР»
+3. РћР»РґРёРЅРіРё С‚СѓР·Р°С‚РёС€Р»Р°СЂ Р±Р°Р·Р°СЃРёРґР°РЅ (rules_examples) С„РѕР№РґР°Р»Р°РЅРёР±, СЏРЅРіРё С…Р°С‚РѕР»Р°СЂРЅРё ТіР°Рј РёР·Р»Р°РЅРі.
+4. РҐР°С‚РѕСЃРёР· РјР°С‚РЅ СѓС‡СѓРЅ Р±СћС€ РјР°СЃСЃРёРІ Т›Р°Р№С‚Р°СЂРёРЅРі.
 
-Фақат JSON форматида жавоб беринг:
-{{"annotations": [{{"old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
+Р¤Р°Т›Р°С‚ JSON С„РѕСЂРјР°С‚РёРґР° Р¶Р°РІРѕР± Р±РµСЂРёРЅРі:
+{{"annotations": [{{"old_value": "С…Р°С‚РѕР»Рё", "new_value": "С‚СћТ“СЂРё", "error_type": "S/Spelling"}}], "corrected_text": "С‚СћР»РёТ› С‚СѓР·Р°С‚РёР»РіР°РЅ РјР°С‚РЅ"}}"""
 
         try:
             response = client.messages.create(
@@ -348,7 +388,7 @@ async def sayqallash(payload: Dict[str, Any]):
                 max_tokens=4000,
                 temperature=0,
                 system=SAYQALLASH_PROMPT,
-                messages=[{"role": "user", "content": f"Матнни текширинг:\n\n{text}"}]
+                messages=[{"role": "user", "content": f"РњР°С‚РЅРЅРё С‚РµРєС€РёСЂРёРЅРі:\n\n{text}"}]
             )
             resp_text = response.content[0].text
             match = re.search(r'\{.*\}', resp_text, re.DOTALL)
@@ -375,11 +415,11 @@ async def sayqallash(payload: Dict[str, Any]):
         except Exception as e:
             print(f"AI sayqallash error: {e}")
 
-    # ── Step 3: Merge local + AI annotations (deduplicate) ──
+    # в”Ђв”Ђ Step 3: Merge local + AI annotations (deduplicate) в”Ђв”Ђ
     all_annotations = []
     seen_positions = set()
     
-    # Local rules first (higher priority — learned from user)
+    # Local rules first (higher priority вЂ” learned from user)
     for ann in local_annotations:
         key = (ann['from_index'], ann['to_index'])
         if key not in seen_positions:
@@ -493,14 +533,125 @@ async def export_data(payload: Dict[str, Any]):
     file_basename = os.path.basename(filename)
     output_path = os.path.abspath(os.path.join(TEMP_DIR, f"confirmed_{file_basename}"))
     try:
+        from urllib.parse import quote
         export_to_docx(data, output_path)
+        download_name = f"confirmed_{file_basename}"
+        if not download_name.endswith(".docx"):
+            download_name += ".docx"
+        
+        encoded_filename = quote(download_name)
         return FileResponse(
             output_path,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=f"confirmed_{file_basename}"
+            filename=download_name,
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/auth/google")
+async def auth_google(payload: Dict[str, Any]):
+    credential = payload.get("credential")
+    if not credential:
+        # Fallback for manual entry
+        email = payload.get("email")
+        name = payload.get("name")
+        if not email:
+            raise HTTPException(status_code=400, detail="Credential or Email required")
+    else:
+        # Verify with Google
+        try:
+            resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}")
+            if not resp.ok:
+                raise HTTPException(status_code=401, detail="Invalid Google token")
+            google_data = resp.json()
+            email = google_data.get("email")
+            name = google_data.get("name")
+            avatar_url = google_data.get("picture")
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Google verification failed: {e}")
+
+    user = db.get_user_by_email(email)
+    if not user:
+        # Create new user
+        user_id = f"google_{int(datetime.utcnow().timestamp())}"
+        db.create_user(user_id, email, name, payload.get("avatarUrl"))
+        user = db.get_user_by_email(email)
+    
+    if user["status"] == "rejected":
+        raise HTTPException(status_code=403, detail="Р’Р°С€Р° СѓС‡РµС‚РЅР°СЏ Р·Р°РїРёСЃСЊ РѕС‚РєР»РѕРЅРµРЅР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј")
+
+    # Update last login
+    db.update_user_login(user["id"])
+    
+    # Refresh user data
+    user = db.get_user_by_email(email)
+    
+    token = create_access_token({
+        "userId": user["id"],
+        "email": user["email"],
+        "role": user["role"],
+        "name": user["name"]
+    })
+    
+    return {"success": True, "token": token, "user": user}
+
+@app.get("/api/auth/me")
+async def get_me(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = auth_header.split(" ")[1]
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user = db.get_user_by_id(payload["userId"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+        
+    return {"user": user}
+
+@app.get("/api/admin/users")
+async def get_admin_users(request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header else ""
+    payload = verify_token(token)
+    if not payload or payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+        
+    users = db.list_all_users()
+    return {"users": users}
+
+@app.post("/api/admin/approve")
+async def approve_user(payload: Dict[str, Any], request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header else ""
+    payload_token = verify_token(token)
+    if not payload_token or payload_token.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    target_id = payload.get("userId")
+    status = payload.get("status") # approved/rejected
+    db.update_user_status(target_id, status)
+    return {"success": True}
+
+@app.post("/api/admin/role")
+async def change_role(payload: Dict[str, Any], request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header else ""
+    payload_token = verify_token(token)
+    if not payload_token or payload_token.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    target_id = payload.get("userId")
+    role = payload.get("role")
+    db.update_user_role(target_id, role)
+    return {"success": True}
 
 @app.get("/specialists")
 async def get_specialists():
@@ -511,6 +662,30 @@ async def get_specialists():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/projects")
+async def get_projects(request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header else ""
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    projects = db.list_projects()
+    return {"projects": projects}
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str, request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header else ""
+    payload = verify_token(token)
+    if not payload or payload.get("role") not in ["admin", "rahbar"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    db.delete_project(project_id)
+    return {"success": True}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

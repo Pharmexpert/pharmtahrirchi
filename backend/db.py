@@ -10,17 +10,13 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS alignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sentence_no INTEGER,
-        display_no TEXT,
-        en_text TEXT,
-        confirmed_ru_text TEXT,
-        confirmed_uz_text TEXT,
-        text_id TEXT,
-        notes TEXT,
+    CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT,
         specialist_name TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        status TEXT DEFAULT 'in_progress',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
     # Migrate: add display_no/specialist_name if not exists
@@ -57,20 +53,28 @@ def init_db():
     ''')
 
     # ═══════════════════════════════════════════════
-    # Uzbek grammar rules — static knowledge base
+    # User accounts & RBAC
     # ═══════════════════════════════════════════════
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS uz_grammar_kb (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rule_category TEXT NOT NULL,
-        rule_description TEXT NOT NULL,
-        wrong_pattern TEXT,
-        correct_pattern TEXT,
-        examples TEXT,
-        priority INTEGER DEFAULT 5,
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT,
+        role TEXT DEFAULT 'foydalanuvchi',
+        status TEXT DEFAULT 'pending',
+        avatar_url TEXT,
+        last_login TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+    # Seed admin if empty
+    cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute('''
+        INSERT INTO users (id, email, name, role, status)
+        VALUES ('admin_primary', 'texnopharm@gmail.com', 'Admin Texnopharm', 'admin', 'approved')
+        ''')
+
     conn.commit()
     conn.close()
 
@@ -374,6 +378,38 @@ def save_alignments(data: List[Dict[str, Any]]):
             ))
     conn.commit()
     conn.close()
+    
+    # Update project metadata
+    if data:
+        update_project_metadata(data[0].get("text_id", "default"), data[0].get("specialist_name", ""))
+
+def update_project_metadata(text_id: str, specialist: str = ""):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM projects WHERE id = ?", (text_id,))
+    if cursor.fetchone():
+        cursor.execute("UPDATE projects SET specialist_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (specialist, text_id))
+    else:
+        cursor.execute("INSERT INTO projects (id, name, specialist_name) VALUES (?, ?, ?)", (text_id, f"Project {text_id}", specialist))
+    conn.commit()
+    conn.close()
+
+def list_projects() -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM projects ORDER BY updated_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def delete_project(text_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM projects WHERE id = ?", (text_id,))
+    cursor.execute("DELETE FROM alignments WHERE text_id = ?", (text_id,))
+    conn.commit()
+    conn.close()
 
 def save_single_row(item: Dict[str, Any]) -> int:
     """Save or update a single row. Returns the real DB id."""
@@ -454,12 +490,66 @@ def get_history(text_id: str):
     conn.close()
     return [dict(r) for r in rows]
 
-def get_unique_specialists() -> List[str]:
-    """Get sorted list of unique specialist names for autocomplete."""
+
+# ═══════════════════════════════════════════════════
+# User Management
+# ═══════════════════════════════════════════════════
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email.lower().strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def create_user(user_id: str, email: str, name: str, avatar_url: Optional[str] = None):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT specialist_name FROM alignments WHERE specialist_name IS NOT NULL AND specialist_name != '' ORDER BY specialist_name ASC")
-    names = [row[0] for row in cursor.fetchall()]
+    cursor.execute('''
+    INSERT INTO users (id, email, name, avatar_url, status)
+    VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, email.lower().strip(), name, avatar_url, 'pending'))
+    conn.commit()
     conn.close()
-    return names
+
+def update_user_login(user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def list_all_users() -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def update_user_role(user_id: str, role: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+    conn.commit()
+    conn.close()
+
+def update_user_status(user_id: str, status: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+    conn.commit()
+    conn.close()
 
