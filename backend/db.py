@@ -668,10 +668,17 @@ def delete_alignment(alignment_id: int):
 
 
 def get_unique_specialists() -> List[str]:
-    """Get unique specialist names from alignments."""
+    """Get unique specialist names from both alignments and projects tables."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT specialist_name FROM alignments WHERE specialist_name IS NOT NULL AND specialist_name != '' ORDER BY specialist_name")
+    # Union names from both tables for robustness
+    query = """
+        SELECT DISTINCT specialist_name FROM alignments WHERE specialist_name IS NOT NULL AND specialist_name != ''
+        UNION
+        SELECT DISTINCT specialist_name FROM projects WHERE specialist_name IS NOT NULL AND specialist_name != ''
+        ORDER BY specialist_name
+    """
+    cursor.execute(query)
     rows = cursor.fetchall()
     conn.close()
     return [r[0] for r in rows]
