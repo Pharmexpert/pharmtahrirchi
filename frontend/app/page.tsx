@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen, User } from 'lucide-react'
 import Link from 'next/link'
 import TableEditor from '../components/TableEditor'
 
@@ -13,9 +13,19 @@ export default function Home() {
   const [filename, setFilename] = useState<string>('')
   const [textId, setTextId] = useState<string>('')
   const [readyMode, setReadyMode] = useState(false)
+  const [specialistName, setSpecialistName] = useState<string>('')
+  const [specialistList, setSpecialistList] = useState<string[]>([])
  
   // Determine API URL (Local vs Production)
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  // Fetch specialist list for autocomplete
+  useEffect(() => {
+    fetch(`${API_BASE}/specialists`)
+      .then(r => r.json())
+      .then(d => setSpecialistList(d.specialists || []))
+      .catch(() => {})
+  }, [API_BASE])
 
   const [uploadProgress, setUploadProgress] = useState(0)
  
@@ -31,6 +41,10 @@ export default function Home() {
     if (!file) return
     if (!textId.trim()) {
       setError('Илтимос, матн рақамини (Text ID) киритинг')
+      return
+    }
+    if (!specialistName.trim()) {
+      setError('Илтимос, мутахассис исми ва шарифини киритинг')
       return
     }
     setLoading(true)
@@ -74,7 +88,8 @@ export default function Home() {
       // Inject user-provided textId into every row
       const rows = (result.data || []).map((row: any) => ({
         ...row,
-        text_id: textId.trim()
+        text_id: textId.trim(),
+        specialist_name: specialistName.trim()
       }))
  
       setTimeout(() => {
@@ -191,7 +206,7 @@ export default function Home() {
                   <div style={{ color: file ? '#2563eb' : '#475569', fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>
                     {file ? file.name : 'DOCX файл танланг ёки тортинг'}
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx (3 устунли жадвал)</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx (3 устунли жадвал ёки бир тилли матн)</div>
                 </>
               )}
             </div>
@@ -203,11 +218,37 @@ export default function Home() {
             </div>
           )}
 
+          {/* Specialist Name input */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+              Мутахассис исми ва шарифи *
+            </label>
+            <div style={{ position: 'relative' }}>
+              <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                list="specialist-list"
+                value={specialistName}
+                onChange={e => { setSpecialistName(e.target.value); setError(null) }}
+                placeholder="масалан: Каримов Алишер"
+                style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e2e8f0', borderRadius: '8px', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s', fontFamily: 'inherit' }}
+                onFocus={e => e.target.style.borderColor = '#3b82f6'}
+                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+              />
+              <datalist id="specialist-list">
+                {specialistList.map((name, i) => (
+                  <option key={i} value={name} />
+                ))}
+              </datalist>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '4px' }}>Аввал киритилган исмлар рўйхатдан танланиши мумкин</div>
+          </div>
+
           {/* Ready Form Toggle */}
           <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
             <div>
               <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>Тайёр 3-тиллик форма</div>
-              <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Алайментсиз, қаторма-қатор юклаш</div>
+              <div style={{ fontSize: '0.68rem', color: '#64748b' }}>шу ҳолатида юклаш</div>
             </div>
             <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px' }}>
               <input type="checkbox" checked={readyMode} onChange={e => setReadyMode(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -219,7 +260,7 @@ export default function Home() {
 
           <button
             onClick={handleUpload}
-            disabled={!file || loading}
+            disabled={!file || loading || !specialistName.trim()}
             style={{ width: '100%', height: '48px', background: loading ? '#93c5fd' : (!file ? '#e2e8f0' : 'linear-gradient(135deg, #3b82f6, #6366f1)'), color: !file ? '#94a3b8' : 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, cursor: !file || loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: 'all 0.2s', fontFamily: 'inherit' }}
           >
             {loading ? (

@@ -502,6 +502,15 @@ async def export_data(payload: Dict[str, Any]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/specialists")
+async def get_specialists():
+    """Get unique specialist names for autocomplete."""
+    try:
+        names = db.get_unique_specialists()
+        return {"specialists": names}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
