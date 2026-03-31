@@ -520,14 +520,16 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                     onV1Change={v => update(idx, 'ru_v1', v)}
                     onProposedChange={v => update(idx, 'ru_proposed', v)}
                     onImprove={() => improveRow(idx, 'ru')} onWordClick={handleWordClick}
-                    onBlockDrop={handleBlockDrop} token={token || undefined} />
+                    onBlockDrop={handleBlockDrop} token={token || undefined}
+                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1} />
 
                   <LangCell v1={row.uz_v1} proposed={row.uz_proposed} rowIdx={idx} lang="uz"
                     isMarker={row.type === 'marker'} isImproving={improvingRow?.idx === idx && improvingRow?.lang === 'uz'}
                     onV1Change={v => update(idx, 'uz_v1', v)}
                     onProposedChange={v => update(idx, 'uz_proposed', v)}
                     onImprove={() => improveRow(idx, 'uz')} onWordClick={handleWordClick}
-                    onBlockDrop={handleBlockDrop} token={token || undefined} />
+                    onBlockDrop={handleBlockDrop} token={token || undefined}
+                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1} />
 
                   <td style={{ padding: '7px 7px', verticalAlign: 'top', borderLeft: '1px solid #e9edf2' }}>
                     <textarea value={row.notes || ''} onChange={e => update(idx, 'notes', e.target.value)}
@@ -569,7 +571,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   )
 }
 
-function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token }: {
+function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token, contextEn, contextRu, contextUz }: {
   v1: string; proposed: string; rowIdx: number; lang: 'ru' | 'uz'; isMarker: boolean
   isImproving: boolean
   onV1Change: (v: string) => void
@@ -578,6 +580,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
   onWordClick: (e: React.MouseEvent<HTMLTextAreaElement>, idx: number, lang: 'ru' | 'uz') => void
   onBlockDrop?: (fromRow: number, fromField: string, toRow: number, toField: string) => void
   token?: string
+  contextEn?: string; contextRu?: string; contextUz?: string
 }) {
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const [dragOverField, setDragOverField] = useState<string | null>(null)
@@ -614,7 +617,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
     try {
       const res = await fetch(`${API_BASE}/sayqallash`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text, lang, context_en: contextEn || '', context_ru: contextRu || '', context_uz: contextUz || '' })
       })
       if (!res.ok) throw new Error()
       const r = await res.json()

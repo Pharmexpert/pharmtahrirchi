@@ -139,7 +139,12 @@ def add_sayqallash_rule(wrong: str, correct: str, error_type: str = 'S/Spelling'
     conn.close()
 
 def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
-    """Find known correction rules that apply to the given text."""
+    """Find known correction rules that apply to the given text.
+    
+    IMPORTANT: Does NOT suggest replacing text that is a known correct_form.
+    This prevents circular corrections (e.g., marking 'аксарият' as wrong
+    when it was previously corrected FROM 'аксарияд' TO 'аксарият').
+    """
     if not text:
         return []
     conn = sqlite3.connect(DB_PATH)
@@ -153,30 +158,55 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     rules = cursor.fetchall()
     conn.close()
 
+    # Build set of known CORRECT forms (lowercase) — these should NEVER be flagged as wrong
+    correct_forms_set = set()
+    for rule in rules:
+        cf = rule['correct_form']
+        if cf:
+            correct_forms_set.add(cf.strip().lower())
+
     found = []
     text_lower = text.lower()
     for rule in rules:
         wrong = rule['wrong_form']
-        if not wrong: continue
+        correct = rule['correct_form']
+        if not wrong or not correct:
+            continue
         
-        wrong_lower = wrong.lower()
+        wrong_lower = wrong.lower().strip()
+        correct_lower = correct.lower().strip()
+        
+        # CRITICAL: Skip if the wrong_form is actually a known correct_form in another rule
+        # This prevents suggesting "аксарият" → "аксарияд" when "аксарият" is correct
+        if wrong_lower in correct_forms_set:
+            continue
+        
+        # Skip if wrong and correct are the same
+        if wrong_lower == correct_lower:
+            continue
+        
         start_search = 0
         while True:
             idx = text_lower.find(wrong_lower, start_search)
             if idx == -1:
                 break
             
-            # Get the actual text (preserve case)
-            actual_wrong = text[idx:idx + len(wrong)]
-            found.append({
-                'from_index': idx,
-                'to_index': idx + len(wrong),
-                'old_value': actual_wrong,
-                'new_value': rule['correct_form'],
-                'error_type': rule['error_type'],
-                'source': 'rules_db',
-                'frequency': rule['frequency']
-            })
+            # Verify word boundary — don't match partial words
+            before_ok = (idx == 0) or not text[idx - 1].isalpha()
+            after_ok = (idx + len(wrong) >= len(text)) or not text[idx + len(wrong)].isalpha()
+            
+            if before_ok and after_ok:
+                # Get the actual text (preserve case)
+                actual_wrong = text[idx:idx + len(wrong)]
+                found.append({
+                    'from_index': idx,
+                    'to_index': idx + len(wrong),
+                    'old_value': actual_wrong,
+                    'new_value': correct,
+                    'error_type': rule['error_type'],
+                    'source': 'rules_db',
+                    'frequency': rule['frequency']
+                })
             start_search = idx + len(wrong)
     return found
 
@@ -636,3 +666,21 @@ def delete_alignment(alignment_id: int):
     conn.commit()
     conn.close()
 
+
+def get_unique_specialists() -> List[str]:
+    """Get unique specialist names from alignments."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT specialist_name FROM alignments WHERE specialist_name IS NOT NULL AND specialist_name != '' ORDER BY specialist_name")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+
+def update_user_status(user_id: str, status: str):
+    """Update user approval status (pending/approved/rejected)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+    conn.commit()
+    conn.close()

@@ -23,7 +23,15 @@ env/
 temp_files/
 backend/temp_files/
 frontend/.next/
+frontend/out/
 *.log
+
+# Allow sync data for DB synchronization
+!sync_data/
+!sync_data/*.json
+
+# Vercel
+.vercel/
 
 # IDEs
 .vscode/

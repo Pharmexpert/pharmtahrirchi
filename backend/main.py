@@ -329,9 +329,13 @@ Task: Ушbu танланган ифода учун матннинг тўлиқ 
 
 @app.post("/sayqallash")
 async def sayqallash(payload: Dict[str, Any]):
-    """Grammatical Error Correction (GEC) for Uzbek text. HYBRID: Local rules DB + AI (Claude)."""
+    """Grammatical Error Correction (GEC) for Uzbek text. HYBRID: Local rules DB + AI (Claude).
+    Now context-aware: uses EN/RU/UZ context for higher accuracy corrections."""
     text = payload.get("text", "").strip()
     lang = payload.get("lang", "uz")
+    context_en = payload.get("context_en", "")
+    context_ru = payload.get("context_ru", "")
+    context_uz = payload.get("context_uz", "")
     if not text:
         return {"annotations": [], "corrected_text": "", "rules_count": 0}
 
@@ -339,7 +343,7 @@ async def sayqallash(payload: Dict[str, Any]):
     local_annotations = db.get_rules_for_text(text, lang)
     rules_count = db.get_rules_count(lang)
 
-    # Step 2: Call AI for comprehensive check
+    # Step 2: Call AI for comprehensive check with CONTEXT
     client = get_client()
     ai_annotations = []
     corrected_text = text
@@ -352,11 +356,31 @@ async def sayqallash(payload: Dict[str, Any]):
                        for r in known_rules[:20]]
             rules_examples = f"\n\nОлдинги тузатишлар базасидан намуналар (буларни ҳисобга олинг):\n" + "\n".join(examples)
 
+        # Build context section for the prompt
+        context_section = ""
+        if context_en:
+            context_section += f"\n\nИНГЛИЗЧА ОРИГИНАЛ (АСОСИЙ МАНБА): {context_en}"
+        if lang == 'uz' and context_ru:
+            context_section += f"\nРУСЧА МАТН (қўшимча контекст): {context_ru}"
+        if lang == 'ru' and context_uz:
+            context_section += f"\nЎЗБЕКЧА МАТН (қўшимча контекст): {context_uz}"
+
         SAYQALLASH_PROMPT = f"""Сиз ўзбек тили грамматикаси, имлоси ва фармацевтик терминология бўйича юқори малакали эксперт-таҳрирчисиз.
 
-Сизга ўзбекча матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг.
+Сизга матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг.
  
 МУҲИМ: Фармацевтик матнларда ҳарф тушиб қолиши (масалан: "синаладган" -> "синаладиган") энг кўп учрайдиган хато. Ҳар бир сўзнинг морфологик тузилишини ЭЪТИБОР билан текширинг.
+
+КОНТЕКСТГА АСОСЛАНИШ: 
+- Агар Инглизча оригинал матн берилган бўлса, тузатишларни ИНГЛИЗЧА МАТН маъносига мос қилинг.
+- Ҳар бир тузатиш контекстга энг яқин эҳтимоллик назариясига асосланиши ШАРТ.
+- Бир хил сўз турли контекстда турлича бўлиши мумкин, КОНТЕКСТГА ҚАРАНГ.
+
+ҚАТЪИЙ ТАҚИҚ: 
+- Тўғри ёзилган сўзни хато деб кўрсатманг!
+- "аксарият" тўғри, "аксарияд" хато  
+- "қаттиқ" тўғри, "қаттик" хато
+- Агар сўз тўғри ёзилган бўлса, уни тузатиш таклиф ҚИЛМАНГ!
  
 Хато турлари:
 - Имловий хатолар (S/Spelling) — ТУШИБ ҚОЛГАН ҲАРФЛАРГА алоҳида эътибор беринг!
@@ -379,25 +403,45 @@ async def sayqallash(payload: Dict[str, Any]):
 2. new_value = тўғриланган шакл
 3. Олдинги тузатишлар базасидан (rules_examples) фойдаланиб, янги хатоларни ҳам изланг.
 4. Хатосиз матн учун бўш массив қайтаринг.
+5. ТЎҒРИ СЎЗЛАРНИ ХАТО ДЕБ КЎРСАТМАНГ!
 
 Фақат JSON форматида жавоб беринг:
 {{"annotations": [{{"old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
 
         try:
+            user_message = f"Матнни текширинг:\n\n{text}"
+            if context_section:
+                user_message += context_section
+
             response = client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4000,
                 temperature=0,
                 system=SAYQALLASH_PROMPT,
-                messages=[{"role": "user", "content": f"Матнни текширинг:\n\n{text}"}]
+                messages=[{"role": "user", "content": user_message}]
             )
             resp_text = response.content[0].text
             match = re.search(r'\{.*\}', resp_text, re.DOTALL)
             if match:
                 result = json.loads(match.group())
+                # Build set of known correct forms to filter AI suggestions too
+                all_correct_forms = set()
+                for r in known_rules:
+                    cf = r.get('correct_form', '')
+                    if cf:
+                        all_correct_forms.add(cf.lower().strip())
+                
                 for ann in result.get("annotations", []):
                     old_val = ann.get("old_value", "")
+                    new_val = ann.get("new_value", "")
                     if not old_val: continue
+                    
+                    # CRITICAL: Skip if AI suggests replacing a known correct form
+                    if old_val.lower().strip() in all_correct_forms:
+                        continue
+                    # Skip if old and new are the same
+                    if old_val.strip() == new_val.strip():
+                        continue
                     
                     start_search = 0
                     while True:
