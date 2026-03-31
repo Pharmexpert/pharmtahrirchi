@@ -158,7 +158,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     const row = data[idx]
     if (row.sentence_no > 0) {
       try {
-        await fetch('http://localhost:8000/delete-row/' + encodeURIComponent(row.text_id) + '/' + row.sentence_no, { method: 'DELETE' })
+        await fetch(`${API_BASE}/delete-row/${encodeURIComponent(row.text_id)}/${row.sentence_no}`, { method: 'DELETE' })
       } catch { /* ignore */ }
     }
     setData(prev => prev.filter((_, i) => i !== idx))
@@ -184,7 +184,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     const py = Math.min(e.clientY + 22, window.innerHeight - 240)
     setPopup({ visible: true, x: px, y: py, word: sel, lang, rowIdx, synonyms: [], loading: true })
     try {
-      const res = await fetch('http://localhost:8000/suggest-edits', {
+      const res = await fetch(`${API_BASE}/suggest-edits`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           word: sel, lang,
@@ -226,7 +226,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const improveRow = async (idx: number, lang: 'ru' | 'uz') => {
     setImprovingRow({ idx, lang })
     try {
-      const res = await fetch('http://localhost:8000/improve-row', {
+      const res = await fetch(`${API_BASE}/improve-row`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data[idx], target_lang: lang })
       })
@@ -255,7 +255,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       try {
         // Generate UZ diff notes
         if (row.uz_v1 && row.uz_proposed && row.uz_v1.trim() !== row.uz_proposed.trim()) {
-          const nRes = await fetch('http://localhost:8000/auto-notes', {
+          const nRes = await fetch(`${API_BASE}/auto-notes`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ v1: row.uz_v1, proposed: row.uz_proposed, lang: 'uz' })
           })
@@ -263,7 +263,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         }
         // Generate RU diff notes
         if (row.ru_v1 && row.ru_proposed && row.ru_v1.trim() !== row.ru_proposed.trim()) {
-          const nRes = await fetch('http://localhost:8000/auto-notes', {
+          const nRes = await fetch(`${API_BASE}/auto-notes`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ v1: row.ru_v1, proposed: row.ru_proposed, lang: 'ru' })
           })
@@ -279,7 +279,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         setData(prev => { const d = [...prev]; d[idx] = { ...d[idx], notes: finalNotes }; return d })
       }
 
-      const res = await fetch('http://localhost:8000/save-row', {
+      const res = await fetch(`${API_BASE}/save-row`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...row, notes: finalNotes })
       })
@@ -297,7 +297,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     setIsAiAligning(true)
     notify('AI moslashtirilmoqda...')
     try {
-      const res = await fetch('http://localhost:8000/align-document', {
+      const res = await fetch(`${API_BASE}/align-document`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data })
       })
@@ -312,7 +312,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const handleSaveAll = async () => {
     setSavingAll(true)
     try {
-      const res = await fetch('http://localhost:8000/save', {
+      const res = await fetch(`${API_BASE}/save`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data })
       })
@@ -324,7 +324,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
 
   const handleExport = async () => {
     try {
-      const res = await fetch('http://localhost:8000/export', {
+      const res = await fetch(`${API_BASE}/export`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, data })
       })
@@ -542,6 +542,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
   onWordClick: (e: React.MouseEvent<HTMLTextAreaElement>, idx: number, lang: 'ru' | 'uz') => void
   onBlockDrop?: (fromRow: number, fromField: string, toRow: number, toField: string) => void
 }) {
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const [dragOverField, setDragOverField] = useState<string | null>(null)
   const [annotations, setAnnotations] = useState<any[]>([])
   const [isSayqallash, setIsSayqallash] = useState(false)
@@ -577,7 +578,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
     if (!text.trim()) return
     setIsSayqallash(true)
     try {
-      const res = await fetch('http://localhost:8000/sayqallash', {
+      const res = await fetch(`${API_BASE}/sayqallash`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
       })
