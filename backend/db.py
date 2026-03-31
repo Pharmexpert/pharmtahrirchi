@@ -120,21 +120,27 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     text_lower = text.lower()
     for rule in rules:
         wrong = rule['wrong_form']
-        if wrong.lower() in text_lower:
-            # Find actual position in text
-            idx = text.lower().find(wrong.lower())
-            if idx >= 0:
-                # Get the actual text (preserve case)
-                actual_wrong = text[idx:idx + len(wrong)]
-                found.append({
-                    'from_index': idx,
-                    'to_index': idx + len(wrong),
-                    'old_value': actual_wrong,
-                    'new_value': rule['correct_form'],
-                    'error_type': rule['error_type'],
-                    'source': 'rules_db',
-                    'frequency': rule['frequency']
-                })
+        if not wrong: continue
+        
+        wrong_lower = wrong.lower()
+        start_search = 0
+        while True:
+            idx = text_lower.find(wrong_lower, start_search)
+            if idx == -1:
+                break
+            
+            # Get the actual text (preserve case)
+            actual_wrong = text[idx:idx + len(wrong)]
+            found.append({
+                'from_index': idx,
+                'to_index': idx + len(wrong),
+                'old_value': actual_wrong,
+                'new_value': rule['correct_form'],
+                'error_type': rule['error_type'],
+                'source': 'rules_db',
+                'frequency': rule['frequency']
+            })
+            start_search = idx + len(wrong)
     return found
 
 def get_all_rules(lang: str = 'uz', limit: int = 500) -> List[Dict]:

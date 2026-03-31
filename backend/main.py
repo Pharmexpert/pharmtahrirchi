@@ -314,7 +314,7 @@ async def sayqallash(payload: Dict[str, Any]):
         SAYQALLASH_PROMPT = f"""Сиз ўзбек тили грамматикаси, имлоси ва фармацевтик терминология бўйича юқори малакали эксперт-таҳрирчисиз.
 
 Сизга ўзбекча матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг:
-- Имловий хатолар (S/Spelling)
+- Имловий хатолар (S/Spelling) — шу жумладан тушиб қолган ҳарфлар (масалан: "синаладган" -> "синаладиган").
 - Контекстга номос сўз (S/Context)
 - Катта/кичик ҳарф (S/LowerUpper)
 - Тиниш белгилари (Punctuation)
@@ -330,14 +330,13 @@ async def sayqallash(payload: Dict[str, Any]):
 {rules_examples}
 
 МУҲИМ ҚОИДАЛАР:
-1. from_index ва to_index матндаги символлар позициясини АНИҚ кўрсатиши керак (0 дан бошлаб)
-2. old_value = матндаги хатоли сўз/фраза (АЙНАН шу шаклда)
-3. new_value = тўғриланган шакл
-4. error_type = юқоридаги турлардан бири
-5. Хатосиз матн учун бўш массив қайтаринг
+1. old_value = матндаги хатоли сўз/фраза (АЙНАН шу шаклда)
+2. new_value = тўғриланган шакл
+3. Олдинги тузатишлар базасидан (rules_examples) фойдаланиб, янги хатоларни ҳам изланг.
+4. Хатосиз матн учун бўш массив қайтаринг.
 
 Фақат JSON форматида жавоб беринг:
-{{"annotations": [{{"from_index": 0, "to_index": 5, "old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
+{{"annotations": [{{"old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
 
         try:
             response = client.messages.create(
@@ -353,12 +352,21 @@ async def sayqallash(payload: Dict[str, Any]):
                 result = json.loads(match.group())
                 for ann in result.get("annotations", []):
                     old_val = ann.get("old_value", "")
-                    actual_idx = text.find(old_val)
-                    if actual_idx >= 0:
-                        ann["from_index"] = actual_idx
-                        ann["to_index"] = actual_idx + len(old_val)
-                        ann["source"] = "ai"
-                        ai_annotations.append(ann)
+                    if not old_val: continue
+                    
+                    # Exhaustive matching: find ALL occurrences
+                    start_search = 0
+                    while True:
+                        idx = text.find(old_val, start_search)
+                        if idx == -1: break
+                        
+                        # Create unique annotation for each instance
+                        instance_ann = ann.copy()
+                        instance_ann["from_index"] = idx
+                        instance_ann["to_index"] = idx + len(old_val)
+                        instance_ann["source"] = "ai"
+                        ai_annotations.append(instance_ann)
+                        start_search = idx + len(old_val)
                 corrected_text = result.get("corrected_text", text)
         except Exception as e:
             print(f"AI sayqallash error: {e}")
