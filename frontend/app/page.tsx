@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen, User, Clock, ChevronRight, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import TableEditor from '../components/TableEditor'
+import TableEditor, { RowData } from '../components/TableEditor'
 import { useAuth } from '../components/LoginGuard'
 
 export default function Home() {
@@ -11,7 +11,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<any[] | null>(null)
+  const [data, setData] = useState<RowData[] | null>(null)
   const [filename, setFilename] = useState<string>('')
   const [textId, setTextId] = useState<string>('')
   const [readyMode, setReadyMode] = useState(false)
@@ -184,6 +184,11 @@ export default function Home() {
                 <BookOpen size={16} />
                 Correction Rules
               </Link>
+              {user?.role === 'admin' && (
+                <Link href="/admin" style={{ color: '#6366f1', fontSize: '0.85rem', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: '#eef2ff', borderRadius: '8px', transition: 'all 0.2s', border: '1px solid #c7d2fe' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>🛡️ Admin Panel</span>
+                </Link>
+              )}
               <button onClick={() => setShowHistory(!showHistory)} style={{ color: '#059669', fontSize: '0.85rem', fontWeight: 600, background: '#ecfdf5', border: 'none', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Clock size={16} />
                 Тарих ({projects.length})

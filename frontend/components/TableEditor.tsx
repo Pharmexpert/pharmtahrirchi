@@ -5,7 +5,7 @@ import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen, Mo
 import Link from 'next/link'
 import { useAuth } from './LoginGuard'
 
-interface RowData {
+export interface RowData {
   type: 'marker' | 'content'
   en: string
   ru_v1: string
