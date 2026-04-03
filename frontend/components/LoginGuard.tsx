@@ -811,40 +811,18 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
               </div>
             )}
 
-            <div style={{ 
-              marginTop: '40px', 
-              paddingTop: '24px', 
-              borderTop: '1px dashed rgba(180, 140, 100, 0.2)', 
-              textAlign: 'center'
-            }}>
               <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
                 © 2026 Pharma Translation Platform
               </p>
+              <div style={{ fontSize: '0.7rem', color: '#6B5744', lineHeight: '1.6', marginTop: '12px', borderTop: '1px dashed rgba(180, 140, 100, 0.2)', paddingTop: '12px' }}>
+                <p style={{ fontWeight: 600 }}>Давлат фармакопеясини ишлаб чиқиш тизими</p>
+                <p>Саволлар ва таклифлар билан <strong>Акмалходжа Зайнидинов</strong> номига,</p>
+                <p>қуйидаги почта манзилига мурожаат қилишингиз мумкин:</p>
+                <a href="mailto:texnopharm@gmail.com" style={{ color: '#C07840', fontWeight: 700, textDecoration: 'underline' }}>texnopharm@gmail.com</a>
+              </div>
             </div>
 
           </div>
-        </div>
-
-        {/* Informational Footer (Global) */}
-        <div style={{ 
-          padding: '40px 20px', 
-          textAlign: 'center', 
-          width: '100%',
-          maxWidth: '600px',
-          margin: '0 auto',
-          position: 'relative',
-          zIndex: 10
-        }}>
-          <p style={{ fontSize: '0.85rem', color: '#6B5744', lineHeight: '1.8' }}>
-            <strong style={{ display: 'block', color: '#8B5E3C', marginBottom: '4px' }}>
-              Давлат фармакопеясини ишлаб чиқиш тизими
-            </strong>
-            Саволлар ва таклифлар билан <strong>Акмалходжа Зайнидинов</strong> номига,<br />
-            қуйидаги почта манзилига мурожаат қилишингиз мумкин:<br />
-            <a href="mailto:texnopharm@gmail.com" style={{ color: '#C07840', fontWeight: 700, fontSize: '0.9rem', borderBottom: '1px solid #C07840' }}>
-              texnopharm@gmail.com
-            </a>
-          </p>
         </div>
       </div>
     )
