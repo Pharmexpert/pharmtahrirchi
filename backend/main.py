@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,27 +7,66 @@ import os
 import shutil
 import json
 import re
-import db
-from processor import ParagraphAligner, export_to_docx
-from anthropic import Anthropic
-from dotenv import load_dotenv
-import jwt
 import requests
-from datetime import datetime, timedelta
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from starlette.requests import Request
+import logging
+import random
+import string
+from datetime import datetime
+import db
+import bert_engine
+import transliterate
+from processor import ParagraphAligner, export_to_docx
+from pdf2docx import Converter
+import google.generativeai as genai
+from dotenv import load_dotenv
+import admin_routes
+import linguistic_routes
+from auth import create_access_token, verify_token, get_current_user, get_admin_user
 
 load_dotenv()
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("main")
+
+TEMP_DIR = os.path.abspath("backend/temp_files")
+UPLOADS_DIR = os.path.abspath("backend/uploads")
+os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = FastAPI()
 
-# Database initialization
-db.init_db()
+@app.on_event("startup")
+async def startup_event():
+    # Initialize tahrirchi.db if needed (for Railway deployment)
+    import startup as startup_module
+    startup_module.setup_tahrirchi_db()
+    
+    db.init_db()
+    # Initialize FAISS in-memory index
+    db.init_faiss_index()
+    # Initialize BERT in background
+    bert_engine.engine.initialize()
+    
+    # Run vector migration for legacy rules after a short delay to let BERT load
+    import asyncio
+    from anyio import to_thread
+    
+    async def run_migration():
+        try:
+            await asyncio.sleep(10) # Give BERT more time to load in background
+            logger.info("[*] Starting background vector migration...")
+            await to_thread.run_sync(db.migrate_vectors)
+        except Exception as e:
+            logger.error(f"[!] Background migration error: {e}")
+    
+    asyncio.create_task(run_migration())
 
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_origin_regex=r"https://.*\.(vercel\.app|railway\.app|up\.railway\.app)",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
@@ -40,51 +79,54 @@ os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 # Serve extracted images as static files
 app.mount("/static", StaticFiles(directory=TEMP_DIR), name="static")
 
-# Security constants
-JWT_SECRET = os.getenv("JWT_SECRET", "pharma_secret_key_2026")
-JWT_ALGORITHM = "HS256"
+app.include_router(admin_routes.router)
+app.include_router(linguistic_routes.router)
+
+# Security constants are now in auth.py
 GOOGLE_CLIENT_ID = "1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com"
 
-security = HTTPBearer()
-
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=7)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-def verify_token(token: str):
-    # Developer Bypass for local testing
-    if token == "dev-token":
-        return {"userId": "admin_primary", "email": "texnopharm@gmail.com", "role": "admin", "name": "Admin (Dev)"}
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except:
-        return None
-
-# Initialize Anthropic client
-_anthropic_client = None
+# Initialize Gemini client
+_gemini_model = None
 def get_client():
-    global _anthropic_client
-    if not _anthropic_client:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+    global _gemini_model
+    if not _gemini_model:
+        api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
-            _anthropic_client = Anthropic(api_key=api_key)
-    return _anthropic_client
+            genai.configure(api_key=api_key)
+            # Use 2.0 Flash for maximum speed and excellent grammar/terminology quality
+            _gemini_model = genai.GenerativeModel("models/gemini-2.0-flash")
+    return _gemini_model
 
 # ═══════════════════════════════════════════════════
 # CORE: Upload & Process
 # ═══════════════════════════════════════════════════
 
-@app.post("/upload")
-@app.post("/upload-docx")
-async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
-    file_path = os.path.join(TEMP_DIR, file.filename)
-    with open(file_path, "wb") as buffer:
+@app.post("/api/upload")
+@app.post("/api/upload-docx")
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), mode: str = "auto", current_user: Dict = Depends(get_current_user)):
+    # Save uploaded file to persistent uploads directory
+    persistent_file_path = os.path.join(UPLOADS_DIR, f"{int(datetime.utcnow().timestamp())}_{file.filename}")
+    with open(persistent_file_path, "wb") as buffer:
+        file.file.seek(0)
         shutil.copyfileobj(file.file, buffer)
+
+    processing_path = persistent_file_path
+    
+    # PDF to DOCX Conversion if needed
+    if file.filename.lower().endswith(".pdf"):
+        docx_path = persistent_file_path.rsplit(".", 1)[0] + ".docx"
+        try:
+            logger.info(f"[*] Converting PDF to DOCX: {file.filename}")
+            cv = Converter(persistent_file_path)
+            cv.convert(docx_path)
+            cv.close()
+            processing_path = docx_path
+        except Exception as e:
+            logger.error(f"[!] PDF Conversion Error: {e}")
+            raise HTTPException(status_code=500, detail=f"PDF конвертация қилишда хатолик: {str(e)}")
+
     try:
-        aligner = ParagraphAligner(file_path)
+        aligner = ParagraphAligner(processing_path)
         if mode == "ready":
             data = aligner.process_ready_form()
         else:
@@ -95,8 +137,20 @@ async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
         for row in data:
             row["text_id"] = text_id
         
-        db.update_project_metadata(text_id, "Yangi Mutaxassis")
-        db.save_alignments(data)
+        # Update metadata including file path
+        db.update_project_metadata(text_id, current_user.get("name", "Aniqlanmagan"), user_id=current_user["id"])
+        
+        # Update project with file details
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projects SET original_filename = ?, file_path = ? WHERE id = ?", (file.filename, persistent_file_path, text_id))
+        conn.commit()
+        conn.close()
+
+        db.save_alignments(text_id, data, user_id=current_user["id"])
+        
+        # PROACTIVE OPTIMIZATION: Trigger background pre-polishing
+        background_tasks.add_task(pre_polish_document, text_id)
         
         return {"filename": file.filename, "data": data, "text_id": text_id}
     except Exception as e:
@@ -108,7 +162,7 @@ async def upload_file(file: UploadFile = File(...), mode: str = "auto"):
 # AI: Document Alignment
 # ═══════════════════════════════════════════════════
 
-@app.post("/align-document")
+@app.post("/api/align-document")
 async def align_document(payload: Dict[str, Any]):
     """AI-based alignment for the entire document in a single batched call."""
     client = get_client()
@@ -167,15 +221,15 @@ Rules:
   ...
 ]"""
 
+        model = get_client()
+        if not model:
+            print("AI client not configured for alignment")
+            aligned_blocks.extend(batch)
+            continue
+
         try:
-            response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=6000,
-                temperature=0,
-                system="You are a trilingual pharmaceutical document alignment engine. Output valid JSON only.",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            text = response.content[0].text
+            response = model.generate_content(prompt)
+            text = response.text
             match = re.search(r'\[.*\]', text, re.DOTALL)
             if match:
                 ai_result = json.loads(match.group())
@@ -208,66 +262,139 @@ Rules:
 # AI: Improve Row (V.6 Expert Prompt)
 # ═══════════════════════════════════════════════════
 
-@app.post("/improve-row")
+@app.post("/api/improve-row")
 async def improve_row(payload: Dict[str, Any]):
-    """Uses the expert pharmaceutical AI prompt to improve a single row."""
-    client = get_client()
-    if not client:
-        raise HTTPException(status_code=503, detail="AI client not configured")
-    
+    """Uses the expert pharmaceutical AI prompt to improve a single row, wrapping unified Sayqallash logic."""
+    target_lang = payload.get("target_lang", "uz")
+    text = payload.get(f"{target_lang}_proposed", "") or payload.get(f"{target_lang}_v1", "")
     en_text = payload.get("en", "")
-    ru_text = payload.get("ru_proposed", "") or payload.get("ru_v1", "")
-    uz_text = payload.get("uz_proposed", "") or payload.get("uz_v1", "")
-    target_lang = payload.get("target_lang", "")
     
-    EXPERT_SYSTEM_PROMPT = """Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир ва таржимонсиз.
-
-Task: Сизга берилган инглиз тилидаги ОРИГИНАЛ (Ground Truth) матн ҳамда унинг таржимасини ўзаро солиштириб, илмий таҳрир қилинг.
-
-Илмий таҳрир мезонлари:
-1. Инглизча матн - асосий манба. Таржима унинг маъносини ва фармацевтик терминологиясини 100% аниқликда ифодалаши шарт.
-2. Услуб - матн қатъий равишда фармакопея мақолалари услубида, илмий ва терминологик жиҳатдан бенуқсон бўлиши керак.
-3. Агар таржимада инглизча асл матнга зид ёки ноаниқ жойлар бўлса, уларни инглизча матнга мувофиқлаштириб тузатинг.
-
-Ўзгартирилган сўз ёки иборалар КИРИЛЛЧА ёзувида <b>...тегларда</b> ажратиб кўрсатилсин."""
+    # Unified sayqallash logic to get Tier 1-3 improvements
+    sayqallash_res = await sayqallash({"text": text, "lang": target_lang, "context_en": en_text})
     
-    if target_lang == 'ru':
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Русча матн (таҳрир учун лойиҳа): {ru_text}
+    # Return in the format expected by TableEditor's improveRow logic
+    return {
+        f"{target_lang}_v2": sayqallash_res["corrected_text"],
+        "annotations": sayqallash_res["annotations"],
+        "rationale": "Sayqallash алгоритми (3-босқичли) асосида тузатилди."
+    }
 
-ФАҚАТ рус тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
-{{"ru_v2": "инглизча матнга мос тўғриланган рус матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
-    elif target_lang == 'uz':
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Ўзбекча матн (таҳрир учун лойиҳа): {uz_text}
+# ═══════════════════════════════════════════════════
+# BERT: Context-aware Synonyms
+# ═══════════════════════════════════════════════════
 
-ФАҚАТ ўзбек тилидаги матнни инглизча асл матнга асосланиб, илмий жиҳатдан таҳрир қилинг ва JSON форматида қайтаринг:
-{{"uz_v2": "инглизча матнга мос тўғриланган ўзбек матн", "rationale": "нега айнан шундай тузатилди (терминга асос)"}}"""
-    else:
-        user_prompt = f"""Инглизча матн (АСОСИЙ МАНБА): {en_text}
-Русча матн: {ru_text}
-Ўзбекча матн: {uz_text}
+@app.post("/api/bert/synonyms")
+async def bert_synonyms(payload: Dict[str, Any]):
+    """BERT-based contextual word suggestions using fill-mask."""
+    word = payload.get("word", "")
+    context = payload.get("context", "")
+    lang = payload.get("lang", "uz")
+    
+    if not word:
+        return {"synonyms": [], "source": "none"}
+    
+    suggestions = []
+    
+    # 1. BERT fill-mask (if model is ready)
+    if bert_engine.engine.initialized and context:
+        masked = context.replace(word, "[MASK]", 1)
+        if "[MASK]" in masked:
+            predictions = bert_engine.engine.predict_mask(masked, top_k=10)
+            suggestions.extend([p for p in predictions if p.strip() and p.lower() != word.lower()])
+    
+    # 2. Dictionary frequency ranking (if tahrirchi.db available)
+    if lang == 'uz' and os.path.exists(db.TAHRIRCHI_DB_PATH):
+        try:
+            dict_conn = __import__('sqlite3').connect(db.TAHRIRCHI_DB_PATH)
+            dc = dict_conn.cursor()
+            # Find words with similar prefix
+            dc.execute(
+                "SELECT word, frequency FROM dictionary WHERE word LIKE ? ORDER BY frequency DESC LIMIT 5",
+                (word[:3] + '%',)
+            )
+            for dw, freq in dc.fetchall():
+                if dw.lower() != word.lower() and dw not in suggestions:
+                    suggestions.append(dw)
+            dict_conn.close()
+        except Exception:
+            pass
+    
+    return {"synonyms": suggestions[:10], "source": "bert+dictionary"}
 
-Иккала тилдаги матнни ҳам инглизча асл матнга асосланиб, таҳрир қилинг ва JSON форматида қайтаринг:
-{{"ru_v2": "тўғриланган рус матн", "uz_v2": "тўғриланган ўзбек матн", "rationale": "тузатишлар изоҳи"}}"""
+# ═══════════════════════════════════════════════════
+# Dictionary: Autocomplete & Fuzzy Suggest
+# ═══════════════════════════════════════════════════
 
-    try:
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=2000,
-            temperature=0,
-            system=EXPERT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}]
+@app.post("/api/dictionary/autocomplete")
+async def dict_autocomplete(payload: Dict[str, Any]):
+    """Get word completions from 8.7M dictionary."""
+    prefix = payload.get("prefix", "").strip().lower()
+    limit = min(payload.get("limit", 10), 20)
+    
+    if len(prefix) < 2 or not os.path.exists(db.TAHRIRCHI_DB_PATH):
+        return {"words": []}
+    
+    import sqlite3 as sq
+    conn = sq.connect(db.TAHRIRCHI_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT word, frequency FROM dictionary WHERE word LIKE ? ORDER BY frequency DESC LIMIT ?",
+        (prefix + '%', limit)
+    )
+    results = [{"word": w, "frequency": f} for w, f in cursor.fetchall()]
+    conn.close()
+    return {"words": results}
+
+@app.post("/api/dictionary/suggest")
+async def dict_suggest(payload: Dict[str, Any]):
+    """Suggest corrections for misspelled words using dictionary + Levenshtein."""
+    word = payload.get("word", "").strip().lower()
+    
+    if len(word) < 2 or not os.path.exists(db.TAHRIRCHI_DB_PATH):
+        return {"suggestions": [], "in_dictionary": False}
+    
+    import sqlite3 as sq
+    conn = sq.connect(db.TAHRIRCHI_DB_PATH)
+    cursor = conn.cursor()
+    
+    # Check if word exists
+    cursor.execute("SELECT 1 FROM dictionary WHERE word = ? LIMIT 1", (word,))
+    exists = cursor.fetchone() is not None
+    
+    if exists:
+        conn.close()
+        return {"suggestions": [], "in_dictionary": True}
+    
+    # Find similar words (prefix match + character variants)
+    candidates = []
+    
+    # Prefix-based search
+    for prefix_len in [len(word)-1, len(word)-2, 3]:
+        if prefix_len < 2:
+            continue
+        cursor.execute(
+            "SELECT word, frequency FROM dictionary WHERE word LIKE ? AND length(word) BETWEEN ? AND ? ORDER BY frequency DESC LIMIT 10",
+            (word[:prefix_len] + '%', len(word)-2, len(word)+2)
         )
-        text = response.content[0].text
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if not match:
-            raise HTTPException(status_code=500, detail="AI response format error")
-        return json.loads(match.group())
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to parse AI response")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        for w, f in cursor.fetchall():
+            if w != word:
+                # Simple edit distance approximation
+                dist = sum(1 for a, b in zip(word, w) if a != b) + abs(len(word) - len(w))
+                if dist <= 3:
+                    candidates.append({"word": w, "frequency": f, "distance": dist})
+    
+    conn.close()
+    
+    # Sort by distance, then frequency
+    candidates.sort(key=lambda x: (x["distance"], -x["frequency"]))
+    seen = set()
+    unique = []
+    for c in candidates:
+        if c["word"] not in seen:
+            seen.add(c["word"])
+            unique.append(c)
+    
+    return {"suggestions": unique[:5], "in_dictionary": False}
 
 # ═══════════════════════════════════════════════════
 # AI: Suggest Edits / Synonyms (V.6 Expert Prompt)
@@ -275,9 +402,10 @@ Task: Сизга берилган инглиз тилидаги ОРИГИНАЛ
 
 @app.post("/suggest-edits")
 @app.post("/synonyms")
+
 async def suggest_edits(payload: Dict[str, Any]):
-    client = get_client()
-    if not client:
+    model = get_client()
+    if not model:
         raise HTTPException(status_code=503, detail="AI client not configured")
 
     word        = payload.get("word", "")
@@ -288,208 +416,292 @@ async def suggest_edits(payload: Dict[str, Any]):
     lang_label  = "рус" if lang == "ru" else "ўзбек"
     current_txt = context_ru if lang == "ru" else context_uz
 
-    prompt = f"""Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррир сизсиз.
+    prompt = f"""Role: Сиз фармакология ва халқаро стандартлар (Pharmacopoeia, GMP, ISO) бўйича юқори малакали эксперт-муҳаррирсиз.
 
 Инглизча оригинал гап: {context_en}
 Таҳрир қилинаётган {lang_label} матн: {current_txt}
 Танланган ифода: "{word}"
 
-Task: Ушbu танланган ифода учун матннинг тўлиқ контекстидан ва инглизча оригиналдан келиб чиқиб, фармакология стандартларига мос, илмий жиҳатдан оптимал таҳрир вариантларини эҳтимоллик юқоридан пастга қараб 5 та беринг.
-
-Мезонлар:
-1. Фармакопея терминологиясига мослик
-2. Инглизча оригинал билан маъновий мувофиқлик  
-3. {lang_label} илмий услуб ва стилистика
-4. Грамматик аниқлик
-
-Фақат JSON форматида жавоб беринг:
-{{"variants": ["энг эҳтимолли", "2-вариант", "3-вариант", "4-вариант", "5-вариант"], "note": "қисқача асослама"}}"""
+Вазифа: Юқоридаги матн мазмунидан келиб чиқиб, "{word}" ифодасига фармацевтик жиҳатдан энг тўғри 5 та СИНОНИМ ёки муқобил ифодани топинг.
+Жавобни ҚАТЪИЙ тарзда фақат JSON форматида қайтаринг:
+{{"synonyms": ["1-синоним", "2-синоним", ...], "note": "асослама"}}"""
 
     try:
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=600,
-            temperature=0,
-            system="You are a pharmaceutical expert editor. Return only valid JSON, no extra text.",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        text = response.content[0].text
+        response = model.generate_content(prompt)
+        text = response.text
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if not match:
-            return {"variants": [], "synonyms": [], "note": ""}
+             return {"variants": [], "synonyms": [], "note": ""}
+        
         result = json.loads(match.group())
-        result["synonyms"] = result.get("variants", [])
+        # Filter synonyms against local 'wrong' dictionary if exists
+        result["synonyms"] = [s for s in result.get("synonyms", []) if not db.is_word_wrong(s, lang)]
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # ═══════════════════════════════════════════════════
-# SAYQALLASH: Hybrid GEC (V.6 Full Expert Prompt)
+# SAYQALLASH LOGIC
 # ═══════════════════════════════════════════════════
+
+def get_sayqallash_prompt(lang: str, rules_examples: str) -> str:
+    if lang == 'ru':
+        return f"""Сиз — фармацевтик ва илмий матнлар бўйича юқори малакали эксперт-муҳаррирсиз (ГФ, USP, Ph. Eur. стандартлари).
+ 
+ ВАЗИФА: Берилган русча матнни грамматик, пунктуацион ва услубий жиҳатдан мукаммал ҳолатга келтиринг.
+  
+ ТЕРМИНОЛОГИК ҚОИДАЛАР (ҚАТЪИЙ):
+ - "Assay" -> "Количественное определение" (Фармакопеяда "Анализ" эмас)
+ - "Identification" -> "Подлинность" (НЕ "Идентификация")
+ - "Dissolution" -> "Растворение"
+ - "Disintegration" -> "Распадаемость"
+ - "Content" -> "Содержание" (НЕ "Миқдори")
+ - "Description" -> "Описание" (НЕ "Тавсиф")
+ 
+ МУҲИМ КЎРСАТМАЛАР:
+ 1. Фақат ХАТО берилган сўзларни белгиланг. Тўғри сўзга тегманг!
+ 2. Фарм-услубни (научный стиль) сақлаб қолинг.
+ 3. {rules_examples} базасидаги хатоларни биринчи навбатда изланг.
+ 
+ Фақат JSON қайтаринг:
+ {{"annotations": [{{"old_value": "хато", "new_value": "тузатилган", "start_index": 0, "end_index": 4, "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ матн", "confidence": 95}}"""
+    
+    # Default: Uzbek
+    return f"""Сиз ўзбек тили грамматикаси ва халқаро ФАРМАЦЕВТИК ТЕРМИНОЛОГИЯ (USP, Ph. Eur., ГФ) бўйича юқори малакали эксперт-таҳрирчисиз.
+ 
+ ВАЗИФА: Матндаги БАРЧА илмий, грамматик ва услубий хатоларни аниқланг ва тузатинг.
+  
+ ФАРМАКОПЕЯ СТАНДАРТЛАРИ (ТЕРМИНОЛОГИК ХАРИТА):
+ - "Wetting" -> "Намланиш" (Фармакопеяда "Ҳўлланиш" эмас)
+ - "Assay" -> "Миқдорий аниқлаш" (НЕ "Анализ")
+ - "Identification" -> "Чинлигини аниқлаш"
+ - "Dissolution" -> "Эрувчанлик" (Тест "Эрувчанлик")
+ - "Excipients" -> "Ёрдамчи моддалар"
+ - "Sieving" -> "Элаш"
+ - "Stability" -> "Барқарорлик"
+ 
+ МУҲИМ ҚОИДАЛАР:
+ 1. ТЎҒРИ сўзни асло хато деб белгиламанг!
+ 2. Ҳарф тушиб қолиши ва имло хатоларига (синаладган -> синаладиган) катта эътибор беринг.
+ 3. {rules_examples} базасидаги тажрибадан фойдаланинг.
+ 
+ Фақат JSON қайтаринг:
+ {{"annotations": [{{"old_value": "хато", "new_value": "тўғри", "start_index": 0, "end_index": 4, "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн", "confidence": 95}}"""
 
 @app.post("/sayqallash")
 async def sayqallash(payload: Dict[str, Any]):
-    """Grammatical Error Correction (GEC) for Uzbek text. HYBRID: Local rules DB + AI (Claude).
-    Now context-aware: uses EN/RU/UZ context for higher accuracy corrections."""
+    """
+    Grammatical Error Correction (GEC) with 3-tier priority:
+    1. Rules DB (db.get_rules_for_text)
+    2. Google Gemini 2.0 Flash (for regions not covered by rules)
+    3. BERT fallback (processed within rules engine)
+    Optimized with AI Cache and Confidence Scores.
+    """
     text = payload.get("text", "").strip()
     lang = payload.get("lang", "uz")
     context_en = payload.get("context_en", "")
-    context_ru = payload.get("context_ru", "")
-    context_uz = payload.get("context_uz", "")
+    
     if not text:
-        return {"annotations": [], "corrected_text": "", "rules_count": 0}
+        return {"annotations": [], "corrected_text": "", "rules_count": 0, "confidence": 100}
 
-    # Step 1: Check local rules database first
+    # Optimization: Check AI Cache first
+    cached_res = db.get_ai_cache(text, lang)
+    if cached_res:
+        cached_res["cached"] = True
+        return cached_res
+
+    is_uz_cyrillic = False
+    if lang == 'uz':
+        is_uz_cyrillic = transliterate.is_cyrillic(text)
+
+    # ═══════════════════════════════════════════════
+    # TIER 1: Rules DB (Local Corrections + Semantic rules)
+    # ═══════════════════════════════════════════════
     local_annotations = db.get_rules_for_text(text, lang)
     rules_count = db.get_rules_count(lang)
+    
+    covered_ranges = [(a["from_index"], a["to_index"]) for a in local_annotations]
 
-    # Step 2: Call AI for comprehensive check with CONTEXT
-    client = get_client()
+    model = get_client()
     ai_annotations = []
-    corrected_text = text
-
-    if client:
-        known_rules = db.get_all_rules(lang, limit=50)
+    confidence = 100 # High confidence for local rules
+    
+    # ═══════════════════════════════════════════════
+    # TIER 2: Google Gemini (gemini-2.0-flash)
+    # ═══════════════════════════════════════════════
+    if model:
+        known_rules = db.get_all_rules(lang, limit=20)
         rules_examples = ""
         if known_rules:
-            examples = [f"  «{r['wrong_form']}» → «{r['correct_form']}» [{r['error_type']}]" 
-                       for r in known_rules[:20]]
-            rules_examples = f"\n\nОлдинги тузатишлар базасидан намуналар (буларни ҳисобга олинг):\n" + "\n".join(examples)
+            examples = [f"«{r['wrong_form']}»→«{r['correct_form']}»" for r in known_rules]
+            rules_examples = "\nMa'lumotlar bazasidagi qoidalar: " + ", ".join(examples)
 
-        # Build context section for the prompt
-        context_section = ""
-        if context_en:
-            context_section += f"\n\nИНГЛИЗЧА ОРИГИНАЛ (АСОСИЙ МАНБА): {context_en}"
-        if lang == 'uz' and context_ru:
-            context_section += f"\nРУСЧА МАТН (қўшимча контекст): {context_ru}"
-        if lang == 'ru' and context_uz:
-            context_section += f"\nЎЗБЕКЧА МАТН (қўшимча контекст): {context_uz}"
-
-        SAYQALLASH_PROMPT = f"""Сиз ўзбек тили грамматикаси, имлоси ва фармацевтик терминология бўйича юқори малакали эксперт-таҳрирчисиз.
-
-Сизга матн берилган. Ундаги БАРЧА хатоликларни тўлиқ аниқланг.
- 
-МУҲИМ: Фармацевтик матнларда ҳарф тушиб қолиши (масалан: "синаладган" -> "синаладиган") энг кўп учрайдиган хато. Ҳар бир сўзнинг морфологик тузилишини ЭЪТИБОР билан текширинг.
-
-КОНТЕКСТГА АСОСЛАНИШ: 
-- Агар Инглизча оригинал матн берилган бўлса, тузатишларни ИНГЛИЗЧА МАТН маъносига мос қилинг.
-- Ҳар бир тузатиш контекстга энг яқин эҳтимоллик назариясига асосланиши ШАРТ.
-- Бир хил сўз турли контекстда турлича бўлиши мумкин, КОНТЕКСТГА ҚАРАНГ.
-
-ҚАТЪИЙ ТАҚИҚ: 
-- Тўғри ёзилган сўзни хато деб кўрсатманг!
-- "аксарият" тўғри, "аксарияд" хато  
-- "қаттиқ" тўғри, "қаттик" хато
-- Агар сўз тўғри ёзилган бўлса, уни тузатиш таклиф ҚИЛМАНГ!
- 
-Хато турлари:
-- Имловий хатолар (S/Spelling) — ТУШИБ ҚОЛГАН ҲАРФЛАРГА алоҳида эътибор беринг!
-- Контекстга номос сўз (S/Context)
-- Катта/кичик ҳарф (S/LowerUpper)
-- Тиниш белгилари (Punctuation)
-- Келишик қўшимчалари (G/Case)
-- Эгалик қўшимчалари (G/Possessive)  
-- Бирга ёзиш (G/Merge)
-- Ажратиб ёзиш (G/Split)
-- Замон шакли (G/VerbTense)
-- Бошқа грамматик хато (G/Other)
-- Аниқлик/маъно (F/Clarity)
-- Услубий хато (F/Style)
-- Калька таржима (F/Calque)
-{rules_examples}
-
-МУҲИМ ҚОИДАЛАР:
-1. old_value = матндаги хатоли сўз/фраза (АЙНАН шу шаклда)
-2. new_value = тўғриланган шакл
-3. Олдинги тузатишлар базасидан (rules_examples) фойдаланиб, янги хатоларни ҳам изланг.
-4. Хатосиз матн учун бўш массив қайтаринг.
-5. ТЎҒРИ СЎЗЛАРНИ ХАТО ДЕБ КЎРСАТМАНГ!
-
-Фақат JSON форматида жавоб беринг:
-{{"annotations": [{{"old_value": "хатоли", "new_value": "тўғри", "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн"}}"""
+        prompt_system = get_sayqallash_prompt(lang, rules_examples)
 
         try:
-            user_message = f"Матнни текширинг:\n\n{text}"
-            if context_section:
-                user_message += context_section
+            user_message = f"Check and perfect this text:\n\n{text}"
+            if context_en: user_message += f"\nContext (EN source): {context_en}"
 
-            response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4000,
-                temperature=0,
-                system=SAYQALLASH_PROMPT,
-                messages=[{"role": "user", "content": user_message}]
-            )
-            resp_text = response.content[0].text
+            response = model.generate_content(prompt_system + "\n\n" + user_message)
+            resp_text = response.text
             match = re.search(r'\{.*\}', resp_text, re.DOTALL)
             if match:
                 result = json.loads(match.group())
-                # Build set of known correct forms to filter AI suggestions too
-                all_correct_forms = set()
-                for r in known_rules:
-                    cf = r.get('correct_form', '')
-                    if cf:
-                        all_correct_forms.add(cf.lower().strip())
+                raw_ai = result.get("annotations", [])
+                confidence = result.get("confidence", 90)
                 
-                for ann in result.get("annotations", []):
-                    old_val = ann.get("old_value", "")
-                    new_val = ann.get("new_value", "")
-                    if not old_val: continue
+                for ann in raw_ai:
+                    if "start_index" in ann and "end_index" in ann:
+                        ann["from_index"] = ann.pop("start_index")
+                        ann["to_index"] = ann.pop("end_index")
                     
-                    # CRITICAL: Skip if AI suggests replacing a known correct form
-                    if old_val.lower().strip() in all_correct_forms:
-                        continue
-                    # Skip if old and new are the same
-                    if old_val.strip() == new_val.strip():
-                        continue
+                    old_v = ann.get("old_value", "")
+                    if "from_index" not in ann and old_v:
+                        idx = text.find(old_v)
+                        if idx != -1:
+                            ann["from_index"] = idx
+                            ann["to_index"] = idx + len(old_v)
                     
-                    start_search = 0
-                    while True:
-                        idx = text.find(old_val, start_search)
-                        if idx == -1: break
+                    if "from_index" in ann:
+                        start, end = ann["from_index"], ann["to_index"]
+                        overlap = False
+                        for cs, ce in covered_ranges:
+                            if max(start, cs) < min(end, ce):
+                                overlap = True; break
                         
-                        instance_ann = ann.copy()
-                        instance_ann["from_index"] = idx
-                        instance_ann["to_index"] = idx + len(old_val)
-                        instance_ann["source"] = "ai"
-                        ai_annotations.append(instance_ann)
-                        start_search = idx + len(old_val)
-                corrected_text = result.get("corrected_text", text)
+                        if not overlap:
+                            ann["source"] = "google_gemini"
+                            ai_annotations.append(ann)
+                            covered_ranges.append((start, end))
+
         except Exception as e:
-            print(f"AI sayqallash error: {e}")
+            print(f"Gemini Tier Error: {e}")
 
-    # Step 3: Merge local + AI annotations (deduplicate)
-    all_annotations = []
-    seen_positions = set()
+    all_annotations = local_annotations + ai_annotations
     
-    for ann in local_annotations:
-        key = (ann['from_index'], ann['to_index'])
-        if key not in seen_positions:
-            seen_positions.add(key)
-            ann['source'] = 'rules_db'
-            all_annotations.append(ann)
+    sorted_anns = sorted(all_annotations, key=lambda x: x['from_index'], reverse=True)
+    curr_text = text
+    for ann in sorted_anns:
+        start, end = ann['from_index'], ann['to_index']
+        curr_text = curr_text[:start] + ann['new_value'] + curr_text[end:]
     
-    for ann in ai_annotations:
-        key = (ann.get('from_index', 0), ann.get('to_index', 0))
-        if key not in seen_positions:
-            seen_positions.add(key)
-            all_annotations.append(ann)
+    if lang == 'uz' and is_uz_cyrillic:
+        curr_text = transliterate.to_cyrillic(curr_text)
+        for ann in all_annotations:
+            ann["old_value"] = transliterate.to_cyrillic(ann.get("old_value", ""))
+            ann["new_value"] = transliterate.to_cyrillic(ann.get("new_value", ""))
 
-    all_annotations.sort(key=lambda a: a.get("from_index", 0))
-    
-    return {
-        "annotations": all_annotations,
-        "corrected_text": corrected_text,
-        "rules_count": rules_count,
-        "local_matches": len(local_annotations),
-        "ai_matches": len(ai_annotations)
+    final_result = {
+        "annotations": all_annotations, 
+        "corrected_text": curr_text, 
+        "rules_count": rules_count, 
+        "confidence": confidence
     }
+    # Save to Cache for 0ms latency next time
+    db.set_ai_cache(text, lang, final_result)
+    return final_result
+
+async def pre_polish_document(text_id: str):
+    """Proactively run Sayqallash on all rows after upload."""
+    import asyncio
+    rows = db.get_alignments_by_text_id(text_id)
+    if not rows: return
+
+    # Process in batches of 10 sentences (20 AI calls) to optimize throughput
+    BATCH_SIZE = 10
+    for i in range(0, len(rows), BATCH_SIZE):
+        batch = rows[i:i + BATCH_SIZE]
+        tasks = []
+        for row in batch:
+            # Skip if row is a marker
+            if row.get("row_type") == "marker": continue
+            
+            # Parallelize UZ and RU corrections
+            tasks.append(sayqallash({"text": row["confirmed_uz_text"], "lang": "uz", "context_en": row["en_text"]}))
+            tasks.append(sayqallash({"text": row["confirmed_ru_text"], "lang": "ru", "context_en": row["en_text"]}))
+        
+        if not tasks: continue
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for j, res in enumerate(results):
+            if isinstance(res, Exception) or not res: continue
+            
+            # Map result back to row (UZ is even, RU is odd in this task list)
+            row_idx = i + (j // 2)
+            lang = 'uz' if j % 2 == 0 else 'ru'
+            db.update_alignment_ai_result(
+                rows[row_idx]["id"], 
+                lang, 
+                res["corrected_text"], 
+                res["annotations"], 
+                res["confidence"]
+            )
+
+@app.post("/api/sayqallash/batch")
+async def sayqallash_batch(payload: Dict[str, Any]):
+    """Parallel processing for multiple rows requested by UI."""
+    import asyncio
+    items = payload.get("items", [])
+    if not items: return {"results": []}
+    
+    tasks = [sayqallash(item) for item in items]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    final_results = []
+    for res in results:
+        if isinstance(res, Exception):
+            final_results.append({"error": str(res), "annotations": [], "corrected_text": ""})
+        else:
+            final_results.append(res)
+            
+    return {"results": final_results}
+
+
+@app.post("/api/sayqallash/learn-batch")
+async def learn_batch(payload: Dict[str, Any]):
+    """
+    Self-learning: Save accepted corrections to the rules database.
+    Building the 'Rules DB' (Tier 1) from user choices.
+    """
+    corrections = payload.get("corrections", [])
+    lang = payload.get("lang", "uz")
+    count = 0
+    for c in corrections:
+        old = c.get("old_value", "").strip()
+        new = c.get("new_value", "").strip()
+        error_type = c.get("error_type", "F/Correction")
+        if old and new and old != new:
+            # Skip if it's just a 'not found' tag
+            if "[Луғатда топилмади]" in new or "[Not Found]" in new:
+                continue
+            
+            db.add_sayqallash_rule(old, new, error_type, lang=lang, source="user_feedback")
+            count += 1
+            
+    # Refresh FAISS if possible
+    try:
+        db.index_missing_rules()
+    except: pass
+    
+    return {"success": True, "count": count}
+
+@app.post("/api/sayqallash-batch")
+async def sayqallash_batch(payload: Dict[str, Any]):
+    rows = payload.get("rows", [])
+    lang = payload.get("lang", "uz")
+    if not rows: return {"results": []}
+    results = []
+    for row in rows:
+        res = await sayqallash({"text": row.get("text", ""), "lang": lang, "context_en": row.get("en", "")})
+        results.append({"id": row.get("id"), "original": row.get("text"), "corrected": res.get("corrected_text"), "annotations": res.get("annotations")})
+    return {"results": results}
 
 # ═══════════════════════════════════════════════════
 # Auto-Notes & Sayqallash Rules CRUD
 # ═══════════════════════════════════════════════════
 
-@app.post("/auto-notes")
+@app.post("/api/auto-notes")
 async def auto_notes(payload: Dict[str, Any]):
     """Generate diff notes by comparing V1 with Proposed text."""
     v1 = payload.get("v1", "")
@@ -498,76 +710,178 @@ async def auto_notes(payload: Dict[str, Any]):
     notes = db.generate_diff_notes(v1, proposed, lang)
     return {"notes": notes}
 
-@app.get("/sayqallash-rules")
-async def get_sayqallash_rules(lang: str = "uz", limit: int = 500):
-    rules = db.get_all_rules(lang, limit)
-    count = db.get_rules_count(lang)
-    return {"rules": rules, "total": count}
-
-@app.post("/sayqallash-rules")
-async def add_sayqallash_rule_endpoint(payload: Dict[str, Any]):
-    try:
-        db.add_sayqallash_rule(
-            wrong=payload.get("wrong_form", ""),
-            correct=payload.get("correct_form", ""),
-            error_type=payload.get("error_type", "S/Spelling"),
-            context=payload.get("context", ""),
-            lang=payload.get("lang", "uz"),
-            source=payload.get("source", "manual")
-        )
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/sayqallash-rules/{rule_id}")
-async def update_sayqallash_rule_endpoint(rule_id: int, payload: Dict[str, Any]):
-    try:
-        db.update_sayqallash_rule(rule_id, payload)
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/sayqallash-rules/{rule_id}")
-async def delete_sayqallash_rule_endpoint(rule_id: int):
-    try:
-        db.delete_sayqallash_rule(rule_id)
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# Note: /sayqallash-rules CRUD (Rules DB) moved to admin_routes.py (/api/admin/rules)
 
 # ═══════════════════════════════════════════════════
 # Data Persistence: Save / Export / History / Delete
 # ═══════════════════════════════════════════════════
 
-@app.post("/save")
-async def save_data(payload: Dict[str, Any]):
+@app.post("/api/save")
+async def save_data(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     try:
-        db.save_alignments(payload.get("data", []))
+        project_id = payload.get("project_id", "default")
+        data = payload.get("data", [])
+        specialist = payload.get("specialist_name", current_user.get("name", "Aniqlanmagan"))
+        
+        db.save_alignments(project_id, data, user_id=current_user["id"])
+        db.update_project_metadata(project_id, specialist, user_id=current_user["id"])
+        
+        # NEW: Batch record to Paragraphs Dashboard (History)
+        for row in data:
+            if row.get("type") == "content" and (row.get("ru_proposed") or row.get("uz_proposed")):
+                try:
+                    db.record_dashboard_entry(
+                        en=row.get("en", ""),
+                        ru=row.get("ru_proposed", row.get("ru_v1", "")),
+                        uz=row.get("uz_proposed", row.get("uz_v1", "")),
+                        specialist=specialist,
+                        text_id=project_id,
+                        action_type="Bulk Save"
+                    )
+                except Exception as de:
+                    print(f"Dashboard recording error for row: {de}")
+
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/save-row")
-async def save_single_row(payload: Dict[str, Any]):
+@app.get("/api/projects/{project_id}/export")
+async def export_project_live(project_id: str, current_user: Dict = Depends(get_current_user)):
+    """Live export of the current database state to DOCX."""
     try:
-        new_id = db.save_single_row(payload)
+        data = db.get_history(project_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        output_path = os.path.abspath(os.path.join(TEMP_DIR, f"live_export_{project_id}.docx"))
+        from processor import export_to_docx
+        export_to_docx(data, output_path)
+        
+        return FileResponse(
+            output_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"PharmaExpert_{project_id}.docx"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects/{project_id}/preview")
+async def preview_project(project_id: str, current_user: Dict = Depends(get_current_user)):
+    """Simple preview of project content for the directory."""
+    try:
+        data = db.get_history(project_id)
+        return {"alignments": data[:50]} # Top 50 rows for preview
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/save-row")
+async def save_single_row(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    try:
+        new_id = db.save_single_row(payload, user_id=current_user["id"])
+        
+        # NEW: Record in Dashboard
+        try:
+            db.record_dashboard_entry(
+                en=payload.get("en", ""),
+                ru=payload.get("ru_proposed", ""),
+                uz=payload.get("uz_proposed", ""),
+                specialist=payload.get("specialist_name", current_user.get("name", "Aniqlanmagan")),
+                text_id=payload.get("text_id", ""),
+                action_type=payload.get("action_type", "Manual Edit")
+            )
+        except Exception as de:
+            print(f"Dashboard recording error: {de}")
+
         return {"status": "success", "new_id": new_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/delete-row/{text_id}/{sentence_no}")
-async def delete_row(text_id: str, sentence_no: int):
+# ═══════════════════════════════════════════════════
+# NEW: Paragraphs Dashboard API
+# ═══════════════════════════════════════════════════
+
+@app.get("/api/dashboard/all")
+async def get_dashboard_all(current_user: Dict = Depends(get_current_user)):
+    """Fetch all history from the Paragraphs Dashboard."""
+    try:
+        entries = db.get_dashboard_entries()
+        return {"entries": entries}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dashboard/record")
+async def record_dashboard_manual(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Manually record an entry in the dashboard."""
+    try:
+        db.record_dashboard_entry(
+            en=payload.get("en"),
+            ru=payload.get("ru"),
+            uz=payload.get("uz"),
+            specialist=payload.get("specialist", current_user.get("name")),
+            text_id=payload.get("text_id"),
+            action_type=payload.get("action_type", "Manual Edit")
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user/me")
+async def get_my_profile(current_user: Dict = Depends(get_current_user)):
+    return current_user
+
+@app.put("/api/user/me")
+async def update_my_profile(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    try:
+        db.update_user_profile(current_user["id"], payload)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects")
+async def list_projects(current_user: Dict = Depends(get_current_user)):
+    projects = db.list_projects()
+    return {"projects": projects}
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project_api(project_id: str, current_user: Dict = Depends(get_current_user)):
+    try:
+        # Get file path before deleting from DB
+        file_path = db.get_project_file_path(project_id)
+        
+        # Delete from DB
+        db.delete_project(project_id)
+        
+        # Delete physical file if exists
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                # Also try to delete converted docx if it was a pdf
+                if file_path.lower().endswith(".pdf"):
+                    docx_path = file_path.rsplit(".", 1)[0] + ".docx"
+                    if os.path.exists(docx_path):
+                        os.remove(docx_path)
+            except Exception as fe:
+                logger.error(f"Error deleting physical file: {fe}")
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/delete-row/{text_id}/{sentence_no}")
+async def delete_row(text_id: str, sentence_no: int, current_user: Dict = Depends(get_current_user)):
     try:
         db.delete_row(sentence_no, text_id)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/history/{text_id}")
+@app.get("/api/history/{text_id}")
+@app.get("/api/alignments/{text_id}")
 async def get_history(text_id: str):
-    return db.get_history(text_id)
+    data = db.get_history(text_id)
+    return {"alignments": data}
 
-@app.post("/export")
+@app.post("/api/export")
 async def export_data(payload: Dict[str, Any]):
     filename = payload.get("filename", "aligned_output.docx")
     data = payload.get("data", [])
@@ -587,7 +901,7 @@ async def export_data(payload: Dict[str, Any]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/specialists")
+@app.get("/api/specialists")
 async def get_specialists():
     try:
         names = db.get_unique_specialists()
@@ -614,13 +928,8 @@ UZ: {row.get('uz_proposed') or row['uz_v1']}
 
 Return JSON only: {{"part1": {{"en": "...", "ru": "...", "uz": "..."}}, "part2": {{"en": "...", "ru": "...", "uz": "..."}}}}"""
             
-            response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1000,
-                system="Trilingual Splitter.",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            match = re.search(r'\{.*\}', response.content[0].text, re.DOTALL)
+            response = client.generate_content(prompt)
+            match = re.search(r'\{.*\}', response.text, re.DOTALL)
             if match:
                 parts = json.loads(match.group())
                 row1 = {**row, "en": parts["part1"]["en"], "ru_v1": parts["part1"]["ru"], "uz_v1": parts["part1"]["uz"], "ru_proposed": "", "uz_proposed": ""}
@@ -653,8 +962,14 @@ async def auth_google(payload: Dict[str, Any]):
     user = db.get_user_by_email(email)
     if not user:
         user_id = f"google_{int(datetime.utcnow().timestamp())}"
-        db.create_user(user_id, email, name, avatar_url=google_data.get("picture"))
+        # Google OAuth users are auto-approved — no admin approval needed
+        db.create_user(user_id, email, name, avatar_url=google_data.get("picture"), auto_approve=True)
         user = db.get_user_by_email(email)
+    else:
+        # If user exists but is pending, auto-approve on Google login
+        if user["status"] == "pending":
+            db.update_user_status(user["id"], "approved")
+            user = db.get_user_by_email(email)
     if user["status"] == "rejected": raise HTTPException(status_code=403, detail="Rejected")
     db.update_user_login(user["id"])
     token = create_access_token({"userId": user["id"], "email": user["email"], "role": user["role"], "name": user["name"]})
@@ -665,21 +980,33 @@ async def register(payload: Dict[str, Any]):
     email = payload.get("email", "").lower().strip()
     name = payload.get("name", "").strip()
     password = payload.get("password")
+    department = payload.get("department", "").strip()
     if not email or not name or not password:
         raise HTTPException(status_code=400, detail="Barcha maydonlarni тўлдиринг")
     if db.get_user_by_email(email):
         raise HTTPException(status_code=400, detail="Бундай Email аллақачон мавжуд")
     user_id = f"user_{int(datetime.utcnow().timestamp())}"
-    db.create_user(user_id, email, name, password=password)
+    db.create_user(user_id, email, name, password=password, department=department)
     return {"success": True, "message": "Рўйхатдан ўтиш муваффақиятли! Админ тасдиқлашини кутинг."}
 
 @app.post("/api/auth/login")
 async def login_api(payload: Dict[str, Any]):
     email = payload.get("email", "").lower().strip()
     password = payload.get("password")
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Email ва паролни тўлдиринг")
-    if not db.verify_password(email, password):
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email манзилини киритинг")
+        
+    # Check if this is an admin first-time login (no password set in DB)
+    user_data = db.get_user_by_email(email)
+    pw_required = True
+    if user_data and user_data.get('role') == 'admin' and not user_data.get('password_hash'):
+        pw_required = False
+        
+    if pw_required and not password:
+        raise HTTPException(status_code=400, detail="Паролни киритинг")
+        
+    if not db.verify_password(email, password or ""):
         raise HTTPException(status_code=401, detail="Email ёки парол хато")
     user = db.get_user_by_email(email)
     if not user: raise HTTPException(status_code=401, detail="Фойдаланувчи топилмади")
@@ -700,37 +1027,71 @@ async def get_me(request: Request):
     user = db.get_user_by_id(payload["userId"])
     return {"user": user}
 
-@app.get("/api/projects")
-async def get_projects(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header: raise HTTPException(status_code=401)
-    projects = db.list_projects()
-    return {"projects": projects}
+@app.post("/api/auth/forgot-password")
+async def forgot_password(payload: Dict[str, Any]):
+    email = payload.get("email", "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email манзилини киритинг")
+    
+    user = db.get_user_by_email(email)
+    if not user:
+        # Don't reveal if user exists for security, but in this case we'll just return success
+        return {"success": True, "message": "Агар ушбу Email мавжуд бўлса, тиклаш коди юборилди."}
+    
+    # Generate 6-digit code
+    code = ''.join(random.choices(string.digits, k=6))
+    db.create_reset_code(email, code)
+    
+    # MOCK EMAIL SENDING - Print to console for Railway logs
+    logger.info(f"🔑 PASSWORD RESET CODE for {email}: {code}")
+    
+    return {"success": True, "message": "Тиклаш коди Email манзилингизга юборилди (Логларни текширинг)."}
 
-@app.delete("/api/projects/{project_id}")
-async def delete_project(project_id: str, request: Request):
-    db.delete_project(project_id)
-    return {"success": True}
+@app.post("/api/auth/reset-password")
+async def reset_password(payload: Dict[str, Any]):
+    email = payload.get("email", "").lower().strip()
+    code = payload.get("code", "").strip()
+    new_password = payload.get("password")
+    
+    if not email or not code or not new_password:
+        raise HTTPException(status_code=400, detail="Барча майдонларни тўлдиринг")
+    
+    saved_code = db.get_reset_code(email)
+    if not saved_code or saved_code != code:
+        raise HTTPException(status_code=400, detail="Хато ёки муддати ўтган тиклаш коди")
+    
+    db.update_user_password(email, new_password)
+    db.delete_reset_code(email)
+    
+    return {"success": True, "message": "Парол муваффақиятли ўзгартирилди! Энди янги парол билан киришингиз мумкин."}
 
-@app.get("/api/admin/users")
-async def get_admin_users(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header: raise HTTPException(status_code=401)
-    token = auth_header.split(" ")[1]
-    payload = verify_token(token)
-    if not payload or payload.get("role") != "admin": raise HTTPException(status_code=403)
-    return {"users": db.list_all_users()}
+# Note: Admin users and moderation routes moved to admin_routes.py
 
-@app.post("/api/admin/approve")
-async def approve_user(payload: Dict[str, Any], request: Request):
-    db.update_user_status(payload.get("userId"), payload.get("status"))
-    return {"success": True}
+# ═══════════════════════════════════════════════════
+# TRANSLITERATION
+# ═══════════════════════════════════════════════════
 
-@app.post("/api/admin/role")
-async def change_role(payload: Dict[str, Any], request: Request):
-    db.update_user_role(payload.get("userId"), payload.get("role"))
-    return {"success": True}
+@app.post("/api/transliterate")
+async def transliterate_text(payload: Dict[str, Any]):
+    text = payload.get("text", "")
+    target = payload.get("target", "latin") # 'latin' or 'cyrillic'
+    if not text:
+        return {"text": ""}
+    
+    result = transliterate.convert_text(text, target=target)
+    return {"text": result}
+
+@app.post("/api/transliterate-batch")
+async def transliterate_batch(payload: Dict[str, Any]):
+    texts = payload.get("texts", [])
+    target = payload.get("target", "latin")
+    results = [transliterate.convert_text(t, target=target) for t in texts]
+    return {"texts": results}
 
 if __name__ == "__main__":
+    import startup
+    startup.setup_tahrirchi_db()
+    
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

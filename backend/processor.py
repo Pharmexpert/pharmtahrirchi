@@ -3,10 +3,9 @@ import re
 import os
 import time
 from typing import List, Dict, Any
-from anthropic import Anthropic
+from langdetect import detect, DetectorFactory
 from dotenv import load_dotenv
 import json
-from langdetect import detect, DetectorFactory
 DetectorFactory.seed = 0 # Consistent detection
 
 load_dotenv()
@@ -20,8 +19,6 @@ class ParagraphAligner:
         self.file_path = file_path
         self.doc = docx.Document(file_path)
         self.table = self.doc.tables[0] if self.doc.tables else None
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.client = Anthropic(api_key=api_key) if api_key else None
 
     # ──────────────────────────────────────────────
     # Image extraction

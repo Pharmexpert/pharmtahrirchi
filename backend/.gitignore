@@ -1,0 +1,35 @@
+# Large binary files
+tahrirchi.db
+*.db-journal
+*.db-wal
+pharma_editor.db
+dictionary_data.csv.gz
+
+# Temp files from processing
+temp_files/
+pharma_editor.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Dev/test files
+test_*.py
+list_models.py
+openapi.json
+tahrirchi_db_analysis.md
+db_optimizer.py
+export_dictionary.py
+analyze_tahrirchi.py
+
+# BERT model (downloaded from HuggingFace on startup)
+tahrirchi-bert-base/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# User uploads (runtime data)
+uploads/

@@ -1,0 +1,17 @@
+# Large files - not needed on Railway (downloaded/built on startup)
+tahrirchi.db
+*.db-journal
+*.db-wal
+
+# Dev files
+__pycache__/
+*.pyc
+.env
+test_*.py
+list_models.py
+openapi.json
+tahrirchi_db_analysis.md
+db_optimizer.py
+
+# Frontend (deployed on Vercel separately)
+../frontend/

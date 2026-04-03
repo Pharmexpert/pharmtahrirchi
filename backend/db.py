@@ -5,20 +5,158 @@ import re
 import difflib
 import hashlib
 import uuid
+try:
+    from . import transliterate
+except ImportError:
+    import transliterate
+import pickle
+import logging
+import time
 
-DB_PATH = "pharma_editor.db"
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("db")
+
+try:
+    import faiss
+    import numpy as np
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+
+# Resolve database paths — env vars for Railway, fallback for local dev
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(BACKEND_DIR)
+DB_PATH = os.getenv("DB_PATH", os.path.join(BACKEND_DIR, "pharma_editor.db"))
+TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(BACKEND_DIR, "tahrirchi.db"))
+
+class FaissIndexManager:
+    def __init__(self, dimension=768):
+        self.dimension = dimension
+        self.index = None
+        self.rule_ids = [] # map index position to rule ID in sqlite
+        if FAISS_AVAILABLE:
+            self.index = faiss.IndexFlatIP(dimension)
+
+    def is_ready(self):
+        return FAISS_AVAILABLE and self.index is not None and self.index.ntotal > 0
+
+    def add_rule(self, rule_id, vector_bytes):
+        if not FAISS_AVAILABLE or self.index is None or not vector_bytes:
+            return
+        try:
+            vec = pickle.loads(vector_bytes)
+            if vec is not None:
+                # FAISS expects float32
+                v_np = vec.astype('float32').reshape(1, -1)
+                faiss.normalize_L2(v_np)
+                self.index.add(v_np)
+                self.rule_ids.append(rule_id)
+        except Exception as e:
+            logger.error(f"[!] FAISS Add Error: {e}")
+
+    def search(self, query_vec, k=3, threshold=0.92):
+        if not self.is_ready() or query_vec is None:
+            return []
+        try:
+            # Query vec as numpy float32
+            if not isinstance(query_vec, np.ndarray):
+                # Assume it's a torch tensor if not numpy
+                query_vec = query_vec.cpu().numpy()
+            
+            v_np = query_vec.astype('float32').reshape(1, -1)
+            faiss.normalize_L2(v_np)
+            
+            distances, indices = self.index.search(v_np, k)
+            
+            matches = []
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx != -1 and idx < len(self.rule_ids) and dist >= threshold:
+                    matches.append({
+                        "rule_id": self.rule_ids[idx],
+                        "score": float(dist)
+                    })
+            return matches
+        except Exception as e:
+            logger.error(f"[!] FAISS Search Error: {e}")
+            return []
+
+faiss_manager = FaissIndexManager()
+
+def init_faiss_index():
+    if not FAISS_AVAILABLE: return
+    logger.info("[*] Initializing memory-resident FAISS index...")
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, vector FROM sayqallash_rules WHERE vector IS NOT NULL")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    count = 0
+    for rid, vec_bin in rows:
+        faiss_manager.add_rule(rid, vec_bin)
+        count += 1
+    logger.info(f"[+] FAISS Index ready with {count} rules.")
+
+def migrate_vectors():
+    """Calculate BERT embeddings for any rules missing them (e.g. seed rules)."""
+    if not FAISS_AVAILABLE: return
+    
+    import bert_engine
+    if not bert_engine.engine.initialized:
+        logger.warning("[!] Cannot migrate: BERT engine not initialized.")
+        return
+
+    logger.info("[*] Checking for rules requiring vector migration...")
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, wrong_form, lang FROM sayqallash_rules WHERE vector IS NULL")
+    rows = cursor.fetchall()
+    
+    if not rows:
+        logger.info("[+] No rules require migration.")
+        conn.close()
+        return
+
+    logger.info(f"[*] Migrating {len(rows)} rules (this may take a moment)...")
+    count = 0
+    for rid, wrong, lang in rows:
+        # Re-check BERT initialization in case it fails during loop
+        if not bert_engine.engine.initialized:
+            time.sleep(1) # Wait a bit and retry
+            if not bert_engine.engine.initialized: continue
+
+        emb = bert_engine.engine.get_embedding(wrong.strip().lower(), as_numpy=True)
+        if emb is not None:
+            vec_bin = pickle.dumps(emb)
+            cursor.execute("UPDATE sayqallash_rules SET vector = ? WHERE id = ?", (vec_bin, rid))
+            faiss_manager.add_rule(rid, vec_bin)
+            count += 1
+            
+            # Commit every 100 rows to release DB lock for other requests
+            if count % 100 == 0:
+                conn.commit()
+                logger.info(f"[*] Progressive migration: {count}/{len(rows)} rules...")
+
+    conn.commit()
+    conn.close()
+    logger.info(f"[+] Migration complete. {count} rules updated with vectors.")
+
+def connect_db():
+    return sqlite3.connect(DB_PATH)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     cursor = conn.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT,
         specialist_name TEXT,
-        status TEXT DEFAULT 'in_progress',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        user_id TEXT, -- Associated logged-in user
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        original_filename TEXT,
+        file_path TEXT
     )
     ''')
     cursor.execute('''
@@ -33,11 +171,12 @@ def init_db():
         text_id TEXT,
         notes TEXT DEFAULT '',
         specialist_name TEXT DEFAULT '',
+        user_id TEXT, -- Associated logged-in user
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
 
-    # Migrate: add display_no/specialist_name/row_type if not exists
+    # Migrate: add display_no/specialist_name/row_type/user_id if not exists
     try:
         cursor.execute("ALTER TABLE alignments ADD COLUMN display_no TEXT")
     except Exception: pass
@@ -46,6 +185,36 @@ def init_db():
     except Exception: pass
     try:
         cursor.execute("ALTER TABLE alignments ADD COLUMN row_type TEXT DEFAULT 'content'")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN user_id TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN ru_proposed TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN uz_proposed TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN ru_annotations TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN uz_annotations TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN ru_confidence REAL DEFAULT 0")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN uz_confidence REAL DEFAULT 0")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE alignments ADD COLUMN is_pre_polished INTEGER DEFAULT 0")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN original_filename TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN file_path TEXT")
     except Exception: pass
 
     # ═══════════════════════════════════════════════
@@ -61,10 +230,16 @@ def init_db():
         lang TEXT DEFAULT 'uz',
         frequency INTEGER DEFAULT 1,
         source TEXT DEFAULT 'user_edit',
+        vector BLOB, -- Cached BERT embedding
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
+    # Migrate: add vector column if not exists
+    try:
+        cursor.execute("ALTER TABLE sayqallash_rules ADD COLUMN vector BLOB")
+    except Exception: pass
+
     # Index for fast lookup
     cursor.execute('''
     CREATE INDEX IF NOT EXISTS idx_sayqallash_wrong ON sayqallash_rules(wrong_form)
@@ -86,6 +261,7 @@ def init_db():
         avatar_url TEXT,
         password_hash TEXT,
         salt TEXT,
+        department TEXT,
         last_login TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -97,6 +273,9 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN salt TEXT")
     except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN department TEXT")
+    except Exception: pass
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:
@@ -104,6 +283,126 @@ def init_db():
         INSERT INTO users (id, email, name, role, status, password_hash, salt)
         VALUES ('admin_primary', 'texnopharm@gmail.com', 'Admin Texnopharm', 'admin', 'approved', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'admin_salt')
         ''')
+
+    # ═══════════════════════════════════════════════
+    # Password Resets
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS password_resets (
+        email TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # ═══════════════════════════════════════════════
+    # Phase 11: AI Linguistic Encyclopedia Tables
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS annotated_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        en TEXT,
+        ru TEXT,
+        uz TEXT,
+        description_en TEXT,
+        description_ru TEXT,
+        description_uz TEXT,
+        user_id TEXT,
+        text_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        modified_by_id TEXT,
+        modified_at TIMESTAMP,
+        status TEXT DEFAULT 'active'
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS disputed_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        en TEXT,
+        ru TEXT,
+        uz TEXT,
+        context_en TEXT,
+        context_ru TEXT,
+        context_uz TEXT,
+        user_id TEXT,
+        text_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        modified_by_id TEXT,
+        modified_at TIMESTAMP,
+        status TEXT DEFAULT 'active'
+    )
+    ''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS abbreviations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        short_form TEXT UNIQUE NOT NULL,
+        long_en TEXT,
+        long_ru TEXT,
+        long_uz TEXT,
+        user_id TEXT,
+        text_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        modified_by_id TEXT,
+        modified_at TIMESTAMP,
+        status TEXT DEFAULT 'active'
+    )
+    ''')
+
+    # ═══════════════════════════════════════════════
+    # Phase 12: AI Cache (Optimization)
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS ai_cache (
+        cache_id TEXT PRIMARY KEY, -- Hash of (lang + prompt_type + text)
+        result_json TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_ai_cache_time ON ai_cache(created_at)')
+
+    # ═══════════════════════════════════════════════
+    # NEW: Paragraphs Dashboard (History & Audit)
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS paragraphs_dashboard (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        en_text TEXT,
+        ru_text TEXT,
+        uz_text TEXT,
+        specialist_name TEXT,
+        text_id TEXT,
+        action_type TEXT, -- 'AI Polished', 'Manual Edit', 'Verified'
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # Migrate: add new columns to linguistic tables
+    for tbl in ['annotated_words', 'disputed_words', 'abbreviations']:
+        try:
+            cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN text_id TEXT")
+        except Exception: pass
+        try:
+            cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN status TEXT DEFAULT 'active'")
+        except Exception: pass
+
+
+    # ═══════════════════════════════════════════════
+    # Seed Initial Rules (Pharma Standards)
+    # ═══════════════════════════════════════════════
+    seed_rules = [
+        # Russian Pharma (GF / ГФ)
+        ('Растворение', 'Растворимость', 'S/Context', 'ru'),
+        ('Растворяемость', 'Растворимость', 'S/Context', 'ru'),
+        ('Анализ', 'Количественное определение', 'S/Context', 'ru'), # Assay -> Количественное определение
+        ('Идентификация', 'Подлинность', 'S/Context', 'ru'), # Identification -> Подлинность
+        ('Сопутствующие вещества', 'Примеси', 'S/Context', 'ru'),
+    ]
+    for wrong, correct, rtype, l in seed_rules:
+        cursor.execute("SELECT 1 FROM sayqallash_rules WHERE wrong_form = ? AND lang = ?", (wrong, l))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO sayqallash_rules (wrong_form, correct_form, error_type, lang, source) VALUES (?, ?, ?, ?, 'seed')",
+                           (wrong, correct, rtype, l))
 
     conn.commit()
     conn.close()
@@ -114,10 +413,20 @@ def init_db():
 
 def add_sayqallash_rule(wrong: str, correct: str, error_type: str = 'S/Spelling',
                          context: str = '', lang: str = 'uz', source: str = 'user_edit'):
-    """Add or increment a correction rule."""
+    """Add or increment a correction rule with vector caching."""
     if not wrong or not correct or wrong.strip() == correct.strip():
         return
-    conn = sqlite3.connect(DB_PATH)
+    
+    import bert_engine
+    import pickle
+    vector = None
+    if bert_engine.engine.initialized:
+        # Calculate vector only once for the rule
+        emb = bert_engine.engine.get_embedding(wrong.strip().lower())
+        if emb is not None:
+            vector = pickle.dumps(emb.cpu().numpy())
+
+    conn = connect_db()
     cursor = conn.cursor()
     # Check if rule exists
     cursor.execute(
@@ -127,16 +436,35 @@ def add_sayqallash_rule(wrong: str, correct: str, error_type: str = 'S/Spelling'
     row = cursor.fetchone()
     if row:
         cursor.execute(
-            "UPDATE sayqallash_rules SET frequency = ?, updated_at = CURRENT_TIMESTAMP, context = ? WHERE id = ?",
-            (row[1] + 1, context[:200] if context else '', row[0])
+            "UPDATE sayqallash_rules SET frequency = ?, updated_at = CURRENT_TIMESTAMP, context = ?, vector = ? WHERE id = ?",
+            (row[1] + 1, context[:200] if context else '', vector, row[0])
         )
+        # Update FAISS in-memory if available
+        if vector:
+            faiss_manager.add_rule(row[0], vector)
     else:
         cursor.execute(
-            "INSERT INTO sayqallash_rules (wrong_form, correct_form, error_type, context, lang, source) VALUES (?, ?, ?, ?, ?, ?)",
-            (wrong.strip(), correct.strip(), error_type, context[:200] if context else '', lang, source)
+            "INSERT INTO sayqallash_rules (wrong_form, correct_form, error_type, context, lang, source, vector) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (wrong.strip(), correct.strip(), error_type, context[:200] if context else '', lang, source, vector)
         )
+        new_id = cursor.lastrowid
+        if vector:
+            faiss_manager.add_rule(new_id, vector)
     conn.commit()
     conn.close()
+
+def is_word_wrong(word: str, lang: str = 'uz') -> bool:
+    """Check if a word is explicitly marked as 'wrong' in any rule."""
+    if not word: return False
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM sayqallash_rules WHERE wrong_form = ? AND lang = ?",
+        (word.lower().strip(), lang)
+    )
+    res = cursor.fetchone() is not None
+    conn.close()
+    return res
 
 def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     """Find known correction rules that apply to the given text.
@@ -167,6 +495,15 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
 
     found = []
     text_lower = text.lower()
+    
+    # Pre-calculate embeddings for words in text (potential for semantic search)
+    import bert_engine
+    word_embeddings = {}
+    if bert_engine.engine.initialized:
+        for word in set(re.findall(r'\w+', text_lower)):
+            if len(word) > 3: # Only embed meaningful words
+                word_embeddings[word] = bert_engine.engine.get_embedding(word)
+
     for rule in rules:
         wrong = rule['wrong_form']
         correct = rule['correct_form']
@@ -176,27 +513,21 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
         wrong_lower = wrong.lower().strip()
         correct_lower = correct.lower().strip()
         
-        # CRITICAL: Skip if the wrong_form is actually a known correct_form in another rule
-        # This prevents suggesting "аксарият" → "аксарияд" when "аксарият" is correct
-        if wrong_lower in correct_forms_set:
-            continue
-        
-        # Skip if wrong and correct are the same
+        # CRITICAL: Skip if wrong and correct are same
         if wrong_lower == correct_lower:
             continue
         
+        # Exact Match
         start_search = 0
         while True:
             idx = text_lower.find(wrong_lower, start_search)
             if idx == -1:
                 break
             
-            # Verify word boundary — don't match partial words
             before_ok = (idx == 0) or not text[idx - 1].isalpha()
             after_ok = (idx + len(wrong) >= len(text)) or not text[idx + len(wrong)].isalpha()
             
             if before_ok and after_ok:
-                # Get the actual text (preserve case)
                 actual_wrong = text[idx:idx + len(wrong)]
                 found.append({
                     'from_index': idx,
@@ -208,15 +539,108 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
                     'frequency': rule['frequency']
                 })
             start_search = idx + len(wrong)
+
+    # Semantic (Vector) Match - SCALABLE VERSION (FAISS)
+    if bert_engine.engine.initialized:
+        import torch
+        
+        # Create a mapping for quick access to rule data by ID
+        rules_by_id = {r['id']: r for r in rules}
+
+        for word, emb in word_embeddings.items():
+            if faiss_manager.is_ready():
+                # HIGH PERFORMANCE PATH
+                matches = faiss_manager.search(emb, k=3, threshold=0.92)
+                for m in matches:
+                    rule = rules_by_id.get(m['rule_id'])
+                    if not rule: continue
+                    
+                    wrong_lower = rule['wrong_form'].lower().strip()
+                    if word == wrong_lower: continue 
+                    
+                    pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
+                    for match_obj in pattern.finditer(text):
+                        if not any(f['from_index'] == match_obj.start() for f in found):
+                            found.append({
+                                'from_index': match_obj.start(),
+                                'to_index': match_obj.end(),
+                                'old_value': match_obj.group(),
+                                'new_value': rule['correct_form'],
+                                'error_type': f"FAISS/{rule['error_type']}",
+                                'source': 'rules_db_faiss',
+                                'frequency': rule['frequency']
+                            })
+            else:
+                # FALLBACK: O(n) loop
+                for rule in rules:
+                    if not rule['vector']: continue
+                    
+                    cached_vec = torch.from_numpy(pickle.loads(rule['vector'])).to(emb.device)
+                    sim = bert_engine.engine.cosine_similarity(emb, cached_vec)
+                    
+                    if sim > 0.92:
+                        wrong_lower = rule['wrong_form'].lower().strip()
+                        if word == wrong_lower: continue 
+                        
+                        pattern = re.compile(rf'\b{re.escape(word)}\b', re.IGNORECASE)
+                        for m in pattern.finditer(text):
+                            if not any(f['from_index'] == m.start() for f in found):
+                                found.append({
+                                    'from_index': m.start(),
+                                    'to_index': m.end(),
+                                    'old_value': m.group(),
+                                    'new_value': rule['correct_form'],
+                                    'error_type': f"Semantic/{rule['error_type']}",
+                                    'source': 'rules_db_vector',
+                                    'frequency': rule['frequency']
+                                })
+            
+    # ═══════════════════════════════════════════════════
+    # Dictionary-based spell checking (Tahrirchi 8.7M)
+    # ═══════════════════════════════════════════════════
+    if lang == 'uz' and os.path.exists(TAHRIRCHI_DB_PATH):
+        words = re.findall(r"\w+", text)
+        dict_conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+        dict_cursor = dict_conn.cursor()
+        
+        for word in words:
+            if len(word) < 2: continue
+            
+            # Normalize for both Latin/Cyrillic lookup
+            variants = transliterate.normalize_for_lookup(word)
+            found_in_dict = False
+            for v in variants:
+                dict_cursor.execute("SELECT 1 FROM dictionary WHERE word = ? LIMIT 1", (v,))
+                if dict_cursor.fetchone():
+                    found_in_dict = True
+                    break
+            
+            if not found_in_dict:
+                # Word not in 8.7M dictionary -> mark as potential typo
+                # Find start index in original text (case insensitive)
+                idx = text.lower().find(word.lower())
+                if idx != -1:
+                    found.append({
+                        'from_index': idx,
+                        'to_index': idx + len(word),
+                        'old_value': word,
+                        'new_value': '[Луғатда топилмади]',
+                        'error_type': 'S/Spelling',
+                        'source': 'tahrirchi_dict',
+                        'frequency': 0
+                    })
+        dict_conn.close()
+
     return found
 
 def get_all_rules(lang: str = 'uz', limit: int = 500) -> List[Dict]:
-    """Get all rules for a language."""
+    """Get all rules for a language, excluding binary vector data."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    # Explicitly exclude 'vector' as it contains binary data that breaks JSON encoding
     cursor.execute(
-        "SELECT * FROM sayqallash_rules WHERE lang = ? ORDER BY frequency DESC LIMIT ?",
+        "SELECT id, wrong_form, correct_form, error_type, context, lang, frequency, created_at, updated_at FROM sayqallash_rules WHERE lang = ? ORDER BY frequency DESC LIMIT ?",
         (lang, limit)
     )
     rows = cursor.fetchall()
@@ -390,78 +814,87 @@ def save_corrections_as_rules(item: Dict[str, Any]):
                 )
 
 
-def save_alignments(data: List[Dict[str, Any]]):
-    conn = sqlite3.connect(DB_PATH)
+def save_alignments(project_id: str, alignments: List[Dict[str, Any]], user_id: str = None):
+    conn = connect_db()
     cursor = conn.cursor()
-    for item in data:
-        text_id = item.get("text_id", "default")
-        sentence_no = item.get("sentence_no", 0)
-        row_type = item.get("type", "content")
+    # Clear old alignments for this project
+    cursor.execute("DELETE FROM alignments WHERE text_id = ?", (project_id,))
+    
+    for row in alignments:
+        # Save to alignments table
+        cursor.execute('''
+            INSERT INTO alignments (sentence_no, display_no, row_type, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            row.get('sentence_no'),
+            row.get('display_no'),
+            row.get('row_type', 'content'),
+            row.get('en_text'),
+            row.get('confirmed_ru_text'),
+            row.get('confirmed_uz_text'),
+            project_id,
+            row.get('notes', ''),
+            row.get('specialist_name', 'Aniqlanmagan'),
+            user_id
+        ))
+        
+        # Batch record confirmed content rows in Paragraphs Dashboard
+        if row.get('row_type', 'content') == 'content' and (row.get('confirmed_ru_text') or row.get('confirmed_uz_text')):
+            try:
+                record_dashboard_entry(
+                    en=row.get('en_text', ''),
+                    ru=row.get('confirmed_ru_text', ''),
+                    uz=row.get('confirmed_uz_text', ''),
+                    specialist=row.get('specialist_name', 'Aniqlanmagan'),
+                    text_id=project_id,
+                    action_type='Batch Save'
+                )
+            except Exception as e:
+                print(f"Batch dashboard record error: {e}")
 
-        # Auto-extract correction rules before saving content cells
-        if row_type == "content":
-            save_corrections_as_rules(item)
-
-        cursor.execute(
-            "SELECT id FROM alignments WHERE text_id = ? AND sentence_no = ?",
-            (text_id, sentence_no)
-        )
-        row = cursor.fetchone()
-        if row:
-            cursor.execute('''
-            UPDATE alignments SET 
-                en_text = ?, confirmed_ru_text = ?, confirmed_uz_text = ?,
-                notes = ?, display_no = ?, specialist_name = ?, row_type = ?
-            WHERE id = ?
-            ''', (
-                item.get("en", ""),
-                item.get("ru_proposed", ""),
-                item.get("uz_proposed", ""),
-                item.get("notes", ""),
-                item.get("display_no", str(sentence_no)),
-                item.get("specialist_name", ""),
-                row_type,
-                row[0]
-            ))
-        else:
-            cursor.execute('''
-            INSERT INTO alignments (sentence_no, display_no, row_type, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                sentence_no,
-                item.get("display_no", str(sentence_no)),
-                row_type,
-                item.get("en", ""),
-                item.get("ru_proposed", ""),
-                item.get("uz_proposed", ""),
-                text_id,
-                item.get("notes", ""),
-                item.get("specialist_name", "")
-            ))
     conn.commit()
     conn.close()
 
     
     # Update project metadata
-    if data:
-        update_project_metadata(data[0].get("text_id", "default"), data[0].get("specialist_name", ""))
+    if alignments:
+        update_project_metadata(project_id, alignments[0].get("specialist_name", ""))
 
-def update_project_metadata(text_id: str, specialist: str = ""):
-    conn = sqlite3.connect(DB_PATH)
+def update_project_metadata(text_id: str, specialist: str = "", user_id: str = None):
+    conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM projects WHERE id = ?", (text_id,))
     if cursor.fetchone():
-        cursor.execute("UPDATE projects SET specialist_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (specialist, text_id))
+        if user_id:
+            cursor.execute("UPDATE projects SET specialist_name = ?, user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (specialist, user_id, text_id))
+        else:
+            cursor.execute("UPDATE projects SET specialist_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (specialist, text_id))
     else:
-        cursor.execute("INSERT INTO projects (id, name, specialist_name) VALUES (?, ?, ?)", (text_id, f"Project {text_id}", specialist))
+        cursor.execute("INSERT INTO projects (id, name, specialist_name, user_id) VALUES (?, ?, ?, ?)", (text_id, f"Project {text_id}", specialist, user_id))
+    conn.commit()
+    conn.close()
+
+def add_project(project_id: str, name: str, specialist_name: str = "Aniqlanmagan", user_id: str = None):
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO projects (id, name, specialist_name, user_id) VALUES (?, ?, ?, ?)",
+        (project_id, name, specialist_name, user_id)
+    )
     conn.commit()
     conn.close()
 
 def list_projects() -> List[Dict[str, Any]]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM projects ORDER BY updated_at DESC")
+    # Join with users to get the real name and email
+    cursor.execute('''
+        SELECT p.*, u.name as user_full_name, u.email as user_email
+        FROM projects p
+        LEFT JOIN users u ON p.user_id = u.id
+        ORDER BY p.updated_at DESC
+    ''')
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -474,9 +907,36 @@ def delete_project(text_id: str):
     conn.commit()
     conn.close()
 
-def save_single_row(item: Dict[str, Any]) -> int:
+def get_alignments_by_text_id(text_id: str) -> List[Dict[str, Any]]:
+    """Retrieve all rows for a project."""
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM alignments WHERE text_id = ? ORDER BY sentence_no ASC", (text_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def update_alignment_ai_result(row_id: int, lang: str, corrected_text: str, annotations: List[Dict], confidence: float):
+    """Update a specific row with AI results (used by background task)."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    if lang == 'ru':
+        cursor.execute('''
+            UPDATE alignments SET ru_proposed = ?, ru_annotations = ?, ru_confidence = ?, is_pre_polished = 1 
+            WHERE id = ?
+        ''', (corrected_text, json.dumps(annotations), confidence, row_id))
+    else:
+        cursor.execute('''
+            UPDATE alignments SET uz_proposed = ?, uz_annotations = ?, uz_confidence = ?, is_pre_polished = 1
+            WHERE id = ?
+        ''', (corrected_text, json.dumps(annotations), confidence, row_id))
+    conn.commit()
+    conn.close()
+
+def save_single_row(item: Dict[str, Any], user_id: str = None) -> int:
     """Save or update a single row. Returns the real DB id."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     cursor = conn.cursor()
     text_id = item.get("text_id", "default")
     sentence_no = item.get("sentence_no", 0)
@@ -495,7 +955,7 @@ def save_single_row(item: Dict[str, Any]) -> int:
             cursor.execute('''
             UPDATE alignments SET
                 en_text = ?, confirmed_ru_text = ?, confirmed_uz_text = ?,
-                notes = ?, display_no = ?, specialist_name = ?
+                notes = ?, display_no = ?, specialist_name = ?, user_id = ?
             WHERE id = ?
             ''', (
                 item.get("en", ""),
@@ -504,16 +964,29 @@ def save_single_row(item: Dict[str, Any]) -> int:
                 item.get("notes", ""),
                 item.get("display_no", str(sentence_no)),
                 item.get("specialist_name", ""),
+                user_id,
                 row[0]
             ))
             conn.commit()
             conn.close()
+            # Record in Paragraphs Dashboard (History)
+            try:
+                record_dashboard_entry(
+                    en=item.get("en", ""),
+                    ru=item.get("ru_proposed", ""),
+                    uz=item.get("uz_proposed", ""),
+                    specialist=item.get("specialist_name", "Aniqlanmagan"),
+                    text_id=text_id,
+                    action_type=item.get("action_type", "Manual Edit")
+                )
+            except Exception as e:
+                print(f"Single row dashboard record error: {e}")
             return row[0]
 
     # New row — INSERT
     cursor.execute('''
-    INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO alignments (sentence_no, display_no, en_text, confirmed_ru_text, confirmed_uz_text, text_id, notes, specialist_name, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         sentence_no if sentence_no and sentence_no > 0 else None,
         item.get("display_no", ""),
@@ -522,13 +995,28 @@ def save_single_row(item: Dict[str, Any]) -> int:
         item.get("uz_proposed", ""),
         text_id,
         item.get("notes", ""),
-        item.get("specialist_name", "")
+        item.get("specialist_name", ""),
+        user_id
     ))
     new_id = cursor.lastrowid
     # Store DB id as sentence_no for future updates
     cursor.execute("UPDATE alignments SET sentence_no = ? WHERE id = ?", (new_id, new_id))
     conn.commit()
     conn.close()
+    
+    # Record in Paragraphs Dashboard (History)
+    try:
+        record_dashboard_entry(
+            en=item.get("en", ""),
+            ru=item.get("ru_proposed", ""),
+            uz=item.get("uz_proposed", ""),
+            specialist=item.get("specialist_name", "Aniqlanmagan"),
+            text_id=text_id,
+            action_type=item.get("action_type", "Manual Edit")
+        )
+    except Exception as e:
+        print(f"Single row dashboard record error: {e}")
+        
     return new_id
 
 def delete_row(sentence_no: int, text_id: str):
@@ -595,7 +1083,49 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
-def create_user(user_id: str, email: str, name: str, avatar_url: Optional[str] = None, password: Optional[str] = None):
+def create_reset_code(email: str, code: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # Expire in 15 minutes
+    expires_at = time.time() + (15 * 60)
+    cursor.execute('''
+    INSERT OR REPLACE INTO password_resets (email, code, expires_at)
+    VALUES (?, ?, ?)
+    ''', (email.lower().strip(), code, expires_at))
+    conn.commit()
+    conn.close()
+
+def get_reset_code(email: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT code, expires_at FROM password_resets WHERE email = ?", (email.lower().strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        code, expires_at = row
+        if time.time() < expires_at:
+            return code
+    return None
+
+def delete_reset_code(email: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM password_resets WHERE email = ?", (email.lower().strip(),))
+    conn.commit()
+    conn.close()
+
+def update_user_password(email: str, new_password: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    salt = uuid.uuid4().hex
+    password_hash = hashlib.sha256((new_password + salt).encode()).hexdigest()
+    cursor.execute('''
+    UPDATE users SET password_hash = ?, salt = ? WHERE email = ?
+    ''', (password_hash, salt, email.lower().strip()))
+    conn.commit()
+    conn.close()
+
+def create_user(user_id: str, email: str, name: str, department: Optional[str] = None, avatar_url: Optional[str] = None, password: Optional[str] = None, auto_approve: bool = False):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -605,21 +1135,33 @@ def create_user(user_id: str, email: str, name: str, avatar_url: Optional[str] =
         salt = uuid.uuid4().hex
         password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
 
+    # Google OAuth users get auto-approved, manual registrations stay pending
+    status = 'approved' if auto_approve else 'pending'
+    
     cursor.execute('''
-    INSERT INTO users (id, email, name, avatar_url, status, password_hash, salt)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (user_id, email.lower().strip(), name, avatar_url, 'pending', password_hash, salt))
+    INSERT INTO users (id, email, name, department, avatar_url, status, password_hash, salt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, email.lower().strip(), name, department, avatar_url, status, password_hash, salt))
     conn.commit()
     conn.close()
 
 def verify_password(email: str, password: str) -> bool:
     user = get_user_by_email(email)
-    if not user or not user.get('password_hash') or not user.get('salt'):
+    if not user:
         return False
-    
-    stored_hash = user['password_hash']
-    salt = user['salt']
-    # If admin with hardcoded salt
+        
+    stored_hash = user.get('password_hash')
+    salt = user.get('salt')
+    role = user.get('role', 'user')
+
+    # Primary Admin Passwordless Bypass (If no password is set)
+    if not stored_hash and not salt and role == 'admin':
+        return True
+
+    if not stored_hash or not salt:
+        return False
+
+    # If admin with legacy hardcoded hash
     if email == 'texnopharm@gmail.com' and stored_hash == '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918':
         return password == 'admin123' or hashlib.sha256((password + salt).encode()).hexdigest() == stored_hash
 
@@ -666,6 +1208,22 @@ def delete_alignment(alignment_id: int):
     conn.commit()
     conn.close()
 
+def get_project_file_path(project_id: str) -> Optional[str]:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT file_path FROM projects WHERE id = ?", (project_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def delete_project(project_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    cursor.execute("DELETE FROM alignments WHERE text_id = ?", (project_id,))
+    conn.commit()
+    conn.close()
+
 
 def get_unique_specialists() -> List[str]:
     """Get unique specialist names from both alignments and projects tables."""
@@ -686,8 +1244,119 @@ def get_unique_specialists() -> List[str]:
 
 def update_user_status(user_id: str, status: str):
     """Update user approval status (pending/approved/rejected)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
     conn.commit()
     conn.close()
+
+def update_user_profile(user_id: str, data: Dict[str, Any]):
+    """Update personal profile information."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    fields = []
+    params = []
+    
+    if 'name' in data:
+        fields.append("name = ?")
+        params.append(data['name'])
+    if 'email' in data:
+        fields.append("email = ?")
+        params.append(data['email'].lower().strip())
+    if 'department' in data:
+        fields.append("department = ?")
+        params.append(data['department'])
+    if 'password' in data and data['password']:
+        salt = uuid.uuid4().hex
+        password_hash = hashlib.sha256((data['password'] + salt).encode()).hexdigest()
+        fields.append("password_hash = ?")
+        params.append(password_hash)
+        fields.append("salt = ?")
+        params.append(salt)
+        
+    if fields:
+        params.append(user_id)
+        query = f"UPDATE users SET {', '.join(fields)} WHERE id = ?"
+        cursor.execute(query, tuple(params))
+        conn.commit()
+    conn.close()
+# ═══════════════════════════════════════════════
+# AI Cache Helpers
+# ═══════════════════════════════════════════════
+
+def get_ai_cache(text: str, lang: str, prompt_type: str = "sayqallash") -> Optional[Dict]:
+    """Retrieve AI result from cache to avoid redundant API calls."""
+    if not text: return None
+    # Simple hash of identifying factors
+    key_str = f"{lang}:{prompt_type}:{text.strip()}"
+    cache_id = hashlib.sha256(key_str.encode()).hexdigest()
+    
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT result_json FROM ai_cache WHERE cache_id = ?", (cache_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+    return None
+
+def set_ai_cache(text: str, lang: str, result_dict: Dict, prompt_type: str = "sayqallash"):
+    """Store AI result in cache."""
+    if not text or not result_dict: return
+    key_str = f"{lang}:{prompt_type}:{text.strip()}"
+    cache_id = hashlib.sha256(key_str.encode()).hexdigest()
+    
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO ai_cache (cache_id, result_json) VALUES (?, ?)", 
+                   (cache_id, json.dumps(result_dict)))
+    conn.commit()
+    conn.close()
+
+# ═══════════════════════════════════════════════
+# NEW: Paragraphs Dashboard CRUD
+# ═══════════════════════════════════════════════
+
+def record_dashboard_entry(en: str, ru: str, uz: str, specialist: str, text_id: str, action_type: str):
+    """Record a new entry in the Paragraphs Dashboard history (Audit Trail)."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    
+    # Always insert a new record to create a historical audit log
+    cursor.execute('''
+        INSERT INTO paragraphs_dashboard (en_text, ru_text, uz_text, specialist_name, text_id, action_type)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (en, ru, uz, specialist, text_id, action_type))
+    
+    conn.commit()
+    conn.close()
+
+def sync_paragraphs_to_alignments(text_id: str, en: str, ru: str, uz: str):
+    """Synchronize an edit from Paragraphs Dashboard back to the primary alignments table."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE alignments 
+        SET confirmed_ru_text = ?, confirmed_uz_text = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE text_id = ? AND en_text = ?
+    ''', (ru, uz, text_id, en))
+    
+    # Update project timestamp
+    cursor.execute("UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (text_id,))
+    
+    conn.commit()
+    conn.close()
+
+def get_dashboard_entries():
+    """Retrieve all history from the Paragraphs Dashboard."""
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM paragraphs_dashboard ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
