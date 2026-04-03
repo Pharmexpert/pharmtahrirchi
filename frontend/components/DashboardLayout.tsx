@@ -2,50 +2,44 @@
 
 import React, { useState } from 'react'
 import { 
-  LayoutDashboard, 
-  PlusCircle, 
-  Database, 
-  Settings, 
-  LogOut, 
-  Menu, 
-  X, 
-  User,
-  History,
-  ShieldCheck,
-  Bell
+  Database, Menu, X, LayoutDashboard, FileText, Settings, 
+  LogOut, User, Globe, ChevronLeft, ChevronRight, Search, 
+  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare
 } from 'lucide-react'
-import Link from 'next/link'
 import { useAuth } from './LoginGuard'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, isAdmin, logout } = useAuth()
-  const [isSidebarOpen, setSidebarOpen] = useState(true)
+  const { user, logout, isAdmin } = useAuth()
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const pathname = usePathname()
 
-  if (!user) return <>{children}</> // Don't show layout on login screen
-
   const navItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, href: '/' },
-    { name: 'History', icon: History, href: '/history' },
-    { name: 'Rules DB', icon: Database, href: '/rules', adminOnly: true },
-    { name: 'Admin Panel', icon: ShieldCheck, href: '/admin', adminOnly: true },
+    { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { name: 'Paragraphs', icon: FileText, path: '/paragraphs' },
+    { name: 'Projects', icon: History, path: '/projects' },
+    { name: 'Dictionary', icon: Database, path: '/dictionary' },
   ]
+
+  if (isAdmin) {
+    navItems.push({ name: 'Admin', icon: ShieldCheck, path: '/admin' })
+  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
       {/* Sidebar */}
       <aside style={{ 
         width: isSidebarOpen ? 'var(--sidebar-width)' : '80px',
-        background: 'var(--bg-secondary)',
+        background: 'var(--bg-card)',
         borderRight: '1px solid var(--border)',
-        transition: 'all 0.3s ease',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 100,
+        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: 'fixed',
         height: '100vh',
-        overflow: 'hidden'
+        zIndex: 100,
+        boxShadow: 'var(--shadow-sm)'
       }}>
         {/* Logo Area */}
         <div style={{ 
@@ -59,106 +53,134 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div style={{ 
             width: '40px', 
             height: '40px', 
-            background: 'var(--accent-gradient)', 
-            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #C07840, #D4956B, #E8B78E)', 
+            borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: 'var(--shadow-glow)',
+            boxShadow: '0 4px 16px rgba(192, 120, 64, 0.25)',
             flexShrink: 0
           }}>
             <Database size={22} color="white" />
           </div>
           {isSidebarOpen && (
-            <span style={{ 
-              fontWeight: 800, 
-              fontSize: '1.2rem', 
-              background: 'var(--accent-gradient)', 
-              WebkitBackgroundClip: 'text', 
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.5px'
-            }}>
-              PharmaExpert
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ 
+                fontWeight: 800, 
+                fontSize: '1.2rem', 
+                background: 'linear-gradient(135deg, #C07840, #D4956B)', 
+                WebkitBackgroundClip: 'text', 
+                WebkitTextFillColor: 'transparent',
+                lineHeight: 1
+              }}>
+                Pharma Expert
+              </span>
+              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#8B5E3C', marginTop: '2px' }}>V.4 SYSTEM</span>
+            </div>
           )}
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, padding: '24px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <nav style={{ padding: '24px 12px', flex: 1, overflowY: 'auto' }}>
           {navItems.map((item) => {
-            if (item.adminOnly && !isAdmin) return null
-            const isActive = pathname === item.href
+            const isActive = pathname === item.path
             return (
-              <Link key={item.name} href={item.href} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: 'var(--radius-md)',
-                color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                background: isActive ? 'rgba(192, 120, 64, 0.1)' : 'transparent',
-                transition: 'all 0.2s',
-                textDecoration: 'none',
-                fontWeight: isActive ? 600 : 500,
-                fontSize: '0.92rem'
-              }}>
-                <item.icon size={20} />
-                {isSidebarOpen && <span>{item.name}</span>}
+              <Link key={item.path} href={item.path} style={{ textDecoration: 'none' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px', 
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  marginBottom: '6px',
+                  color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  background: isActive ? 'var(--bg-glass-hover)' : 'transparent',
+                  transition: 'all 0.2s',
+                  cursor: 'pointer',
+                  fontWeight: isActive ? 600 : 500,
+                  fontSize: '0.95rem'
+                }} className="nav-item">
+                  <item.icon size={20} />
+                  {isSidebarOpen && <span>{item.name}</span>}
+                </div>
               </Link>
             )
           })}
         </nav>
 
-        {/* User Footer */}
-        <div style={{ padding: '20px', borderTop: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        {/* User Profile / Logout */}
+        <div style={{ padding: '20px 12px', borderTop: '1px solid var(--border)' }}>
+          {isSidebarOpen && (
             <div style={{ 
-              width: '38px', 
-              height: '38px', 
-              borderRadius: '50%', 
-              background: 'var(--accent-gradient)',
+              padding: '12px', 
+              background: 'var(--bg-secondary)', 
+              borderRadius: 'var(--radius-md)',
+              marginBottom: '12px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontWeight: 700,
-              fontSize: '1rem',
-              boxShadow: 'var(--shadow-glow)'
+              gap: '10px'
             }}>
-              {user.name?.[0].toUpperCase() || 'U'}
-            </div>
-            {isSidebarOpen && (
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user.name}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                  {user.role}
-                </div>
+              <div style={{ 
+                width: '36px', height: '36px', borderRadius: '50%', 
+                background: 'var(--accent-gradient)', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontWeight: 600
+              }}>
+                {user?.name?.charAt(0) || 'U'}
               </div>
-            )}
-          </div>
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{user?.name}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.role}</div>
+              </div>
+            </div>
+          )}
           <button 
             onClick={logout}
             style={{ 
               width: '100%', 
-              padding: '10px', 
-              background: 'var(--bg-glass)', 
-              border: '1px solid var(--border)', 
-              borderRadius: 'var(--radius-sm)', 
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px', 
+              padding: '12px 14px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--danger)',
               cursor: 'pointer',
-              fontSize: '0.85rem'
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              transition: 'background 0.2s'
             }}
+            className="logout-btn"
           >
-            <LogOut size={16} />
-            {isSidebarOpen && <span>Chiqish</span>}
+            <LogOut size={20} />
+            {isSidebarOpen && <span>Logout</span>}
           </button>
         </div>
+
+        {/* Toggle Button */}
+        <button 
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          style={{ 
+            position: 'absolute',
+            bottom: '80px',
+            right: '-16px',
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'white',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: 'var(--shadow-sm)',
+            zIndex: 101,
+            color: 'var(--accent-primary)'
+          }}
+        >
+          {isSidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+        </button>
       </aside>
 
       {/* Main Content Area */}
@@ -166,14 +188,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         flex: 1, 
         marginLeft: isSidebarOpen ? 'var(--sidebar-width)' : '80px',
         transition: 'margin-left 0.3s ease',
-        minHeight: '100vh'
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
         {/* Header */}
         <header style={{ 
           height: 'var(--header-height)', 
-          background: 'rgba(255, 248, 240, 0.85)', 
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background: 'var(--bg-glass)', 
+          backdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
@@ -181,35 +204,63 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           padding: '0 32px',
           position: 'sticky',
           top: 0,
-          zIndex: 50
+          zIndex: 90
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button 
-              onClick={() => setSidebarOpen(!isSidebarOpen)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-            >
-              {isSidebarOpen ? <X size={22} /> : <Menu size={22} />}
-            </button>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
-              {navItems.find(i => pathname === i.href)?.name || 'Editor'}
-            </h2>
-          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {navItems.find(i => pathname.startsWith(i.path))?.name || 'Dashboard'}
+          </h2>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ position: 'relative' }}>
-              <Bell size={20} color="var(--text-muted)" style={{ cursor: 'pointer' }} />
-              <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%' }}></span>
+              <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={18} />
+              <input 
+                type="text" 
+                placeholder="Search..." 
+                style={{ 
+                  padding: '10px 16px 10px 40px', 
+                  borderRadius: '20px', 
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-secondary)',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  width: '240px',
+                  transition: 'all 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
+              />
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-              {new Date().toLocaleDateString('uz-UZ', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
+            <button style={{ 
+              background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer',
+              position: 'relative'
+            }}>
+              <Bell size={22} />
+              <div style={{ position: 'absolute', top: '0', right: '0', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%', border: '2px solid white' }}></div>
+            </button>
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--bg-glass-hover)', border: '1px solid var(--border)' }}></div>
           </div>
         </header>
 
         {/* Page Content */}
-        <div style={{ padding: '32px' }}>
+        <div style={{ padding: '32px', flex: 1 }}>
           {children}
         </div>
+
+        {/* Informational Footer */}
+        <footer style={{ 
+          padding: '24px 32px', 
+          borderTop: '1px solid var(--border)',
+          background: 'rgba(255, 251, 245, 0.5)',
+          textAlign: 'center'
+        }}>
+           <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
+            © 2026 Pharma Translation Platform
+          </p>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+             <p style={{ fontWeight: 600 }}>Давлат фармакопеясини ишлаб чиқиш тизими</p>
+             <p>Саволлар ва таклифлар билан Акмалходжа Зайнидинов номига, қуйидаги почта манзилига мурожаат қилишингиз мумкин: <a href="mailto:texnopharm@gmail.com" style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>texnopharm@gmail.com</a></p>
+          </div>
+        </footer>
       </main>
     </div>
   )
