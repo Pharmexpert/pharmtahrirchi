@@ -8,6 +8,7 @@ const AuthContext = createContext<{
   token: string | null
   login: (token: string, user: any) => void
   logout: () => void
+  refreshUser: () => Promise<void>
   isAdmin: boolean
 } | null>(null)
 
@@ -62,25 +63,36 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
     window.location.reload()
   }
 
+  const refreshUser = async () => {
+    if (token) await checkAuth(token)
+  }
+
   const isAdmin = user?.role === 'admin'
+
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'google' | 'forgot' | 'verify_reset' | 'new_password'>('login')
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', code: '', confirmPassword: '' })
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   // Initialize Google Login
   useEffect(() => {
-    if (!loading && !user && window.google) {
-      window.google.accounts.id.initialize({
-        client_id: '1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com',
-        callback: handleGoogleResponse
-      })
-      window.google.accounts.id.renderButton(
-        document.getElementById('google-btn'),
-        { theme: 'outline', size: 'large', width: 280 }
-      )
+    if (!loading && !user && window.google && authMode === 'google') {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: '1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com',
+          callback: handleGoogleResponse
+        })
+        const btnElem = document.getElementById('google-btn')
+        if (btnElem) {
+          window.google.accounts.id.renderButton(
+            btnElem,
+            { theme: 'outline', size: 'large', width: 280 }
+          )
+        }
+      } catch (err) {
+        console.error('Google GSI error:', err)
+      }
     }
-  }, [loading, user])
-
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'google'>('login')
-  const [formData, setFormData] = useState({ name: '', email: '', password: '' })
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  }, [loading, user, authMode])
 
   const handleGoogleResponse = async (response: any) => {
     setLoading(true)
@@ -129,6 +141,76 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
         } else {
           login(data.token, data.user)
         }
+      } else {
+        setError(data.detail || 'Хатолик юз берди')
+      }
+    } catch (err) {
+      setError('Серверга уланишда хатолик')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessMsg(data.message)
+        setAuthMode('verify_reset')
+      } else {
+        setError(data.detail || 'Хатолик юз берди')
+      }
+    } catch (err) {
+      setError('Серверга уланишда хатолик')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerifyReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (formData.code.length !== 6) {
+      setError('6 хонали кодни киритинг')
+      return
+    }
+    setAuthMode('new_password')
+    setError(null)
+  }
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (formData.password !== formData.confirmPassword) {
+      setError('Пароллар мос келмайди')
+      return
+    }
+    if (formData.password.length < 8) {
+      setError('Парол камида 8 белги бўлиши керак')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: formData.email, 
+          code: formData.code, 
+          password: formData.password 
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessMsg(data.message)
+        setAuthMode('login')
       } else {
         setError(data.detail || 'Хатолик юз берди')
       }
@@ -273,7 +355,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
                   <div id="google-btn"></div>
                 </div>
               </div>
-            ) : (
+            ) : (authMode === 'login' || authMode === 'register') ? (
               <form onSubmit={handleSpecialistAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {authMode === 'register' && (
                   <div style={{ position: 'relative' }}>
@@ -323,6 +405,18 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
                   />
                 </div>
                 
+                {authMode === 'login' && (
+                  <div style={{ textAlign: 'right', marginTop: '-8px' }}>
+                    <button 
+                      type="button"
+                      onClick={() => { setAuthMode('forgot'); setError(null); setSuccessMsg(null); }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Паролни унутдингизми?
+                    </button>
+                  </div>
+                )}
+
                 <button 
                   type="submit"
                   disabled={loading}
@@ -338,6 +432,137 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
                   {loading ? 'ЮКЛАНМОҚДА...' : (authMode === 'login' ? 'КИРИШ' : 'РЎЙХАТДАН ЎТИШ')}
                 </button>
               </form>
+            ) : authMode === 'forgot' ? (
+              <form onSubmit={handleForgotPassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.9rem', marginBottom: '8px' }}>
+                  Рўйхатдан ўтган Email манзилингизни киритинг. Код юборилади.
+                </p>
+                <div style={{ position: 'relative' }}>
+                  <Mail size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="email" 
+                    placeholder="Email почта"
+                    required
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                    }}
+                  />
+                </div>
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  style={{ 
+                    marginTop: '8px', padding: '12px', background: 'var(--accent-gradient)',
+                    color: 'white', border: 'none', borderRadius: 'var(--radius-md)',
+                    fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {loading ? 'ЮБОРИЛМОҚДА...' : 'КОД ЮБОРИШ'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setAuthMode('login')}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600, marginTop: '8px' }}
+                >
+                  Ортга қайтиш
+                </button>
+              </form>
+            ) : authMode === 'verify_reset' ? (
+              <form onSubmit={handleVerifyReset} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.9rem', marginBottom: '8px' }}>
+                  Почтангизга юборилган 6 хонали кодни киритинг.
+                </p>
+                <div style={{ position: 'relative' }}>
+                  <ShieldCheck size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="text" 
+                    placeholder="6 хонали код"
+                    maxLength={6}
+                    required
+                    value={formData.code}
+                    onChange={e => setFormData({ ...formData, code: e.target.value.replace(/\D/g, '') })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '1.2rem', letterSpacing: '4px', textAlign: 'center', outline: 'none', fontWeight: 700
+                    }}
+                  />
+                </div>
+                <button 
+                  type="submit"
+                  style={{ 
+                    marginTop: '8px', padding: '12px', background: 'var(--accent-gradient)',
+                    color: 'white', border: 'none', borderRadius: 'var(--radius-md)',
+                    fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  КОДНИ ТАСДИҚЛАШ
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setAuthMode('login')}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600, marginTop: '8px' }}
+                >
+                  Ортга қайтиш
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.9rem', marginBottom: '8px' }}>
+                  Янги паролни киритинг.
+                </p>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="password" 
+                    placeholder="Янги парол"
+                    required
+                    value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                    }}
+                  />
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="password" 
+                    placeholder="Паролни тасдиқлаш"
+                    required
+                    value={formData.confirmPassword}
+                    onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    style={{ 
+                      width: '100%', padding: '12px 12px 12px 42px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border)', background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)', fontSize: '0.95rem', outline: 'none'
+                    }}
+                  />
+                </div>
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  style={{ 
+                    marginTop: '10px', padding: '12px', background: 'var(--accent-gradient)',
+                    color: 'white', border: 'none', borderRadius: 'var(--radius-md)',
+                    fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {loading ? 'САҚЛАНМОҚДА...' : 'ПАРОЛНИ ЯНГИЛАШ'}
+                </button>
+              </form>
             )}
             
             <div style={{ 
@@ -348,19 +573,6 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
               © 2026 Pharma Translation Platform
             </div>
 
-            {/* Developer Bypass */}
-            <div style={{ marginTop: '20px', textAlign: 'center' }}>
-              <button 
-                onClick={() => login('dev-token', { id: 'dev', name: 'Admin (Dev)', role: 'admin', email: 'texnopharm@gmail.com' })}
-                style={{ 
-                  background: 'none', border: '1px dashed var(--border)', 
-                  padding: '8px 16px', borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.7rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600
-                }}
-              >
-                DEVELOPER BYPASS (ADMIN)
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -368,7 +580,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, isAdmin }}>
       {children}
     </AuthContext.Provider>
   )
