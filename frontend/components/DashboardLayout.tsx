@@ -53,12 +53,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div style={{ 
             width: '40px', 
             height: '40px', 
-            background: 'linear-gradient(135deg, #C07840, #D4956B, #E8B78E)', 
+            background: 'linear-gradient(135deg, #B48C64, #D4956B, #E8B78E)', 
             borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 16px rgba(192, 120, 64, 0.25)',
+            boxShadow: '0 4px 16px rgba(180, 140, 100, 0.25)',
             flexShrink: 0
           }}>
             <Database size={22} color="white" />
@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span style={{ 
                 fontWeight: 800, 
                 fontSize: '1.2rem', 
-                background: 'linear-gradient(135deg, #C07840, #D4956B)', 
+                background: 'linear-gradient(135deg, #B48C64, #D4956B)', 
                 WebkitBackgroundClip: 'text', 
                 WebkitTextFillColor: 'transparent',
                 lineHeight: 1

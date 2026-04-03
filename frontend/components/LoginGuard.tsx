@@ -70,7 +70,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
   const isAdmin = user?.role === 'admin'
 
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'google' | 'forgot' | 'verify_reset' | 'new_password'>('login')
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', code: '', confirmPassword: '', department: 'Davlat farmakopeyasi ishlab chiqish bo\'limi' })
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', code: '', confirmPassword: '', department: 'Давлат фармакопеяси ишлаб чиқиш бўлими' })
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   
   // Translation state
@@ -104,6 +104,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
       enterCode: "Кодни киритинг",
       codeDesc: "Почтангизга юборилган 6 рақамли кодни киритинг",
       newPw: "Янги парол (камида 8 белги)",
+      regPassword: "Парол (камида 8 белги)",
       changePw: "🔑 Паролни ўзгартириш",
       backToLogin: "⬅ Кириш саҳифасига қайтиш",
       loading: "Юкланмоқда...",
@@ -138,6 +139,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
       enterCode: "Enter Code",
       codeDesc: "Enter the 6-digit code sent to your email",
       newPw: "New Password (min 8 characters)",
+      regPassword: "Password (min 8 characters)",
       changePw: "🔑 Change Password",
       backToLogin: "⬅ Back to Login",
       loading: "Loading...",
@@ -172,6 +174,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
       enterCode: "Введите код",
       codeDesc: "Введите 6-значный код, отправленный на вашу почту",
       newPw: "Новый пароль (минимум 8 символов)",
+      regPassword: "Пароль (минимум 8 символов)",
       changePw: "🔑 Изменить пароль",
       backToLogin: "⬅ Вернуться к логину",
       loading: "Загрузка...",
@@ -498,9 +501,9 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
           }
 
           .lang-btn-login.active {
-            background: #C07840;
+            background: #B48C64;
             color: white;
-            border-color: #C07840;
+            border-color: #B48C64;
           }
 
           .google-btn {
@@ -525,18 +528,11 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
           .divider {
             display: flex;
             align-items: center;
-            gap: 14px;
-            margin: 24px 0;
+            justify-content: center;
+            margin: 20px 0;
             color: #9C8B7A;
             font-size: 0.82rem;
-          }
-
-          .divider::before,
-          .divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: rgba(180, 140, 100, 0.12);
+            font-weight: 500;
           }
 
           .form-group {
@@ -592,7 +588,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
           .login-primary-btn {
             width: 100%;
             padding: 14px;
-            background: linear-gradient(135deg, #C07840, #D4956B, #E8B78E);
+            background: linear-gradient(135deg, #B48C64, #D4956B);
             color: white;
             border: none;
             border-radius: 12px;
@@ -601,7 +597,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
             cursor: pointer;
             font-family: inherit;
             transition: all 0.25s;
-            box-shadow: 0 4px 16px rgba(192, 120, 64, 0.25);
+            box-shadow: 0 4px 16px rgba(180, 140, 100, 0.25);
             margin-top: 8px;
           }
 
@@ -726,7 +722,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label">{t.password}</label>
+                      <label className="form-label">{(t as any).regPassword || t.password}</label>
                       <input className="form-input" type="password" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="••••••••" minLength={8} />
                     </div>
                     <div className="form-group">
@@ -819,7 +815,6 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
                 <p>Саволлар ва таклифлар билан <strong>Акмалходжа Зайнидинов</strong> номига,</p>
                 <p>қуйидаги почта манзилига мурожаат қилишингиз мумкин:</p>
                 <a href="mailto:texnopharm@gmail.com" style={{ color: '#C07840', fontWeight: 700, textDecoration: 'underline' }}>texnopharm@gmail.com</a>
-              </div>
             </div>
 
           </div>

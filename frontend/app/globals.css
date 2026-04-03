@@ -13,10 +13,10 @@
   --text-secondary: #6B5744;
   --text-muted: #9C8B7A;
 
-  --accent-primary: #C07840;
-  --accent-primary-glow: rgba(192, 120, 64, 0.25);
+  --accent-primary: #B48C64;
+  --accent-primary-glow: rgba(180, 140, 100, 0.25);
   --accent-secondary: #D4956B;
-  --accent-gradient: linear-gradient(135deg, #C07840, #D4956B, #E8B78E);
+  --accent-gradient: linear-gradient(135deg, #B48C64, #D4956B, #E8B78E);
 
   --success: #3B9B6E;
   --success-bg: rgba(59, 155, 110, 0.10);
@@ -60,7 +60,7 @@ body {
   min-height: 100vh;
   font-family: 'Inter', -apple-system, sans-serif;
   background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(192, 120, 64, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse at 20% 50%, rgba(180, 140, 100, 0.05) 0%, transparent 60%),
     radial-gradient(ellipse at 80% 20%, rgba(212, 149, 107, 0.05) 0%, transparent 60%),
     radial-gradient(ellipse at 50% 100%, rgba(232, 183, 142, 0.05) 0%, transparent 60%);
 }
