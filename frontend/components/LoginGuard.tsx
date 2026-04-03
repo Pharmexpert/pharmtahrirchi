@@ -197,9 +197,9 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let interval: any;
     
-    if (!loading && !user && window.google) {
+    if (!loading && !user && (window as any).google) {
       try {
-        window.google.accounts.id.initialize({
+        (window as any).google.accounts.id.initialize({
           client_id: '1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com',
           callback: handleGoogleResponse,
           auto_select: false
@@ -209,7 +209,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
           const render = () => {
             const btnElem = document.getElementById('google-btn-container')
             if (btnElem) {
-              window.google.accounts.id.renderButton(
+              (window as any).google.accounts.id.renderButton(
                 btnElem,
                 { theme: 'outline', size: 'large', width: 368, text: 'signin_with', shape: 'rectangular' }
               )
