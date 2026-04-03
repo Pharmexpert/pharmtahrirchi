@@ -75,22 +75,44 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
 
   // Initialize Google Login
   useEffect(() => {
-    if (!loading && !user && window.google && authMode === 'google') {
+    let interval: any;
+    
+    if (!loading && !user && window.google) {
+      // Initialize GSI if not already done
       try {
         window.google.accounts.id.initialize({
           client_id: '1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com',
-          callback: handleGoogleResponse
+          callback: handleGoogleResponse,
+          auto_select: false
         })
-        const btnElem = document.getElementById('google-btn')
-        if (btnElem) {
-          window.google.accounts.id.renderButton(
-            btnElem,
-            { theme: 'outline', size: 'large', width: 280 }
-          )
+        
+        if (authMode === 'google') {
+          // Try to render immediately, or wait for element to appear
+          const render = () => {
+            const btnElem = document.getElementById('google-btn')
+            if (btnElem) {
+              window.google.accounts.id.renderButton(
+                btnElem,
+                { theme: 'outline', size: 'large', width: 280, text: 'signin_with', shape: 'rectangular' }
+              )
+              return true
+            }
+            return false
+          }
+          
+          if (!render()) {
+            interval = setInterval(() => {
+              if (render()) clearInterval(interval)
+            }, 100)
+          }
         }
       } catch (err) {
         console.error('Google GSI error:', err)
       }
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval)
     }
   }, [loading, user, authMode])
 
