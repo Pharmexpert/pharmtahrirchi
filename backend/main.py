@@ -500,6 +500,15 @@ async def suggest_edits(payload: Dict[str, Any]):
             return {"variants": [], "synonyms": [], "note": ""}
         result = json.loads(match.group())
         result["synonyms"] = [s for s in result.get("synonyms", []) if not db.is_word_wrong(s, lang)]
+        
+        # Auto-save synonyms to database
+        syns = result.get("synonyms", [])[:5]
+        if syns:
+            try:
+                db.save_synonyms_batch(word, syns, lang, source='ai')
+            except Exception as se:
+                print(f"Synonym save error: {se}")
+        
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1255,6 +1264,92 @@ async def transliterate_batch(payload: Dict[str, Any]):
     target = payload.get("target", "latin")
     results = [transliterate.convert_text(t, target=target) for t in texts]
     return {"texts": results}
+
+# ═════════════════════════════════════════════════
+# Synonyms API
+# ═════════════════════════════════════════════════
+
+@app.get("/api/synonyms")
+async def get_synonyms_list(word: str = None, lang: str = None, current_user: Dict = Depends(get_current_user)):
+    """Get synonyms list, optionally filtered."""
+    syns = db.get_synonyms(word=word, lang=lang, limit=10000)
+    return {"synonyms": syns, "total": len(syns)}
+
+@app.post("/api/synonyms/save")
+async def save_synonym_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Save a synonym manually."""
+    word = payload.get("word", "").strip()
+    synonym = payload.get("synonym", "").strip()
+    lang = payload.get("lang", "uz")
+    if not word or not synonym:
+        raise HTTPException(status_code=400, detail="word and synonym required")
+    db.save_synonym(word, synonym, lang, source='manual', created_by=current_user.get("name", ""))
+    return {"status": "saved"}
+
+@app.post("/api/synonyms/select")
+async def select_synonym(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Increment synonym frequency when user selects it."""
+    word = payload.get("word", "").strip()
+    synonym = payload.get("synonym", "").strip()
+    lang = payload.get("lang", "uz")
+    if word and synonym:
+        db.increment_synonym_frequency(word, synonym, lang)
+    return {"status": "ok"}
+
+@app.delete("/api/synonyms/{syn_id}")
+async def delete_synonym_endpoint(syn_id: int, current_user: Dict = Depends(get_current_user)):
+    """Delete a synonym."""
+    db.delete_synonym(syn_id)
+    return {"status": "deleted"}
+
+# ═════════════════════════════════════════════════
+# Profile & Password API
+# ═════════════════════════════════════════════════
+
+@app.post("/api/profile/update")
+async def update_profile(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Update user profile (name, email)."""
+    name = payload.get("name", "").strip()
+    email = payload.get("email", "").strip()
+    db.update_user_profile(current_user["id"], name=name or None, email=email or None)
+    return {"status": "updated"}
+
+@app.post("/api/profile/password")
+async def update_password(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Set or change password. Google OAuth users can add a password."""
+    import hashlib
+    old_password = payload.get("old_password", "")
+    new_password = payload.get("new_password", "")
+    
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Парол камида 6 та белгидан иборат бўлиши керак")
+    
+    # Check if user has existing password
+    existing_hash = db.get_user_password_hash(current_user["id"])
+    if existing_hash and existing_hash.strip():
+        # Verify old password
+        old_hash = hashlib.sha256(old_password.encode()).hexdigest()
+        if old_hash != existing_hash:
+            raise HTTPException(status_code=400, detail="Эски парол нотўғри")
+    
+    # Set new password
+    new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+    db.set_user_password(current_user["id"], new_hash)
+    return {"status": "password_updated"}
+
+# ═════════════════════════════════════════════════
+# API Aliases for frontend compatibility
+# ═════════════════════════════════════════════════
+
+@app.post("/api/suggest-edits")
+async def suggest_edits_alias(payload: Dict[str, Any]):
+    """Alias for /suggest-edits for frontend /api/ prefix compatibility."""
+    return await suggest_edits(payload)
+
+@app.post("/api/synonyms-lookup")
+async def synonyms_lookup_alias(payload: Dict[str, Any]):
+    """Alias for /synonyms."""
+    return await suggest_edits(payload)
 
 if __name__ == "__main__":
     import startup

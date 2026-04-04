@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { 
   Database, Menu, X, LayoutDashboard, FileText, Settings, 
   LogOut, User, Globe, ChevronLeft, ChevronRight, Search, 
-  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen
+  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen, Repeat2, UserCog
 } from 'lucide-react'
 import { useAuth } from './LoginGuard'
 import Link from 'next/link'
@@ -24,6 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Изоҳли луғат', icon: BookOpen, path: '/linguistic/annotated' },
     { name: 'Мунозарали', icon: MessageSquare, path: '/linguistic/disputed' },
     { name: 'Қисқартмалар', icon: Info, path: '/linguistic/abbreviations' },
+    { name: 'Синонимлар', icon: Repeat2, path: '/synonyms' },
   ]
 
   if (isAdmin) {
@@ -115,28 +116,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* User Profile / Logout */}
         <div style={{ padding: '20px 12px', borderTop: '1px solid var(--border)' }}>
           {isSidebarOpen && (
-            <div style={{ 
-              padding: '12px', 
-              background: 'var(--bg-secondary)', 
-              borderRadius: 'var(--radius-md)',
-              marginBottom: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}>
+            <Link href="/profile" style={{ textDecoration: 'none', color: 'inherit' }}>
               <div style={{ 
-                width: '36px', height: '36px', borderRadius: '50%', 
-                background: 'var(--accent-gradient)', 
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontWeight: 600
-              }}>
-                {user?.name?.charAt(0) || 'U'}
+                padding: '12px', 
+                background: 'var(--bg-secondary)', 
+                borderRadius: 'var(--radius-md)',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }} className="nav-item">
+                <div style={{ 
+                  width: '36px', height: '36px', borderRadius: '50%', 
+                  background: 'var(--accent-gradient)', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontWeight: 600
+                }}>
+                  {user?.name?.charAt(0) || 'U'}
+                </div>
+                <div style={{ overflow: 'hidden' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{user?.name}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.role} • Профиль →</div>
+                </div>
               </div>
-              <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{user?.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.role}</div>
-              </div>
-            </div>
+            </Link>
           )}
           <button 
             onClick={logout}

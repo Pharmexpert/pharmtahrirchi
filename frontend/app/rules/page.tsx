@@ -15,6 +15,7 @@ interface Rule {
   lang: string
   frequency: number
   updated_at: string
+  modified_by?: string
 }
 
 export default function RulesPage() {
@@ -25,6 +26,10 @@ export default function RulesPage() {
   const [lang, setLang] = useState('uz')
   const [editingRule, setEditingRule] = useState<Partial<Rule> | null>(null)
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [page, setPage] = useState(0)
+  const [perPage, setPerPage] = useState(25)
+  const [filterWrong, setFilterWrong] = useState('')
+  const [filterCorrect, setFilterCorrect] = useState('')
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -33,7 +38,7 @@ export default function RulesPage() {
   const fetchRules = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}&limit=500`, {
+      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       const data = await res.json()
@@ -83,10 +88,15 @@ export default function RulesPage() {
     } catch (_e) { showMessage('Saqlashda xatolik', 'error') }
   }
 
-  const filteredRules = rules.filter(r =>
-    r.wrong_form.toLowerCase().includes(search.toLowerCase()) ||
-    r.correct_form.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredRules = rules.filter(r => {
+    const q = search.toLowerCase()
+    const matchSearch = !q || r.wrong_form.toLowerCase().includes(q) || r.correct_form.toLowerCase().includes(q)
+    const matchWrong = !filterWrong || r.wrong_form.toLowerCase().includes(filterWrong.toLowerCase())
+    const matchCorrect = !filterCorrect || r.correct_form.toLowerCase().includes(filterCorrect.toLowerCase())
+    return matchSearch && matchWrong && matchCorrect
+  })
+  const totalPages = Math.ceil(filteredRules.length / perPage)
+  const pageRules = filteredRules.slice(page * perPage, (page + 1) * perPage)
 
   const errorTypeColors: Record<string, { bg: string; color: string }> = {
     'S/Spelling': { bg: 'var(--warning-bg)', color: 'var(--warning)' },
@@ -218,7 +228,23 @@ export default function RulesPage() {
               <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тўғри шакл</th>
               <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тури</th>
               <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Частота</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ўзгартирган</th>
               <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Amallar</th>
+            </tr>
+            {/* Column Filters */}
+            <tr style={{ background: '#FAFBFC', borderBottom: '1px solid var(--border)' }}>
+              <th style={{ padding: '8px 24px' }}>
+                <input placeholder="🔍 Хато сўз..." value={filterWrong} onChange={e => { setFilterWrong(e.target.value); setPage(0) }}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white' }} />
+              </th>
+              <th style={{ padding: '8px 24px' }}>
+                <input placeholder="🔍 Тўғри сўз..." value={filterCorrect} onChange={e => { setFilterCorrect(e.target.value); setPage(0) }}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white' }} />
+              </th>
+              <th style={{ padding: '8px 24px' }}></th>
+              <th style={{ padding: '8px 24px' }}></th>
+              <th style={{ padding: '8px 24px' }}></th>
+              <th style={{ padding: '8px 24px' }}></th>
             </tr>
           </thead>
           <tbody>
@@ -238,7 +264,7 @@ export default function RulesPage() {
                 </td>
               </tr>
             ) : (
-              filteredRules.map(rule => {
+              pageRules.map(rule => {
                 const typeColor = errorTypeColors[rule.error_type] || { bg: 'var(--bg-secondary)', color: 'var(--text-muted)' }
                 return (
                   <tr 
@@ -281,6 +307,11 @@ export default function RulesPage() {
                         {rule.frequency}
                       </span>
                     </td>
+                    <td style={{ padding: '20px 24px' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        {rule.modified_by || '—'}
+                      </span>
+                    </td>
                     <td style={{ padding: '20px 24px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                         <button 
@@ -304,6 +335,39 @@ export default function RulesPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', padding: '16px 20px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Саҳифада:</span>
+            {[25, 50].map(n => (
+              <button key={n} onClick={() => { setPerPage(n); setPage(0) }} style={{
+                padding: '6px 14px', borderRadius: '8px',
+                border: perPage === n ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
+                background: perPage === n ? 'var(--accent-bg)' : 'white',
+                color: perPage === n ? 'var(--accent-primary)' : 'var(--text-muted)',
+                fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer'
+              }}>{n}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{
+              padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)',
+              background: page === 0 ? '#F1F5F9' : 'white', cursor: page === 0 ? 'default' : 'pointer',
+              fontWeight: 700, fontSize: '0.82rem', color: page === 0 ? '#94A3B8' : 'var(--text-primary)'
+            }}>← Олдинги</button>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', padding: '0 12px' }}>
+              {page + 1} / {totalPages} ({filteredRules.length} та қоида)
+            </span>
+            <button disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} style={{
+              padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)',
+              background: page >= totalPages - 1 ? '#F1F5F9' : 'white', cursor: page >= totalPages - 1 ? 'default' : 'pointer',
+              fontWeight: 700, fontSize: '0.82rem', color: page >= totalPages - 1 ? '#94A3B8' : 'var(--text-primary)'
+            }}>Кейинги →</button>
+          </div>
+        </div>
+      )}
 
       {/* Edit/Add Modal */}
       {editingRule && (

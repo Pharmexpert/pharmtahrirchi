@@ -59,18 +59,26 @@ async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_a
 @router.get("/rules")
 async def get_all_rules(lang: str = None, q: str = None, current_user: dict = Depends(get_admin_user)):
     """Retrieve all rules for administration with filtering."""
-    rules = db.get_all_rules(lang or 'uz', limit=2000)
+    rules = db.get_all_rules(lang or 'uz', limit=200000)
     if q:
         q = q.lower()
-        rules = [r for r in rules if q in r['wrong_form'].lower() or q in r['correct_form'].lower() or q in (r['context'] or '').lower()]
-    return {"rules": rules}
+        rules = [r for r in rules if q in r['wrong_form'].lower() or q in r['correct_form'].lower() or q in (r.get('context') or '').lower()]
+    return {"rules": rules, "total": len(rules)}
 
 @router.post("/rules")
 async def upsert_rule(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
     """Add or update a correction rule."""
     rule_id = payload.get("id")
+    modifier = payload.get("modified_by", current_user.get("name", ""))
     if rule_id:
         db.update_sayqallash_rule(rule_id, payload)
+        # Track who modified
+        try:
+            conn = db.connect_db()
+            conn.cursor().execute("UPDATE sayqallash_rules SET modified_by = ? WHERE id = ?", (modifier, rule_id))
+            conn.commit()
+            conn.close()
+        except: pass
         return {"status": "updated", "id": rule_id}
     else:
         db.add_sayqallash_rule(
@@ -81,6 +89,13 @@ async def upsert_rule(payload: Dict[str, Any], current_user: dict = Depends(get_
             lang=payload.get("lang", "uz"),
             source="admin_edit"
         )
+        # Track creator
+        try:
+            conn = db.connect_db()
+            conn.cursor().execute("UPDATE sayqallash_rules SET modified_by = ? WHERE wrong_form = ? AND correct_form = ? ORDER BY id DESC LIMIT 1", (modifier, payload.get("wrong_form"), payload.get("correct_form")))
+            conn.commit()
+            conn.close()
+        except: pass
         return {"status": "created"}
 
 @router.delete("/rules/{rule_id}")
@@ -96,14 +111,25 @@ async def get_db_stats(current_user: dict = Depends(get_admin_user)):
     cursor = conn.cursor()
     stats = {}
     for table in ['projects', 'alignments', 'sayqallash_rules', 'users']:
-        cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        stats[table] = cursor.fetchone()[0]
+        try:
+            cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            stats[table] = cursor.fetchone()[0]
+        except: stats[table] = 0
+    # Synonyms count
+    try:
+        cursor.execute("SELECT COUNT(*) FROM synonyms")
+        stats['synonyms'] = cursor.fetchone()[0]
+    except: stats['synonyms'] = 0
     import os
     pharma_db_size = os.path.getsize(db.DB_PATH) / (1024 * 1024)
     tahrirchi_db_size = os.path.getsize(db.TAHRIRCHI_DB_PATH) / (1024 * 1024) if os.path.exists(db.TAHRIRCHI_DB_PATH) else 0
     conn.close()
     return {
         "counts": stats,
+        # Flat keys for backward compat with Dashboard
+        "projects": stats.get('projects', 0),
+        "sayqallash_rules": stats.get('sayqallash_rules', 0),
+        "synonyms": stats.get('synonyms', 0),
         "db_sizes": {
             "pharma_editor.db": f"{pharma_db_size:.2f} MB",
             "tahrirchi.db": f"{tahrirchi_db_size:.2f} MB"

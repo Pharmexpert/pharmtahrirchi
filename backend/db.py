@@ -381,6 +381,24 @@ def init_db():
     )
     ''')
 
+    # ═══════════════════════════════════════════════
+    # NEW: Synonyms Database (3-language)
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS synonyms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL,
+        synonym TEXT NOT NULL,
+        lang TEXT NOT NULL DEFAULT 'uz',
+        frequency INTEGER DEFAULT 0,
+        source TEXT DEFAULT 'ai',
+        created_by TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(word, synonym, lang)
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_synonyms_word ON synonyms(word, lang)')
+
     # Migrate: add new columns to linguistic tables
     for tbl in ['annotated_words', 'disputed_words', 'abbreviations']:
         try:
@@ -389,6 +407,11 @@ def init_db():
         try:
             cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN status TEXT DEFAULT 'active'")
         except Exception: pass
+
+    # Migrate: add modified_by to sayqallash_rules
+    try:
+        cursor.execute("ALTER TABLE sayqallash_rules ADD COLUMN modified_by TEXT")
+    except Exception: pass
 
 
     # ═══════════════════════════════════════════════
@@ -1447,3 +1470,126 @@ def get_file_text_preview(file_path: str, max_chars: int = 2000) -> str:
         text = f"[Preview хатоси: {str(e)}]"
     
     return text[:max_chars] if text else "[Бўш файл]"
+
+
+# ═══════════════════════════════════════════════
+# Synonyms CRUD
+# ═══════════════════════════════════════════════
+
+def save_synonym(word: str, synonym: str, lang: str, source: str = 'ai', created_by: str = ''):
+    """Save a synonym to the database (upsert)."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO synonyms (word, synonym, lang, source, created_by, frequency)
+        VALUES (?, ?, ?, ?, ?, 0)
+        ON CONFLICT(word, synonym, lang) DO UPDATE SET
+            frequency = frequency  -- keep existing frequency on conflict
+    ''', (word.strip(), synonym.strip(), lang, source, created_by))
+    conn.commit()
+    conn.close()
+
+def save_synonyms_batch(word: str, synonyms: list, lang: str, source: str = 'ai', created_by: str = ''):
+    """Save multiple synonyms for a word at once."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    for syn in synonyms:
+        if syn and syn.strip():
+            cursor.execute('''
+                INSERT INTO synonyms (word, synonym, lang, source, created_by, frequency)
+                VALUES (?, ?, ?, ?, ?, 0)
+                ON CONFLICT(word, synonym, lang) DO NOTHING
+            ''', (word.strip(), syn.strip(), lang, source, created_by))
+    conn.commit()
+    conn.close()
+
+def increment_synonym_frequency(word: str, synonym: str, lang: str):
+    """Increment the selection frequency of a synonym."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE synonyms SET frequency = frequency + 1
+        WHERE word = ? AND synonym = ? AND lang = ?
+    ''', (word.strip(), synonym.strip(), lang))
+    conn.commit()
+    conn.close()
+
+def get_synonyms(word: str = None, lang: str = None, limit: int = 200):
+    """Get synonyms, optionally filtered by word and lang."""
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    query = "SELECT * FROM synonyms WHERE 1=1"
+    params = []
+    if word:
+        query += " AND word LIKE ?"
+        params.append(f"%{word}%")
+    if lang:
+        query += " AND lang = ?"
+        params.append(lang)
+    query += " ORDER BY frequency DESC, created_at DESC LIMIT ?"
+    params.append(limit)
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_all_synonyms(limit: int = 10000):
+    """Get all synonyms for the synonyms page."""
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM synonyms ORDER BY frequency DESC, created_at DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def delete_synonym(syn_id: int):
+    """Delete a synonym by ID."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM synonyms WHERE id = ?", (syn_id,))
+    conn.commit()
+    conn.close()
+
+def get_synonyms_count():
+    """Get total synonym count."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM synonyms")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+# ═══════════════════════════════════════════════
+# User Profile & Password 
+# ═══════════════════════════════════════════════
+
+def update_user_profile(user_id: str, name: str = None, email: str = None):
+    """Update user profile information."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    if name:
+        cursor.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+    if email:
+        cursor.execute("UPDATE users SET email = ? WHERE id = ?", (email.lower(), user_id))
+    conn.commit()
+    conn.close()
+
+def set_user_password(user_id: str, hashed_password: str):
+    """Set or update user password (for Google OAuth users adding password)."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
+    conn.commit()
+    conn.close()
+
+def get_user_password_hash(user_id: str):
+    """Get user password hash for verification."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None

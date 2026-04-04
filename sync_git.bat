@@ -37,15 +37,19 @@ if %errorlevel% neq 0 (
     git push origin main
 )
 
-:: Step 5: Vercel Deploy
+:: Step 5: Vercel Deploy — FRONTEND FOLDER
 echo.
-echo [5/5] Vercel deployment...
+echo [5/5] Vercel Frontend deployment...
 where vercel >nul 2>nul
 if %errorlevel% equ 0 (
-    echo Vercel CLI found. Triggering production deploy...
-    vercel --prod --yes
+    echo Vercel CLI found. Deploying frontend to production...
     echo.
-    echo Vercel deployment triggered!
+    echo --- Deploying frontend (frontend-dun-nine-30.vercel.app) ---
+    cd /d "%~dp0frontend"
+    vercel --prod --yes
+    cd /d "%~dp0"
+    echo.
+    echo Frontend deployment triggered!
     
     :: Post-deploy: sync DB with remote
     if defined VERCEL_API_URL (
@@ -53,15 +57,21 @@ if %errorlevel% equ 0 (
         .venv\Scripts\python.exe backend\sync_db.py sync
     )
 ) else (
-    echo [INFO] Vercel CLI not installed. Deployment will be triggered
-    echo        automatically via GitHub integration.
-    echo        To install Vercel CLI: npm i -g vercel
+    echo [INFO] Vercel CLI not installed.
+    echo        Install with: npm i -g vercel
+    echo        Then run this script again.
+    echo.
+    echo [!] IMPORTANT: GitHub push alone does NOT deploy frontend!
+    echo     The Vercel project 'frontend' is connected to 'pharma-backend' repo
+    echo     but your code is in 'pharmtahrirchi' repo.
+    echo     You MUST use 'vercel --prod' from the frontend/ folder.
 )
 
 echo.
 echo ══════════════════════════════════════════════
-echo   GitHub:  SYNCED ✓
-echo   Vercel:  DEPLOYMENT TRIGGERED ✓
-echo   DB:      EXPORTED ✓
+echo   GitHub:   SYNCED ✓
+echo   Vercel:   FRONTEND DEPLOYED ✓
+echo   DB:       EXPORTED ✓
+echo   URL:      https://frontend-dun-nine-30.vercel.app
 echo ══════════════════════════════════════════════
 pause

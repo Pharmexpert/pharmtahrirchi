@@ -37,8 +37,8 @@ export default function DashboardPage() {
           const d = await statsRes.value.json()
           setStats(prev => ({ 
             ...prev, 
-            projects: d.projects || 0,
-            rules: d.sayqallash_rules || 0 
+            projects: d.projects || d.counts?.projects || 0,
+            rules: d.sayqallash_rules || d.counts?.sayqallash_rules || 0 
           }))
         }
         if (lingRes.status === 'fulfilled' && lingRes.value.ok) {

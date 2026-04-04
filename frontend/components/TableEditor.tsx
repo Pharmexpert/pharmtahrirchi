@@ -21,7 +21,7 @@ export interface RowData {
 
 interface SynonymPopup {
   visible: boolean; x: number; y: number
-  word: string; lang: 'ru' | 'uz'; rowIdx: number
+  word: string; lang: 'ru' | 'uz' | 'en'; rowIdx: number
   synonyms: string[]; loading: boolean
 }
 
@@ -160,7 +160,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     notify('Gap #' + row.display_no + ' ochirildi')
   }
 
-  const handleWordClick = async (e: React.MouseEvent<HTMLTextAreaElement>, rowIdx: number, lang: 'ru' | 'uz') => {
+  const handleWordClick = async (e: React.MouseEvent<HTMLTextAreaElement>, rowIdx: number, lang: 'ru' | 'uz' | 'en') => {
     const t = e.currentTarget
     const s = t.selectionStart ?? 0
     const end = t.selectionEnd ?? 0
@@ -177,9 +177,9 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     if (!sel || sel.length < 2 || sel.split(' ').length > 5) return
     const px = Math.min(e.clientX, window.innerWidth - 310)
     const py = Math.min(e.clientY + 22, window.innerHeight - 240)
-    setPopup({ visible: true, x: px, y: py, word: sel, lang, rowIdx, synonyms: [], loading: true })
+    setPopup({ visible: true, x: px, y: py, word: sel, lang: lang === 'en' ? 'en' : lang, rowIdx, synonyms: [], loading: true })
     try {
-      const res = await fetch(`${API_BASE}/suggest-edits`, {
+      const res = await fetch(`${API_BASE}/api/suggest-edits`, {
         method: 'POST', headers: authHeaders,
         body: JSON.stringify({
           word: sel, lang,
@@ -196,7 +196,14 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
 
   const applyVariant = (v: string) => {
     const { rowIdx, word, lang } = popup
-    const field = lang === 'ru' ? 'ru_proposed' : 'uz_proposed'
+    // Track frequency
+    try {
+      fetch(`${API_BASE}/api/synonyms/select`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ word, synonym: v, lang })
+      })
+    } catch {}
+    const field = lang === 'ru' ? 'ru_proposed' : lang === 'en' ? 'en' : 'uz_proposed'
     const current = (data[rowIdx] as any)[field] || ''
     update(rowIdx, field as keyof RowData, current.replace(word, v))
     setPopup(p => ({ ...p, visible: false }))
