@@ -26,9 +26,12 @@ except ImportError:
 
 # Resolve database paths — env vars for Railway, fallback for local dev
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.dirname(BACKEND_DIR)
-DB_PATH = os.getenv("DB_PATH", os.path.join(BACKEND_DIR, "pharma_editor.db"))
-TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(BACKEND_DIR, "tahrirchi.db"))
+# Priority: 1. Env Var, 2. Railway Vol Path (/app/data/), 3. Local (BACKEND_DIR)
+IS_RAILWAY = os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data")
+DATA_DIR = "/app/data" if IS_RAILWAY else BACKEND_DIR
+
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "pharma_editor.db"))
+TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(DATA_DIR, "tahrirchi.db"))
 
 class FaissIndexManager:
     def __init__(self, dimension=768):

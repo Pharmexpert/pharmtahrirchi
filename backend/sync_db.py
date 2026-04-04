@@ -66,7 +66,7 @@ def export_db():
     with open(export_path, "w", encoding="utf-8") as f:
         json.dump(export_data, f, ensure_ascii=False, indent=2, default=str)
     
-    print(f"✅ Database exported to {export_path}")
+    print(f"[*] Database exported to {export_path}")
     for table, rows in tables.items():
         print(f"   {table}: {len(rows)} rows")
     
