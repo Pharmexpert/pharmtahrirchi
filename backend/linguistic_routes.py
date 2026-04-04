@@ -11,13 +11,37 @@ from datetime import datetime
 
 router = APIRouter(prefix="/api/linguistic", tags=["linguistic"])
 
-def get_ai_model():
+import anthropic as _anthropic_lib
+
+def get_ai_text(prompt: str) -> str:
+    """Dual-AI: Gemini first, Anthropic Claude fallback."""
+    # Try Gemini
     api_key = os.getenv("GOOGLE_API_KEY")
     if api_key:
-        genai.configure(api_key=api_key)
-        # 2.0 Flash for speed and reliability in term extraction
-        return genai.GenerativeModel("models/gemini-2.0-flash")
-    return None
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("models/gemini-2.0-flash")
+            return model.generate_content(prompt).text
+        except Exception as e:
+            print(f"[linguistic] Gemini failed: {e} → trying Anthropic...")
+
+    # Fallback to Anthropic
+    ant_key = os.getenv("ANTHROPIC_API_KEY")
+    if ant_key:
+        try:
+            client = _anthropic_lib.Anthropic(api_key=ant_key)
+            msg = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return msg.content[0].text
+        except Exception as e:
+            print(f"[linguistic] Anthropic also failed: {e}")
+            raise
+
+    raise Exception("No AI configured. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY.")
+
 
 @router.post("/analyze")
 async def analyze_text(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
@@ -29,25 +53,20 @@ async def analyze_text(payload: Dict[str, Any], current_user: Dict = Depends(get
     if not text:
         return {"results": []}
 
-    model = get_ai_model()
-    
-    if not model:
-        return await fallback_analysis(text, category, current_user["id"])
-
     if category == "annotated":
-        prompt_task = f"""Extract 10-15 most critical pharmaceutical terms (Annotated Words).
+        prompt_task = """Extract 10-15 most critical pharmaceutical terms (Annotated Words).
 Return ONLY a JSON array. Each object MUST have: en, ru, uz, description_en, description_ru, description_uz."""
     elif category == "disputed":
-        prompt_task = f"""Extract 10-15 'Disputed Words' (context-heavy translations).
+        prompt_task = """Extract 10-15 'Disputed Words' (context-heavy translations).
 Return ONLY a JSON array. Each object MUST have: en, ru, uz, context_en, context_ru, context_uz."""
-    elif category == "abbreviations":
-        prompt_task = f"""Extract 10-15 abbreviations and acronyms.
+    else:
+        prompt_task = """Extract 10-15 abbreviations and acronyms.
 Return ONLY a JSON array. Each object MUST have: short_form, long_en, long_ru, long_uz."""
 
     try:
         full_prompt = f"Role: Pharmaceutical expert editor. Task: {prompt_task}\nText: {text[:6000]}"
-        response = model.generate_content(full_prompt)
-        result_text = response.text
+        result_text = get_ai_text(full_prompt)
+
         match = re.search(r'\[.*\]', result_text, re.DOTALL)
         if match:
             results = json.loads(match.group())
@@ -57,7 +76,6 @@ Return ONLY a JSON array. Each object MUST have: short_form, long_en, long_ru, l
             cursor = conn.cursor()
             try:
                 for item in results:
-                    exists = False
                     if category == "annotated":
                         cursor.execute("SELECT id FROM annotated_words WHERE LOWER(en) = ?", (item.get("en", "").lower(),))
                     elif category == "disputed":
@@ -77,8 +95,9 @@ Return ONLY a JSON array. Each object MUST have: short_form, long_en, long_ru, l
                 
             return {"results": results}
     except Exception as e:
-        print(f"Gemini error: {e}")
+        print(f"AI error: {e}")
         return await fallback_analysis(text, category, current_user["id"])
+
 
 async def fallback_analysis(text: str, category: str, user_id: str):
     return {"results": [], "note": "BERT Fallback: Automated term extraction requires LLM access for definitions."}

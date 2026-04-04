@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Edit2, Trash2, Download, CheckCircle2, AlertCircle, Loader2, X, Save } from 'lucide-react'
+import { Search, Plus, Edit2, Trash2, Download, CheckCircle2, AlertCircle, Loader2, X, Save, ArrowLeft, Copy, Filter } from 'lucide-react'
 import { useAuth } from '../../../components/LoginGuard'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 
 type Category = 'annotated' | 'disputed' | 'abbreviations'
+type StatusFilter = 'all' | 'new' | 'confirmed' | 'duplicates'
 
 interface LingItem {
   id: number
@@ -18,52 +19,109 @@ interface LingItem {
   user_name?: string; modified_by_name?: string
   created_at?: string; modified_at?: string
   status?: string
+  is_duplicate?: boolean
 }
 
-const CATEGORY_META: Record<Category, { title: string; emoji: string; color: string; bg: string }> = {
-  annotated:     { title: 'Изоҳли луғат',          emoji: '📖', color: '#5B7FDE', bg: '#F0F4FF' },
-  disputed:      { title: 'Мунозарали терминлар',  emoji: '⚖️', color: '#D47B3F', bg: '#FFF4EE' },
-  abbreviations: { title: 'Қисқартмалар архиви',    emoji: '✂️', color: '#9B3B9B', bg: '#FDF0FF' },
+const CATEGORY_META: Record<Category, { title: string; subtitle: string; icon: string; color: string; bg: string; headerBg: string; borderColor: string }> = {
+  annotated: {
+    title: 'Изоҳли луғат',
+    subtitle: 'Фармацевтик терминлар ва уларнинг илмий таснифи',
+    icon: '📖',
+    color: '#5B7FDE',
+    bg: '#F0F4FF',
+    headerBg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    borderColor: '#c7d2fe'
+  },
+  disputed: {
+    title: 'Мунозарали терминлар',
+    subtitle: 'Контекстга қараб турлича ишлатиладиган сўзлар',
+    icon: '💬',
+    color: '#E53E3E',
+    bg: '#FFF5F5',
+    headerBg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    borderColor: '#fed7d7'
+  },
+  abbreviations: {
+    title: 'Қисқартмалар архиви',
+    subtitle: 'Қисқартмалар ва тўлиқ номлари (GMP, USP, ICH...)',
+    icon: '✂️',
+    color: '#38A169',
+    bg: '#F0FFF4',
+    headerBg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+    borderColor: '#c6f6d5'
+  },
 }
 
-function getFields(cat: Category, item: Partial<LingItem>) {
+function getTableColumns(cat: Category) {
   if (cat === 'abbreviations') return [
-    { key: 'short_form', label: 'Қисқартма', placeholder: 'GMP', fullWidth: true },
-    { key: 'long_en',    label: 'Тўлиқ (EN)', placeholder: 'Good Manufacturing Practice' },
-    { key: 'long_ru',    label: 'Тўлиқ (RU)', placeholder: 'Надлежащая производственная практика' },
-    { key: 'long_uz',    label: 'Тўлиқ (UZ)', placeholder: 'Yaxshi ishlab chiqarish amaliyoti' },
+    { key: 'short_form', label: 'ҚИСҚАРТМА', width: '10%' },
+    { key: 'long_ru', label: 'РУССКИЙ', width: '18%' },
+    { key: 'long_uz', label: 'ЎЗБЕКСНА', width: '18%' },
+    { key: 'long_en', label: 'ENGLISH FULL NAME', width: '20%' },
   ]
   if (cat === 'disputed') return [
-    { key: 'en', label: 'EN термин', placeholder: 'container' },
-    { key: 'ru', label: 'RU термин', placeholder: 'контейнер / ёмкость' },
-    { key: 'uz', label: 'UZ термин', placeholder: 'idish / qadoq' },
-    { key: 'context_en', label: 'Контекст (EN)', placeholder: 'Used when referring to...' },
-    { key: 'context_ru', label: 'Контекст (RU)', placeholder: 'Используется когда...' },
-    { key: 'context_uz', label: 'Kontekst (UZ)', placeholder: 'Qo\'llanilganda...' },
+    { key: 'en', label: 'ENGLISH', width: '14%' },
+    { key: 'ru', label: 'РУССКИЙ', width: '14%' },
+    { key: 'uz', label: 'ЎЗБЕКСНА', width: '14%' },
+    { key: 'context', label: 'КОНТЕКСТ', width: '24%' },
   ]
   return [
-    { key: 'en', label: 'Термин (EN)', placeholder: 'bioavailability' },
-    { key: 'ru', label: 'Термин (RU)', placeholder: 'биодоступность' },
-    { key: 'uz', label: 'Термин (UZ)', placeholder: 'biodostuplik' },
+    { key: 'en', label: 'ENGLISH', width: '14%' },
+    { key: 'ru', label: 'РУССКИЙ', width: '14%' },
+    { key: 'uz', label: 'ЎЗБЕКСНА', width: '14%' },
+    { key: 'description', label: 'ТАЪРИФ', width: '24%' },
+  ]
+}
+
+function getEditFields(cat: Category) {
+  if (cat === 'abbreviations') return [
+    { key: 'short_form', label: 'Қисқартма', placeholder: 'GMP' },
+    { key: 'long_ru', label: 'Русский', placeholder: 'Надлежащая производственная практика' },
+    { key: 'long_uz', label: 'Ўзбексна', placeholder: 'Yaxshi ishlab chiqarish amaliyoti' },
+    { key: 'long_en', label: 'English Full Name', placeholder: 'Good Manufacturing Practice' },
+  ]
+  if (cat === 'disputed') return [
+    { key: 'en', label: 'English', placeholder: 'container' },
+    { key: 'ru', label: 'Русский', placeholder: 'контейнер/упаковка' },
+    { key: 'uz', label: 'Ўзбексна', placeholder: 'idish/konteyner' },
+    { key: 'context_en', label: 'Контекст (EN)', placeholder: 'Used when referring to...' },
+    { key: 'context_ru', label: 'Контекст (RU)', placeholder: 'Используется когда...' },
+    { key: 'context_uz', label: 'Kontekst (UZ)', placeholder: "Qo'llanilganda..." },
+  ]
+  return [
+    { key: 'en', label: 'English', placeholder: 'bioavailability' },
+    { key: 'ru', label: 'Русский', placeholder: 'биодоступность' },
+    { key: 'uz', label: 'Ўзбексна', placeholder: 'biodostuplik' },
     { key: 'description_en', label: 'Таъриф (EN)', placeholder: 'The fraction of...' },
     { key: 'description_ru', label: 'Таъриф (RU)', placeholder: 'Доля вещества...' },
     { key: 'description_uz', label: 'Tavsif (UZ)', placeholder: 'Moddaning ulushi...' },
   ]
 }
 
-function getDisplayName(item: LingItem, cat: Category) {
-  if (cat === 'abbreviations') return item.short_form || '—'
-  return item.en || '—'
+function getCellValue(item: LingItem, key: string, cat: Category): string {
+  if (key === 'context') {
+    return (item as any).context_en || (item as any).context_ru || ''
+  }
+  if (key === 'description') {
+    return (item as any).description_en || (item as any).description_ru || ''
+  }
+  return (item as any)[key] || ''
 }
 
-function getSubName(item: LingItem, cat: Category) {
-  if (cat === 'abbreviations') return item.long_en || ''
-  if (cat === 'disputed') return item.context_en || item.ru || ''
-  return item.description_en || item.ru || ''
+function formatDate(d?: string) {
+  if (!d) return '—'
+  try {
+    const dt = new Date(d)
+    const yy = String(dt.getFullYear()).slice(2)
+    const mm = String(dt.getMonth() + 1).padStart(2, '0')
+    const dd = String(dt.getDate()).padStart(2, '0')
+    return `${yy}-${mm}-${dd}`
+  } catch { return '—' }
 }
 
 export default function LinguisticCategoryPage() {
   const params = useParams()
+  const router = useRouter()
   const category = (params?.category as Category) || 'annotated'
   const meta = CATEGORY_META[category] || CATEGORY_META.annotated
 
@@ -75,6 +133,7 @@ export default function LinguisticCategoryPage() {
   const [search, setSearch] = useState('')
   const [textIdFilter, setTextIdFilter] = useState('')
   const [userFilter, setUserFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [editItem, setEditItem] = useState<Partial<LingItem> | null>(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -90,8 +149,7 @@ export default function LinguisticCategoryPage() {
       const res = await fetch(`${API_BASE}/api/linguistic/all`)
       if (res.ok) {
         const data = await res.json()
-        const key = category === 'annotated' ? 'annotated' : category === 'disputed' ? 'disputed' : 'abbreviations'
-        setItems(data[key] || [])
+        setItems(data[category] || [])
       }
     } finally { setLoading(false) }
   }, [category, API_BASE])
@@ -134,19 +192,20 @@ export default function LinguisticCategoryPage() {
         setItems(prev => prev.filter(x => x.id !== id))
         showToast('Ўчирилди')
       }
-    } catch (e) { showToast('Хатолик', 'error') }
+    } catch { showToast('Хатолик', 'error') }
   }
 
   const handleExportXLSX = () => {
+    const cols = getTableColumns(category)
     const rows = filtered.map((item, i) => {
-      const base: any = { '№': i + 1, 'Матн рақами': item.text_id || '' }
-      if (category === 'abbreviations') {
-        return { ...base, 'Қисқартма': item.short_form, 'EN': item.long_en, 'RU': item.long_ru, 'UZ': item.long_uz }
-      }
-      if (category === 'disputed') {
-        return { ...base, 'EN': item.en, 'RU': item.ru, 'UZ': item.uz, 'Контекст EN': item.context_en, 'Контекст RU': item.context_ru, 'Kontekst UZ': item.context_uz }
-      }
-      return { ...base, 'EN': item.en, 'RU': item.ru, 'UZ': item.uz, 'Таъриф EN': item.description_en, 'Таъриф RU': item.description_ru, 'Tavsif UZ': item.description_uz }
+      const base: any = { '№': i + 1 }
+      cols.forEach(col => {
+        base[col.label] = getCellValue(item, col.key, category)
+      })
+      base['МУТАХАССИС'] = item.user_name || '—'
+      base['МАТН №'] = item.text_id || '—'
+      base['САНА'] = formatDate(item.created_at)
+      return base
     })
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
@@ -161,12 +220,19 @@ export default function LinguisticCategoryPage() {
       (item.ru || item.long_ru || '').toLowerCase().includes(q) ||
       (item.uz || item.long_uz || '').toLowerCase().includes(q)
     const matchTextId = !textIdFilter || (item.text_id || '').toLowerCase().includes(textIdFilter.toLowerCase())
-    const matchUser = !userFilter || (item.user_name || '').toLowerCase().includes(userFilter.toLowerCase()) ||
-      (item.modified_by_name || '').toLowerCase().includes(userFilter.toLowerCase())
-    return matchSearch && matchTextId && matchUser
+    const matchUser = !userFilter || (item.user_name || '').toLowerCase().includes(userFilter.toLowerCase())
+    const matchStatus = statusFilter === 'all' ? true :
+      statusFilter === 'confirmed' ? item.status === 'confirmed' :
+      statusFilter === 'duplicates' ? item.is_duplicate === true :
+      statusFilter === 'new' ? (!item.status || item.status === 'active') : true
+    return matchSearch && matchTextId && matchUser && matchStatus
   })
 
-  const fields = getFields(category, editItem || {})
+  const confirmedCount = items.filter(i => i.status === 'confirmed').length
+  const duplicatesCount = items.filter(i => i.is_duplicate).length
+
+  const columns = getTableColumns(category)
+  const editFields = getEditFields(category)
 
   return (
     <div>
@@ -177,105 +243,231 @@ export default function LinguisticCategoryPage() {
           padding: '14px 24px', borderRadius: '12px', fontWeight: 700,
           background: toast.type === 'success' ? '#16A34A' : '#DC2626',
           color: 'white', display: 'flex', alignItems: 'center', gap: '10px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)', animation: 'fadeIn 0.3s'
         }}>
           {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
           {toast.msg}
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '6px' }}>
-            {meta.emoji} {meta.title}
-          </h1>
-          <p style={{ color: 'var(--text-muted)' }}>{filtered.length} та ёзув</p>
+      {/* Hero Header */}
+      <div style={{
+        background: meta.bg, borderRadius: '20px', padding: '32px 36px',
+        border: `1.5px solid ${meta.borderColor}`, marginBottom: '28px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <button onClick={() => router.back()} style={{
+            width: 44, height: 44, borderRadius: '50%', border: `1.5px solid ${meta.borderColor}`,
+            background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: meta.color
+          }}>
+            <ArrowLeft size={20} />
+          </button>
+          <div style={{
+            width: 52, height: 52, borderRadius: '14px', background: meta.headerBg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.6rem', boxShadow: `0 4px 16px ${meta.color}30`
+          }}>
+            {meta.icon}
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px', letterSpacing: '-0.5px' }}>
+              {meta.title}
+            </h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
+              {meta.subtitle} — <strong>3</strong> тилда
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+              Жами: <strong>{items.length}</strong> та • Кўрсатилган: <strong>{filtered.length}</strong>
+            </p>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Status Filter Buttons */}
+          {[
+            { id: 'new' as StatusFilter, label: '🔄 Янгилаш', count: null },
+            { id: 'all' as StatusFilter, label: 'Ҳаммаси', count: null },
+            { id: 'confirmed' as StatusFilter, label: '✅ Тасдиқланган', count: confirmedCount },
+            { id: 'duplicates' as StatusFilter, label: '⚠️ Дубликатлар', count: duplicatesCount },
+          ].map(f => (
+            <button key={f.id} onClick={() => {
+              if (f.id === 'new') { fetchItems(); return }
+              setStatusFilter(f.id)
+            }}
+              style={{
+                padding: '8px 16px', borderRadius: '20px', border: '1.5px solid',
+                borderColor: statusFilter === f.id ? meta.color : 'var(--border)',
+                background: statusFilter === f.id ? meta.color : 'white',
+                color: statusFilter === f.id ? 'white' : 'var(--text-secondary)',
+                fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '4px',
+                transition: 'all 0.15s'
+              }}>
+              {f.label}
+            </button>
+          ))}
+
           <button onClick={handleExportXLSX} style={{
-            padding: '10px 18px', borderRadius: '10px', border: '1.5px solid #16A34A',
+            padding: '8px 16px', borderRadius: '10px', border: '1.5px solid #16A34A',
             background: '#F0FDF4', color: '#16A34A', fontWeight: 700, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem'
+            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem'
           }}>
             <Download size={15} /> XLSX
           </button>
+
           <button onClick={() => setEditItem({})} style={{
-            padding: '10px 18px', borderRadius: '10px', border: 'none',
-            background: meta.color, color: 'white', fontWeight: 700, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem'
+            padding: '10px 22px', borderRadius: '12px', border: 'none',
+            background: meta.headerBg, color: 'white', fontWeight: 800, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem',
+            boxShadow: `0 4px 16px ${meta.color}40`
           }}>
-            <Plus size={15} /> Янги
+            <Plus size={16} /> ЯНГИ ҚЎШИШ
           </button>
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 2, minWidth: '200px' }}>
-          <Search size={15} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input placeholder="Терминни қидириш..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '11px 11px 11px 40px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-card)', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-        </div>
-        <input placeholder="Матн рақами..." value={textIdFilter} onChange={e => setTextIdFilter(e.target.value)}
-          style={{ flex: 1, minWidth: '140px', padding: '11px 14px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-card)', outline: 'none', fontSize: '0.9rem' }} />
-        <input placeholder="Мутахассис..." value={userFilter} onChange={e => setUserFilter(e.target.value)}
-          style={{ flex: 1, minWidth: '140px', padding: '11px 14px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-card)', outline: 'none', fontSize: '0.9rem' }} />
-      </div>
-
-      {/* Table */}
-      <div style={{ background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+      {/* Table with Column Filters */}
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: '16px',
+        border: '1px solid var(--border)', overflow: 'hidden',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+      }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
+            {/* Column Headers */}
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '40px' }}>№</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Термин</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Матн №</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Мутахассис</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Сана</th>
-              <th style={{ padding: '14px 16px', textAlign: 'right', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Амал</th>
+              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '40px' }}>№</th>
+              {columns.map(col => (
+                <th key={col.key} style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: col.width }}>
+                  {col.label}
+                </th>
+              ))}
+              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '14%' }}>МУТАХАССИС</th>
+              <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '6%' }}>МАТН №</th>
+              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '8%' }}>САНА</th>
+              <th style={{ padding: '14px 16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '8%' }}>АМАЛ</th>
+            </tr>
+            {/* Filter Row */}
+            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '6px 8px' }}></td>
+              {columns.map((col, ci) => (
+                <td key={col.key} style={{ padding: '6px 8px' }}>
+                  {ci < 3 && (
+                    <input placeholder="Қидириш..." value={ci === 0 ? search : ''}
+                      onChange={e => ci === 0 && setSearch(e.target.value)}
+                      style={{
+                        width: '100%', padding: '6px 10px', borderRadius: '8px',
+                        border: '1px solid var(--border)', background: 'white',
+                        fontSize: '0.78rem', outline: 'none', boxSizing: 'border-box'
+                      }} />
+                  )}
+                  {ci === 3 && (
+                    <input placeholder="Филтр..." style={{
+                      width: '100%', padding: '6px 10px', borderRadius: '8px',
+                      border: '1px solid var(--border)', background: 'white',
+                      fontSize: '0.78rem', outline: 'none', boxSizing: 'border-box'
+                    }} />
+                  )}
+                </td>
+              ))}
+              <td style={{ padding: '6px 8px' }}>
+                <input placeholder="Исм..." value={userFilter}
+                  onChange={e => setUserFilter(e.target.value)}
+                  style={{
+                    width: '100%', padding: '6px 10px', borderRadius: '8px',
+                    border: '1px solid var(--border)', background: 'white',
+                    fontSize: '0.78rem', outline: 'none', boxSizing: 'border-box'
+                  }} />
+              </td>
+              <td style={{ padding: '6px 8px' }}>
+                <input placeholder="№" value={textIdFilter}
+                  onChange={e => setTextIdFilter(e.target.value)}
+                  style={{
+                    width: '100%', padding: '6px 10px', borderRadius: '8px',
+                    border: '1px solid var(--border)', background: 'white',
+                    fontSize: '0.78rem', outline: 'none', textAlign: 'center', boxSizing: 'border-box'
+                  }} />
+              </td>
+              <td style={{ padding: '6px 8px' }}>
+                <input placeholder="йй.ОО.йй" style={{
+                  width: '100%', padding: '6px 10px', borderRadius: '8px',
+                  border: '1px solid var(--border)', background: 'white',
+                  fontSize: '0.78rem', outline: 'none', boxSizing: 'border-box'
+                }} />
+              </td>
+              <td></td>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <tr><td colSpan={columns.length + 4} style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
                 <p>Юкланмоқда...</p>
               </td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <div style={{ fontSize: '3rem', marginBottom: 12 }}>{meta.emoji}</div>
+              <tr><td colSpan={columns.length + 4} style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '3rem', marginBottom: 12 }}>{meta.icon}</div>
                 <p style={{ fontWeight: 600 }}>Ёзувлар топилмади</p>
-                <p style={{ fontSize: '0.85rem', marginTop: 8 }}>Янги термин қўшиш учун «Янги» тугмасини босинг</p>
+                <p style={{ fontSize: '0.85rem', marginTop: 8 }}>Янги термин қўшиш учун «ЯНГИ ҚЎШИШ» тугмасини босинг</p>
               </td></tr>
             ) : filtered.map((item, i) => (
               <tr key={item.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+
                 <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>{i + 1}</td>
-                <td style={{ padding: '14px 16px' }}>
-                  <div style={{ fontWeight: 700 }}>{getDisplayName(item, category)}</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{getSubName(item, category)}</div>
-                </td>
-                <td style={{ padding: '14px 16px' }}>
-                  {item.text_id ? (
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', padding: '2px 8px', background: 'var(--accent-bg)', color: 'var(--accent-primary)', borderRadius: '6px', fontWeight: 700 }}>
-                      {item.text_id}
-                    </span>
-                  ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                </td>
+
+                {columns.map((col, ci) => {
+                  const val = getCellValue(item, col.key, category)
+                  const isFirst = ci === 0
+                  return (
+                    <td key={col.key} style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                      <div style={{
+                        fontWeight: isFirst ? 700 : 400,
+                        fontSize: '0.88rem',
+                        color: isFirst ? meta.color : 'var(--text-primary)',
+                        lineHeight: '1.5',
+                        ...(col.key === 'context' || col.key === 'description' ? { fontSize: '0.82rem', color: 'var(--text-secondary)' } : {})
+                      }}>
+                        {val || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}
+                      </div>
+                    </td>
+                  )
+                })}
+
+                {/* Specialist */}
                 <td style={{ padding: '14px 16px' }}>
                   <div style={{ fontSize: '0.85rem' }}>
                     <span style={{ color: '#16A34A', fontWeight: 600 }}>● {item.user_name || '—'}</span>
                     {item.modified_by_name && item.modified_by_name !== item.user_name && (
-                      <div style={{ color: '#D97706', fontSize: '0.78rem', marginTop: '2px' }}>✎ {item.modified_by_name}</div>
+                      <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '2px' }}>✏ {item.modified_by_name}</div>
                     )}
                   </div>
                 </td>
-                <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                  {item.created_at ? new Date(item.created_at).toLocaleDateString('uz-UZ') : '—'}
-                  {item.modified_at && (<div style={{ fontSize: '0.75rem', color: '#D97706' }}>✎ {new Date(item.modified_at).toLocaleDateString('uz-UZ')}</div>)}
+
+                {/* Text ID */}
+                <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                  {item.text_id ? (
+                    <span style={{
+                      fontFamily: 'monospace', fontSize: '0.78rem', padding: '2px 8px',
+                      background: 'var(--accent-bg)', color: 'var(--accent-primary)',
+                      borderRadius: '6px', fontWeight: 700
+                    }}>{item.text_id}</span>
+                  ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
+
+                {/* Date */}
+                <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                  {formatDate(item.created_at)}
+                  {item.modified_at && (
+                    <div style={{ fontSize: '0.72rem', color: '#D97706' }}>✏ {formatDate(item.modified_at)}</div>
+                  )}
+                </td>
+
+                {/* Actions */}
                 <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                     <button onClick={() => setEditItem({ ...item })} style={{
@@ -304,20 +496,18 @@ export default function LinguisticCategoryPage() {
             background: 'var(--bg-card)', borderRadius: '20px', width: '100%', maxWidth: '640px',
             boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column'
           }}>
-            {/* Modal Header */}
-            <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontWeight: 800, fontSize: '1.1rem' }}>
+            <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: meta.bg }}>
+              <h2 style={{ fontWeight: 800, fontSize: '1.1rem', color: meta.color }}>
                 {editItem.id ? 'Таҳрирлаш' : 'Янги ёзув'} — {meta.title}
               </h2>
               <button onClick={() => setEditItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <X size={20} />
               </button>
             </div>
-            {/* Modal Body */}
             <div style={{ padding: '24px 28px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {fields.map(f => (
+              {editFields.map(f => (
                 <div key={f.key}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     {f.label}
                   </label>
                   <textarea
@@ -336,18 +526,18 @@ export default function LinguisticCategoryPage() {
                 </div>
               ))}
             </div>
-            {/* Modal Footer */}
             <div style={{ padding: '16px 28px', borderTop: '1px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditItem(null)} style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid var(--border)', background: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                Bekor
+              <button onClick={() => setEditItem(null)} style={{ padding: '10px 22px', borderRadius: '10px', border: '1px solid var(--border)', background: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                Бекор
               </button>
               <button onClick={handleSave} disabled={saving} style={{
                 padding: '10px 22px', borderRadius: '10px', border: 'none',
-                background: meta.color, color: 'white', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+                background: meta.headerBg, color: 'white', fontWeight: 700,
+                cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.85rem',
                 display: 'flex', alignItems: 'center', gap: '6px', opacity: saving ? 0.7 : 1
               }}>
                 {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={15} />}
-                Saqlash
+                Сақлаш
               </button>
             </div>
           </div>
@@ -356,6 +546,7 @@ export default function LinguisticCategoryPage() {
 
       <style jsx global>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </div>
   )

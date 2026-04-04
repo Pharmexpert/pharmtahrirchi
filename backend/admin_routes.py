@@ -156,3 +156,101 @@ async def reject_user(payload: Dict[str, Any], current_user: dict = Depends(get_
     user_id = payload.get("userId")
     db.update_user_status(user_id, "rejected")
     return {"success": True}
+
+@router.post("/migrate-import")
+async def migrate_import(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """
+    One-time bulk import of all data from local DB to Railway.
+    Accepts: rules, annotated, disputed, abbreviations lists.
+    Uses INSERT OR IGNORE to safely skip duplicates.
+    """
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    
+    rules        = payload.get("rules", [])
+    annotated    = payload.get("annotated", [])
+    disputed     = payload.get("disputed", [])
+    abbreviations = payload.get("abbreviations", [])
+    
+    conn = db.connect_db()
+    cursor = conn.cursor()
+    
+    try:
+        # Import sayqallash_rules
+        rules_count = 0
+        for r in rules:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO sayqallash_rules
+                        (wrong_form, correct_form, lang, error_type, context, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    r.get("wrong_form",""), r.get("correct_form",""),
+                    r.get("lang","uz"), r.get("error_type","S/Spelling"),
+                    r.get("context",""), now
+                ))
+                rules_count += cursor.rowcount
+            except Exception:
+                pass
+        
+        # Import annotated_words
+        annotated_count = 0
+        for a in annotated:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO annotated_words
+                        (en, ru, uz, description_en, description_ru, description_uz, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    a.get("en",""), a.get("ru",""), a.get("uz",""),
+                    a.get("description_en",""), a.get("description_ru",""),
+                    a.get("description_uz",""), now
+                ))
+                annotated_count += cursor.rowcount
+            except Exception:
+                pass
+        
+        # Import disputed_words
+        disputed_count = 0
+        for d in disputed:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO disputed_words
+                        (en, ru, uz, context_en, context_ru, context_uz, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    d.get("en",""), d.get("ru",""), d.get("uz",""),
+                    d.get("context_en",""), d.get("context_ru",""),
+                    d.get("context_uz",""), now
+                ))
+                disputed_count += cursor.rowcount
+            except Exception:
+                pass
+        
+        # Import abbreviations
+        abbrev_count = 0
+        for b in abbreviations:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO abbreviations
+                        (short_form, long_en, long_ru, long_uz, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    b.get("short_form",""), b.get("long_en",""),
+                    b.get("long_ru",""), b.get("long_uz",""), now
+                ))
+                abbrev_count += cursor.rowcount
+            except Exception:
+                pass
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "success": True,
+        "rules_imported": rules_count,
+        "annotated_imported": annotated_count,
+        "disputed_imported": disputed_count,
+        "abbreviations_imported": abbrev_count
+    }

@@ -33,7 +33,9 @@ export default function RulesPage() {
   const fetchRules = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}&limit=500`)
+      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}&limit=500`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       const data = await res.json()
       setRules(data.rules || [])
     } catch (err) {
@@ -67,7 +69,10 @@ export default function RulesPage() {
     try {
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ ...editingRule, lang })
       })
       if (res.ok) {

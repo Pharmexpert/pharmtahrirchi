@@ -28,8 +28,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("main")
 
-TEMP_DIR = os.path.abspath("backend/temp_files")
-UPLOADS_DIR = os.path.abspath("backend/uploads")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
+UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads")
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
@@ -82,8 +83,6 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
-TEMP_DIR = "temp_files"
-os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 
 # Serve extracted images as static files
@@ -95,17 +94,71 @@ app.include_router(linguistic_routes.router)
 # Security constants are now in auth.py
 GOOGLE_CLIENT_ID = "1069007349621-b47vhi16hf6rdi7phgkga9mobjvfqq3g.apps.googleusercontent.com"
 
-# Initialize Gemini client
+# ═══════════════════════════════════════════════════
+# DUAL AI: Google Gemini (primary) + Anthropic Claude (fallback)
+# ═══════════════════════════════════════════════════
+
 _gemini_model = None
-def get_client():
+_anthropic_client = None
+
+def get_gemini():
     global _gemini_model
     if not _gemini_model:
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
-            # Use 2.0 Flash for maximum speed and excellent grammar/terminology quality
             _gemini_model = genai.GenerativeModel("models/gemini-2.0-flash")
     return _gemini_model
+
+def get_anthropic():
+    global _anthropic_client
+    if not _anthropic_client:
+        try:
+            import anthropic
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if api_key:
+                _anthropic_client = anthropic.Anthropic(api_key=api_key)
+        except ImportError:
+            pass
+    return _anthropic_client
+
+def get_client():
+    """Returns Gemini model (primary). Use generate_ai_content() for dual-AI calls."""
+    return get_gemini() or (True if get_anthropic() else None)
+
+async def generate_ai_content(prompt: str) -> str:
+    """
+    Dual-AI content generation:
+      - Primary: Google Gemini 2.0 Flash
+      - Fallback: Anthropic Claude (claude-3-5-haiku)
+    Returns the text response or raises if both fail.
+    """
+    # Try Gemini first
+    gemini = get_gemini()
+    if gemini:
+        try:
+            response = gemini.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            logger.warning(f"[AI] Gemini failed: {e} — switching to Anthropic...")
+
+    # Fallback to Anthropic Claude
+    anthropic_client = get_anthropic()
+    if anthropic_client:
+        try:
+            msg = anthropic_client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return msg.content[0].text
+        except Exception as e:
+            logger.error(f"[AI] Anthropic also failed: {e}")
+            raise
+
+    raise Exception("No AI client configured. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY.")
+
+
 
 # ═══════════════════════════════════════════════════
 # CORE: Upload & Process
@@ -113,7 +166,8 @@ def get_client():
 
 @app.post("/api/upload")
 @app.post("/api/upload-docx")
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), mode: str = "auto", current_user: Dict = Depends(get_current_user)):
+@app.post("/upload")  # backward compat
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), mode: str = "auto", text_id: str = "", current_user: Dict = Depends(get_current_user)):
     # Save uploaded file to persistent uploads directory
     persistent_file_path = os.path.join(UPLOADS_DIR, f"{int(datetime.utcnow().timestamp())}_{file.filename}")
     with open(persistent_file_path, "wb") as buffer:
@@ -142,8 +196,12 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
         else:
             data = aligner.process()
         
-        # Save project to DB automatically
-        text_id = f"proj_{int(datetime.utcnow().timestamp())}"
+        # Auto-generate text_id if not provided
+        if not text_id.strip():
+            # Generate from specialist name + timestamp
+            specialist_short = current_user.get("name", "User").split()[0][:6] if current_user.get("name") else "User"
+            text_id = f"{specialist_short}_{int(datetime.utcnow().timestamp())}"
+        
         for row in data:
             row["text_id"] = text_id
         
@@ -238,9 +296,8 @@ Rules:
             continue
 
         try:
-            response = model.generate_content(prompt)
-            text = response.text
-            match = re.search(r'\[.*\]', text, re.DOTALL)
+            ai_text = await generate_ai_content(prompt)
+            match = re.search(r'\[.*\]', ai_text, re.DOTALL)
             if match:
                 ai_result = json.loads(match.group())
                 for blk_result in ai_result:
@@ -437,14 +494,11 @@ async def suggest_edits(payload: Dict[str, Any]):
 {{"synonyms": ["1-синоним", "2-синоним", ...], "note": "асослама"}}"""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text
-        match = re.search(r'\{.*\}', text, re.DOTALL)
+        resp_text = await generate_ai_content(prompt)
+        match = re.search(r'\{.*\}', resp_text, re.DOTALL)
         if not match:
-             return {"variants": [], "synonyms": [], "note": ""}
-        
+            return {"variants": [], "synonyms": [], "note": ""}
         result = json.loads(match.group())
-        # Filter synonyms against local 'wrong' dictionary if exists
         result["synonyms"] = [s for s in result.get("synonyms", []) if not db.is_word_wrong(s, lang)]
         return result
     except Exception as e:
@@ -532,14 +586,13 @@ async def sayqallash(payload: Dict[str, Any]):
     
     covered_ranges = [(a["from_index"], a["to_index"]) for a in local_annotations]
 
-    model = get_client()
     ai_annotations = []
     confidence = 100 # High confidence for local rules
     
     # ═══════════════════════════════════════════════
-    # TIER 2: Google Gemini (gemini-2.0-flash)
+    # TIER 2: Dual AI (Gemini primary → Anthropic fallback)
     # ═══════════════════════════════════════════════
-    if model:
+    if get_client():
         known_rules = db.get_all_rules(lang, limit=20)
         rules_examples = ""
         if known_rules:
@@ -552,8 +605,7 @@ async def sayqallash(payload: Dict[str, Any]):
             user_message = f"Check and perfect this text:\n\n{text}"
             if context_en: user_message += f"\nContext (EN source): {context_en}"
 
-            response = model.generate_content(prompt_system + "\n\n" + user_message)
-            resp_text = response.text
+            resp_text = await generate_ai_content(prompt_system + "\n\n" + user_message)
             match = re.search(r'\{.*\}', resp_text, re.DOTALL)
             if match:
                 result = json.loads(match.group())
@@ -580,12 +632,12 @@ async def sayqallash(payload: Dict[str, Any]):
                                 overlap = True; break
                         
                         if not overlap:
-                            ann["source"] = "google_gemini"
+                            ann["source"] = "ai"
                             ai_annotations.append(ann)
                             covered_ranges.append((start, end))
 
         except Exception as e:
-            print(f"Gemini Tier Error: {e}")
+            print(f"AI Tier Error: {e}")
 
     all_annotations = local_annotations + ai_annotations
     
@@ -1076,6 +1128,112 @@ async def reset_password(payload: Dict[str, Any]):
     return {"success": True, "message": "Парол муваффақиятли ўзгартирилди! Энди янги парол билан киришингиз мумкин."}
 
 # Note: Admin users and moderation routes moved to admin_routes.py
+
+# ═══════════════════════════════════════════════════
+# FILES DIRECTORY API
+# ═══════════════════════════════════════════════════
+
+@app.get("/api/files")
+async def list_files(current_user: Dict = Depends(get_current_user)):
+    """List all uploaded files in the uploads directory."""
+    try:
+        files = db.list_uploaded_files()
+        return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/files/{filename}/download")
+async def download_file(filename: str, current_user: Dict = Depends(get_current_user)):
+    """Download a specific file from uploads."""
+    file_path = os.path.join(UPLOADS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Файл топилмади")
+    return FileResponse(
+        file_path,
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/api/files/{filename}/preview")
+async def preview_file(filename: str, current_user: Dict = Depends(get_current_user)):
+    """Get text preview of a file."""
+    file_path = os.path.join(UPLOADS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Файл топилмади")
+    preview = db.get_file_text_preview(file_path)
+    return {"preview": preview, "filename": filename}
+
+@app.post("/api/files/upload")
+async def upload_file_to_directory(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
+    """Upload a file directly to the files directory (without processing)."""
+    safe_name = f"{int(datetime.utcnow().timestamp())}_{file.filename}"
+    file_path = os.path.join(UPLOADS_DIR, safe_name)
+    with open(file_path, "wb") as buffer:
+        file.file.seek(0)
+        shutil.copyfileobj(file.file, buffer)
+    return {"success": True, "filename": safe_name, "original": file.filename}
+
+@app.delete("/api/files/{filename}")
+async def delete_file(filename: str, current_user: Dict = Depends(get_current_user)):
+    """Delete a file from uploads directory."""
+    file_path = os.path.join(UPLOADS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Файл топилмади")
+    try:
+        os.remove(file_path)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/files/{filename}/open")
+async def open_file_in_editor(filename: str, background_tasks: BackgroundTasks, mode: str = "auto", current_user: Dict = Depends(get_current_user)):
+    """Process a file from uploads directory and open it in the editor."""
+    file_path = os.path.join(UPLOADS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Файл топилмади")
+    
+    processing_path = file_path
+    original_filename = filename
+    
+    # Convert PDF to DOCX if needed
+    if filename.lower().endswith(".pdf"):
+        docx_path = file_path.rsplit(".", 1)[0] + ".docx"
+        if not os.path.exists(docx_path):
+            try:
+                cv = Converter(file_path)
+                cv.convert(docx_path)
+                cv.close()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"PDF конвертация хатоси: {str(e)}")
+        processing_path = docx_path
+    
+    try:
+        aligner = ParagraphAligner(processing_path)
+        data = aligner.process_ready_form() if mode == "ready" else aligner.process()
+        
+        # Auto-generate text_id
+        specialist_short = current_user.get("name", "User").split()[0][:6] if current_user.get("name") else "User"
+        text_id = f"{specialist_short}_{int(datetime.utcnow().timestamp())}"
+        
+        for row in data:
+            row["text_id"] = text_id
+        
+        db.update_project_metadata(text_id, current_user.get("name", "Aniqlanmagan"), user_id=current_user["id"])
+        
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projects SET original_filename = ?, file_path = ? WHERE id = ?", (original_filename, file_path, text_id))
+        conn.commit()
+        conn.close()
+        
+        db.save_alignments(text_id, data, user_id=current_user["id"])
+        background_tasks.add_task(pre_polish_document, text_id)
+        
+        return {"filename": original_filename, "data": data, "text_id": text_id}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ═══════════════════════════════════════════════════
 # TRANSLITERATION

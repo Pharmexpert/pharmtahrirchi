@@ -15,7 +15,7 @@ export default function Home() {
   const [filename, setFilename] = useState<string>('')
   const [textId, setTextId] = useState<string>('')
   const [readyMode, setReadyMode] = useState(false)
-  const [specialistName, setSpecialistName] = useState<string>('')
+  const [specialistName, setSpecialistName] = useState<string>(user?.name || '')
   const [specialistList, setSpecialistList] = useState<string[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loadingProjects, setLoadingProjects] = useState(true)
@@ -26,7 +26,7 @@ export default function Home() {
 
   // Fetch specialist list
   useEffect(() => {
-    fetch(`${API_BASE}/specialists`, { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch(`${API_BASE}/api/specialists`, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => setSpecialistList(d.specialists || []))
       .catch(() => {})
@@ -46,21 +46,23 @@ export default function Home() {
  
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
-      setFile(e.target.files[0])
-      setError(null)
-      setUploadProgress(0)
+      const f = e.target.files[0]
+      const ext = f.name.toLowerCase()
+      if (ext.endsWith('.docx') || ext.endsWith('.pdf')) {
+        setFile(f)
+        setError(null)
+        setUploadProgress(0)
+      } else {
+        setError('Фақат .docx ва .pdf файллар қабул қилинади')
+      }
     }
   }
  
   const handleUpload = async () => {
     if (!file) return
-    if (!textId.trim()) {
-      setError('Илтимос, матн рақамини (Text ID) киритинг')
-      return
-    }
-    if (!specialistName.trim()) {
-      setError('Илтимос, мутахассис исми ва шарифини киритинг')
-      return
+    // Auto-fill specialist if empty
+    if (!specialistName.trim() && user?.name) {
+      setSpecialistName(user.name)
     }
     setLoading(true)
     setError(null)
@@ -71,7 +73,14 @@ export default function Home() {
     formData.append('text_id', textId.trim())
  
     try {
-      const url = `${API_BASE}/upload?mode=${readyMode ? 'ready' : 'auto'}`
+      // Auto-generate text_id if not provided
+      let finalTextId = textId.trim()
+      if (!finalTextId) {
+        const specialistShort = (user?.name || 'User').split(' ')[0].slice(0, 6)
+        finalTextId = `${specialistShort}_${Date.now()}`
+        setTextId(finalTextId)
+      }
+      const url = `${API_BASE}/api/upload?mode=${readyMode ? 'ready' : 'auto'}&text_id=${encodeURIComponent(finalTextId)}`
       
       const xhr = new XMLHttpRequest()
       
@@ -122,7 +131,7 @@ export default function Home() {
   const openProject = async (projectId: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/history/${projectId}`, {
+      const res = await fetch(`${API_BASE}/api/history/${projectId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
@@ -154,7 +163,7 @@ export default function Home() {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const dropped = e.dataTransfer.files?.[0]
-    if (dropped && dropped.name.endsWith('.docx')) {
+    if (dropped && (dropped.name.endsWith('.docx') || dropped.name.endsWith('.pdf'))) {
       setFile(dropped)
       setError(null)
       setUploadProgress(0)
@@ -245,7 +254,7 @@ export default function Home() {
                 }} />
               )}
               
-              <input type="file" accept=".docx" onChange={handleFileChange} style={{ display: 'none' }} id="file-upload" />
+              <input type="file" accept=".docx,.pdf" onChange={handleFileChange} style={{ display: 'none' }} id="file-upload" />
               <div style={{ textAlign: 'center' }}>
                 {loading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -258,7 +267,7 @@ export default function Home() {
                     <div style={{ color: file ? '#2563eb' : '#475569', fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px' }}>
                       {file ? file.name : 'DOCX файл танланг ёки тортинг'}
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx (3 устунли жадвал ёки бир тилли матн)</div>
+                    <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Формат: .docx ёки .pdf (3 устунли жадвал ёки бир тилли матн)</div>
                   </>
                 )}
               </div>
@@ -311,7 +320,7 @@ export default function Home() {
 
             <button
               onClick={handleUpload}
-              disabled={!file || loading || !specialistName.trim()}
+              disabled={!file || loading}
               style={{ width: '100%', height: '48px', background: loading ? '#93c5fd' : (!file ? '#e2e8f0' : 'linear-gradient(135deg, #3b82f6, #6366f1)'), color: !file ? '#94a3b8' : 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 700, cursor: !file || loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: 'all 0.2s', fontFamily: 'inherit' }}
             >
               {loading ? (

@@ -154,6 +154,7 @@ def init_db():
         name TEXT,
         specialist_name TEXT,
         user_id TEXT, -- Associated logged-in user
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         original_filename TEXT,
         file_path TEXT
@@ -215,6 +216,9 @@ def init_db():
     except Exception: pass
     try:
         cursor.execute("ALTER TABLE projects ADD COLUMN file_path TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
     except Exception: pass
 
     # ═══════════════════════════════════════════════
@@ -1360,3 +1364,86 @@ def get_dashboard_entries():
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def list_uploaded_files() -> List[Dict[str, Any]]:
+    """List all uploaded files from both uploads directory and projects table."""
+    import os
+    UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    
+    files = []
+    # Get files from uploads directory
+    for fname in os.listdir(UPLOADS_DIR):
+        fpath = os.path.join(UPLOADS_DIR, fname)
+        if os.path.isfile(fpath):
+            stat = os.stat(fpath)
+            files.append({
+                "filename": fname,
+                "path": fpath,
+                "size": stat.st_size,
+                "modified_at": stat.st_mtime,
+                "extension": os.path.splitext(fname)[1].lower()
+            })
+    
+    # Enrich with project info from DB
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, specialist_name, original_filename, file_path, created_at, updated_at FROM projects WHERE file_path IS NOT NULL")
+    projects = {dict(r)["file_path"]: dict(r) for r in cursor.fetchall()}
+    conn.close()
+    
+    for f in files:
+        proj = projects.get(f["path"])
+        if proj:
+            f["project_id"] = proj["id"]
+            f["project_name"] = proj["name"]
+            f["specialist_name"] = proj["specialist_name"]
+            f["original_filename"] = proj.get("original_filename", f["filename"])
+        else:
+            f["original_filename"] = f["filename"]
+    
+    # Sort by modified time descending
+    files.sort(key=lambda x: x.get("modified_at", 0), reverse=True)
+    return files
+
+
+def get_file_text_preview(file_path: str, max_chars: int = 2000) -> str:
+    """Extract text preview from a DOCX or PDF file."""
+    import os
+    if not os.path.exists(file_path):
+        return ""
+    
+    ext = os.path.splitext(file_path)[1].lower()
+    text = ""
+    
+    try:
+        if ext == ".docx":
+            from docx import Document
+            doc = Document(file_path)
+            parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    parts.append(para.text.strip())
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(cells))
+            text = "\n".join(parts)
+        elif ext == ".pdf":
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(file_path)
+                parts = []
+                for page in doc:
+                    parts.append(page.get_text())
+                text = "\n".join(parts)
+                doc.close()
+            except ImportError:
+                text = "[PDF preview учун PyMuPDF талаб қилинади]"
+    except Exception as e:
+        text = f"[Preview хатоси: {str(e)}]"
+    
+    return text[:max_chars] if text else "[Бўш файл]"
