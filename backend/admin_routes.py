@@ -98,6 +98,40 @@ async def upsert_rule(payload: Dict[str, Any], current_user: dict = Depends(get_
         except: pass
         return {"status": "created"}
 
+@router.post("/rules/batch")
+async def batch_seed_rules(payload: List[Dict[str, Any]], request: Request):
+    """Batch seed rules for production migration with a secret key."""
+    # Simple secret check for internal migration
+    seed_secret = os.getenv("SEED_SECRET", "pharma_dev_sync_2026")
+    header_secret = request.headers.get("X-Seed-Secret")
+    
+    if header_secret != seed_secret:
+        raise HTTPException(status_code=403, detail="Invalid seed secret")
+        
+    try:
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        count = 0
+        for r in payload:
+            cursor.execute('''
+                INSERT OR IGNORE INTO sayqallash_rules 
+                (wrong_form, correct_form, error_type, context, lang, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                r.get("wrong_form"), 
+                r.get("correct_form"), 
+                r.get("error_type", "S/Spelling"), 
+                r.get("context", ""), 
+                r.get("lang", "uz"), 
+                r.get("source", "seed")
+            ))
+            count += 1
+        conn.commit()
+        conn.close()
+        return {"status": "success", "imported": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/rules/{rule_id}")
 async def delete_rule(rule_id: int, current_user: dict = Depends(get_admin_user)):
     """Delete a correction rule."""
