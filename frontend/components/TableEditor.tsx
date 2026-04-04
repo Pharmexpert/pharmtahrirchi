@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen, MousePointer2 } from 'lucide-react'
+import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen, MousePointer2, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from './LoginGuard'
 
@@ -49,6 +49,12 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const [popup, setPopup] = useState<SynonymPopup>({
     visible: false, x: 0, y: 0, word: '', lang: 'ru', rowIdx: -1, synonyms: [], loading: false
   })
+  const [isLinguisticLoading, setIsLinguisticLoading] = useState(false)
+  const [linguisticProgress, setLinguisticProgress] = useState(0)
+  const [showSourceLangModal, setShowSourceLangModal] = useState<string | null>(null)
+  const [linguisticPreview, setLinguisticPreview] = useState<{ category: string, results: any[] } | null>(null)
+  const [isDraggingPopup, setIsDraggingPopup] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const popupRef = useRef<HTMLDivElement>(null)
   
   // Column width state (percentages)
@@ -179,19 +185,44 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     const py = Math.min(e.clientY + 22, window.innerHeight - 240)
     setPopup({ visible: true, x: px, y: py, word: sel, lang: lang === 'en' ? 'en' : lang, rowIdx, synonyms: [], loading: true })
     try {
-      const res = await fetch(`${API_BASE}/api/suggest-edits`, {
+      const res = await fetch(`${API_BASE}/api/linguistic/synonyms`, {
         method: 'POST', headers: authHeaders,
         body: JSON.stringify({
           word: sel, lang,
           context_en: data[rowIdx].en,
-          context_ru: data[rowIdx].ru_proposed || data[rowIdx].ru_v1,
-          context_uz: data[rowIdx].uz_proposed || data[rowIdx].uz_v1,
+          source_lang: (data[rowIdx] as any).source_lang || 'English'
         })
       })
       if (!res.ok) throw new Error()
       const r = await res.json()
-      setPopup(p => ({ ...p, synonyms: r.variants || r.synonyms || [], loading: false }))
+      setPopup(p => ({ ...p, synonyms: r.synonyms || [], loading: false }))
     } catch (_e) { setPopup(p => ({ ...p, loading: false, synonyms: [] })) }
+  }
+
+  const batchTransliterate = async (target: 'latin' | 'cyrillic') => {
+    const uzTexts = data.filter(r => r.type === 'content').map(r => r.uz_proposed || r.uz_v1)
+    if (uzTexts.length === 0) return
+    notify(`Матн ${target === 'latin' ? 'лотинга' : 'кириллга'} ўгирилмоқда...`)
+    try {
+      const res = await fetch(`${API_BASE}/api/linguistic/transliterate-batch`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ texts: uzTexts, target })
+      })
+      if (!res.ok) throw new Error()
+      const r = await res.json()
+      setData(prev => {
+        const d = [...prev]
+        let uzIdx = 0
+        return d.map(row => {
+          if (row.type === 'content') {
+            const val = r.results[uzIdx++]
+            return { ...row, uz_proposed: val }
+          }
+          return row
+        })
+      })
+      notify('Транслитерация муваффақиятли якунланди')
+    } catch (_e) { notify('Хатолик юз берди') }
   }
 
   const applyVariant = (v: string) => {
@@ -261,24 +292,21 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
           })
           if (nRes.ok) { const nr = await nRes.json(); if (nr.notes) autoNotes += nr.notes + '\n' }
         }
-        if (row.ru_v1 && row.ru_proposed && row.ru_v1.trim() !== row.ru_proposed.trim()) {
-          const nRes = await fetch(`${API_BASE}/auto-notes`, {
-            method: 'POST', headers: authHeaders,
-            body: JSON.stringify({ v1: row.ru_v1, proposed: row.ru_proposed, lang: 'ru' })
-          })
-          if (nRes.ok) { const nr = await nRes.json(); if (nr.notes) autoNotes += nr.notes + '\n' }
-        }
       } catch (_e) {}
 
-      let finalNotes = row.notes || ''
-      if (autoNotes && !finalNotes.includes(autoNotes.trim().split('\n')[0])) {
-        finalNotes = (finalNotes ? finalNotes + '\n\n' : '') + autoNotes.trim()
-        setData(prev => { const d = [...prev]; d[idx] = { ...d[idx], notes: finalNotes }; return d })
+      // Self-learning: Use learn-batch to save user correction as rule
+      if (row.uz_proposed && row.uz_proposed !== row.uz_v1) {
+        try {
+          await fetch(`${API_BASE}/api/sayqallash/learn-batch`, {
+            method: 'POST', headers: authHeaders,
+            body: JSON.stringify({ corrections: [{ old_value: row.uz_v1, new_value: row.uz_proposed }], lang: 'uz' })
+          })
+        } catch (_e) {}
       }
 
-      const res = await fetch(`${API_BASE}/save-row`, {
+      const res = await fetch(`${API_BASE}/api/save-row`, {
         method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ ...row, notes: finalNotes })
+        body: JSON.stringify({ ...row, text_id: textId })
       })
       if (!res.ok) throw new Error()
       const r = await res.json()
@@ -304,6 +332,68 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       notify('AI moslashtirildi')
     } catch (_e) { notify('AI xatolik') }
     finally { setIsAiAligning(false) }
+  }
+
+  const handleLinguisticBtnClick = (cat: string) => setShowSourceLangModal(cat)
+
+  const startLinguisticAnalysis = async (lang: string) => {
+    const category = showSourceLangModal
+    setShowSourceLangModal(null)
+    if (!category) return
+
+    // Save source lang choice for project
+    try {
+      fetch(`${API_BASE}/api/linguistic/project/source-lang`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ text_id: textId, lang })
+      })
+    } catch {}
+
+    setIsLinguisticLoading(true)
+    setLinguisticProgress(0)
+    
+    // Aggregate text
+    const fullText = data.map(r => r.en).join('\n')
+    
+    const progressInterval = setInterval(() => {
+      setLinguisticProgress(prev => (prev < 90 ? prev + Math.random() * 8 : prev))
+    }, 400)
+
+    try {
+      const res = await fetch(`${API_BASE}/api/linguistic/analyze`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ text: fullText, category, source_lang: lang })
+      })
+      if (!res.ok) throw new Error()
+      const r = await res.json()
+      clearInterval(progressInterval)
+      setLinguisticProgress(100)
+      setTimeout(() => {
+        setIsLinguisticLoading(false)
+        setLinguisticPreview({ category, results: r.results || [] })
+      }, 500)
+    } catch (_e) {
+      clearInterval(progressInterval)
+      setIsLinguisticLoading(false)
+      notify('Таҳлил вақтида хатолик')
+    }
+  }
+
+  const confirmSaveLinguisticItems = async () => {
+    if (!linguisticPreview) return
+    try {
+      const res = await fetch(`${API_BASE}/api/linguistic/save`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ 
+          category: linguisticPreview.category, 
+          items: linguisticPreview.results,
+          text_id: textId
+        })
+      })
+      if (!res.ok) throw new Error()
+      notify('Маълумотлар базасига сақланди')
+      setLinguisticPreview(null)
+    } catch (_e) { notify('Сақлашда хатолик') }
   }
 
   const handleSaveAll = async () => {
@@ -386,6 +476,36 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         <span style={{ fontWeight: 800, fontSize: '0.88rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Pharma Editor</span>
         {textId && <span style={{ background: '#334155', padding: '2px 9px', borderRadius: 20, fontSize: '0.72rem', color: '#93c5fd', fontWeight: 700, flexShrink: 0 }}>ID: {textId}</span>}
         <span style={{ fontSize: '0.73rem', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>
+        
+        <div style={{ display: 'flex', gap: 4, background: '#334155', padding: '3px 6px', borderRadius: 8, margin: '0 8px' }}>
+          <button onClick={() => handleLinguisticBtnClick('annotated')} 
+            style={{ background: showSourceLangModal === 'annotated' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
+            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
+            <BookOpen size={12} style={{verticalAlign:'middle', marginRight:3}}/> Изоҳли
+          </button>
+          <button onClick={() => handleLinguisticBtnClick('disputed')} 
+            style={{ background: showSourceLangModal === 'disputed' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
+            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
+            <Sparkles size={12} style={{verticalAlign:'middle', marginRight:3}}/> Мунозарали
+          </button>
+          <button onClick={() => handleLinguisticBtnClick('abbreviations')} 
+            style={{ background: showSourceLangModal === 'abbreviations' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
+            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
+            <Database size={12} style={{verticalAlign:'middle', marginRight:3}}/> Қисқартмалар
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button onClick={() => batchTransliterate('latin')} title="Lotinga o'girish"
+            style={{ background: '#334155', border: 'none', color: '#94a3b8', fontSize: '0.65rem', fontWeight: 700, padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#94a3b8'}>
+            A→Z
+          </button>
+          <button onClick={() => batchTransliterate('cyrillic')} title="Kirillga o'girish"
+            style={{ background: '#334155', border: 'none', color: '#94a3b8', fontSize: '0.65rem', fontWeight: 700, padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#94a3b8'}>
+            А→Я
+          </button>
+        </div>
+
         {saveStatus && <span style={{ background: '#22c55e', color: 'white', padding: '2px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>{saveStatus}</span>}
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
           <Link href="/rules" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#334155', color: '#94a3b8', padding: '5px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none', transition: 'all 0.2s' }}
@@ -406,29 +526,96 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         </div>
       </header>
 
-      {popup.visible && (
-        <div ref={popupRef} style={{ position: 'fixed', top: popup.y, left: popup.x, zIndex: 9999, background: 'white', border: '1px solid #e2e8f0', borderRadius: 10, padding: '9px 11px', minWidth: 210, maxWidth: 290, boxShadow: '0 8px 28px rgba(0,0,0,.18)' }}>
-          <div style={{ fontSize: '0.68rem', color: '#6366f1', marginBottom: 6, fontWeight: 700 }}>
-            Tahrir varianti: <span style={{ color: '#1e293b' }}>{popup.word}</span>
+      {/* Progress Modal */}
+      {isLinguisticLoading && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '30px', borderRadius: 20, width: '400px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+            <h3 style={{ margin: '0 0 15px 0', fontSize: '1.1rem', color: '#1e293b' }}>AI Таҳлил қилинмоқда...</h3>
+            <div style={{ height: '10px', background: '#e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: '10px', position: 'relative' }}>
+              <div style={{ height: '100%', width: `${linguisticProgress}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)', transition: 'width 0.3s ease' }} />
+            </div>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#6366f1' }}>{Math.round(linguisticProgress)}%</span>
+            <p style={{ margin: '15px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>Бутун ҳужжат бўйича қидирилмоқда (бўлакларга бўлинган ҳолда)</p>
           </div>
-          {popup.loading
-            ? <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Yuklanmoqda...</div>
-            : popup.synonyms.length === 0
-              ? <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Topilmadi</div>
-              : <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {popup.synonyms.map((s, i) => (
-                    <li key={i} onClick={() => applyVariant(s)}
-                      style={{ padding: '4px 8px', borderRadius: 5, fontSize: '0.82rem', cursor: 'pointer', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ color: '#6366f1', fontSize: '0.65rem', fontWeight: 700 }}>{i + 1}.</span> {s}
-                    </li>
-                  ))}
-                </ul>
-          }
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <table id="main-table" style={{ minWidth: 920, width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', display: 'table' }}>
+      {/* Source Language Selection Modal */}
+      {showSourceLangModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '25px', borderRadius: 15, width: '350px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '1rem', color: '#1e293b', textAlign: 'center' }}>Манба тилини танланг</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => startLinguisticAnalysis('English')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
+                <span>English (Original)</span>
+                <span style={{ color: '#6366f1' }}>→</span>
+              </button>
+              <button onClick={() => startLinguisticAnalysis('Russian')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Russian (Русский)</span>
+                <span style={{ color: '#6366f1' }}>→</span>
+              </button>
+              <button onClick={() => startLinguisticAnalysis('Uzbek')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Uzbek (O'zbekcha)</span>
+                <span style={{ color: '#6366f1' }}>→</span>
+              </button>
+              <button onClick={() => setShowSourceLangModal(null)} style={{ marginTop: '10px', padding: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem' }}>Бекор қилиш</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {linguisticPreview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '0', borderRadius: 15, width: '90%', maxWidth: '900px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ padding: '15px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', color: '#1e293b' }}>
+                Таҳлил натижалари: <span style={{ textTransform: 'capitalize', color: '#6366f1' }}>{linguisticPreview.category}</span>
+              </h3>
+              <button onClick={() => setLinguisticPreview(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '10px' }}>EN</th>
+                    <th style={{ padding: '10px' }}>RU</th>
+                    <th style={{ padding: '10px' }}>UZ</th>
+                    <th style={{ padding: '10px' }}>Изоҳ / Контекст</th>
+                    <th style={{ padding: '10px', width: '80px' }}>Ҳолат</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linguisticPreview.results.map((item, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: item.is_duplicate ? '#fffbeb' : 'white' }}>
+                      <td style={{ padding: '10px', fontWeight: 600 }}>{item.en || item.short_form}</td>
+                      <td style={{ padding: '10px' }}>{item.ru || item.long_ru}</td>
+                      <td style={{ padding: '10px' }}>{item.uz || item.long_uz}</td>
+                      <td style={{ padding: '10px', fontSize: '0.75rem', color: '#64748b' }}>
+                        {item.description_en || item.context_en || item.long_en}
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        {item.is_duplicate 
+                          ? <span style={{ color: '#d97706', fontSize: '0.65rem', fontWeight: 700, background: '#fef3c7', padding: '2px 5px', borderRadius: 4 }}>бор</span>
+                          : <span style={{ color: '#16a34a', fontSize: '0.65rem', fontWeight: 700, background: '#dcfce7', padding: '2px 5px', borderRadius: 4 }}>янги</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '15px 20px', borderTop: '1px solid #e2e8f0', textAlign: 'right', background: '#f8fafc' }}>
+              <button onClick={() => setLinguisticPreview(null)} style={{ padding: '8px 15px', marginRight: '10px', borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}>Ёпиш</button>
+              <button onClick={confirmSaveLinguisticItems} style={{ padding: '8px 25px', borderRadius: 8, border: 'none', background: '#6366f1', color: 'white', fontWeight: 700, cursor: 'pointer' }}>БАРЧАСИНИ САҚЛАШ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <table id="main-table" style={{ minWidth: 920, width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', display: 'table' }}>
           <colgroup>
             <col style={{ width: 32 }} />
             <col style={{ width: `${colWidths[0]}%` }} />
@@ -461,7 +648,23 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
               </th>
               
               <th style={{ position: 'relative', textAlign: 'left', padding: '5px 7px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 700, background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', overflow: 'visible' }}>
-                Uzbek
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  Uzbek
+                  <button onClick={async () => {
+                    const texts = data.map(r => r.uz_proposed || r.uz_v1)
+                    const res = await fetch(`${API_BASE}/api/transliterate-batch`, {
+                      method: 'POST', headers: authHeaders, 
+                      body: JSON.stringify({ texts, target: 'latin' })
+                    })
+                    const r = await res.json()
+                    const newData = [...data]
+                    r.texts.forEach((txt: string, i: number) => {
+                      if (newData[i].uz_proposed) newData[i].uz_proposed = txt
+                      else newData[i].uz_v1 = txt
+                    })
+                    setData(newData)
+                  }} style={{ background: '#334155', border: 'none', color: '#93c5fd', fontSize: '0.55rem', padding: '2px 5px', borderRadius: 4, cursor: 'pointer', fontWeight: 800 }}>К→Л</button>
+                </div>
                 <div onMouseDown={e => startResizing(2, e)} 
                   style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'col-resize', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }} 
@@ -563,6 +766,64 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             ))}
           </tbody>
         </table>
+      </div>
+
+        {/* Synonym Sidebar Integration */}
+        <aside style={{ width: '280px', background: 'white', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Search size={14} color="#6366f1" />
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1e293b' }}>Синонимлар ва Частота</span>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: '10px' }}>
+             {popup.word ? (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Танланган сўз</span>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#6366f1' }}>{popup.word}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {popup.loading ? (
+                       <Loader2 size={16} className="spin" style={{ margin: 'auto' }} />
+                    ) : (
+                      popup.synonyms.map((s: any, i: number) => {
+                        const syn = typeof s === 'string' ? s : s.word;
+                        const prob = typeof s === 'string' ? 0.5 : (s.probability || 0.5);
+                        const freq = typeof s === 'string' ? 0 : (s.frequency || 0);
+
+                        return (
+                        <div key={i} onClick={() => applyVariant(syn)} 
+                          style={{ padding: '8px 12px', border: '1px solid #f1f5f9', borderRadius: 8, fontSize: '0.8rem', cursor: 'pointer', background: '#fff', position: 'relative', overflow: 'hidden' }} 
+                          onMouseEnter={e => e.currentTarget.style.background='#f8fafc'} 
+                          onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                          
+                          {/* Probability Scale (Translucent bar) */}
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, height: 2, background: '#6366f1', width: `${prob * 100}%`, opacity: 0.4 }} />
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600, color: '#1e293b' }}>{syn}</span>
+                            <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>{freq > 0 ? `${freq}х` : ''}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                             <div style={{ flex: 1, height: 3, background: '#f1f5f9', borderRadius: 2 }}>
+                               <div style={{ height: '100%', width: `${prob * 100}%`, background: prob > 0.8 ? '#10b981' : '#6366f1', borderRadius: 2 }} />
+                             </div>
+                             <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#64748b' }}>{Math.round(prob * 100)}%</span>
+                          </div>
+                        </div>)
+                      })
+                    )}
+                  </div>
+                </div>
+             ) : (
+               <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.75rem', marginTop: 100 }}>
+                 Матндаги сўзни устига босинг (Click) <br/>синонимларни кўриш учун
+               </div>
+             )}
+          </div>
+          <div style={{ padding: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.65rem', color: '#94a3b8' }}>
+            Частота жадвали автоматик янгиланади
+          </div>
+        </aside>
       </div>
 
       <style jsx global>{`

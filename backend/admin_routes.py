@@ -59,7 +59,7 @@ async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_a
 @router.get("/rules")
 async def get_all_rules(lang: str = None, q: str = None, current_user: dict = Depends(get_admin_user)):
     """Retrieve all rules for administration with filtering."""
-    rules = db.get_all_rules(lang or 'uz', limit=200000)
+    rules = db.get_all_rules(lang or 'uz', limit=100000)
     if q:
         q = q.lower()
         rules = [r for r in rules if q in r['wrong_form'].lower() or q in r['correct_form'].lower() or q in (r.get('context') or '').lower()]

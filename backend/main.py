@@ -646,7 +646,10 @@ async def sayqallash(payload: Dict[str, Any]):
                             covered_ranges.append((start, end))
 
         except Exception as e:
-            print(f"AI Tier Error: {e}")
+            print(f"AI Tier Error: {e} -> Falling back to BERT/Dictionary logic")
+            # TIER 3: BERT / Dictionary Fallback (if AI fails)
+            # This is already partially handled by local_annotations, but we can add more here if needed
+            pass
 
     all_annotations = local_annotations + ai_annotations
     
@@ -1013,6 +1016,25 @@ Return JSON only: {{"part1": {{"en": "...", "ru": "...", "uz": "..."}}, "part2":
     row1 = {**row, "en": row['en'][:mid], "ru_proposed": "", "uz_proposed": ""}
     row2 = {**row, "en": row['en'][mid:], "sentence_no": 0, "ru_proposed": "", "uz_proposed": ""}
     return {"row1": row1, "row2": row2}
+
+@app.post("/api/transliterate-batch")
+async def transliterate_batch(payload: Dict[str, Any]):
+    """Batch transliterate text elements."""
+    texts = payload.get("texts", [])
+    target = payload.get("target", "latin")
+    if not texts: return {"texts": []}
+    
+    results = []
+    for txt in texts:
+        if not txt:
+            results.append("")
+            continue
+        if target == 'latin':
+            results.append(transliterate.to_latin(txt))
+        else:
+            results.append(transliterate.to_cyrillic(txt))
+            
+    return {"texts": results}
 
 # ═══════════════════════════════════════════════════
 # AUTH & ADMIN PANEL

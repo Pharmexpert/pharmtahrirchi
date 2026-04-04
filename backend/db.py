@@ -157,6 +157,7 @@ def init_db():
         name TEXT,
         specialist_name TEXT,
         user_id TEXT, -- Associated logged-in user
+        source_lang TEXT DEFAULT 'English',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         original_filename TEXT,
@@ -222,6 +223,9 @@ def init_db():
     except Exception: pass
     try:
         cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN source_lang TEXT DEFAULT 'English'")
     except Exception: pass
 
     # ═══════════════════════════════════════════════
@@ -315,6 +319,7 @@ def init_db():
         description_en TEXT,
         description_ru TEXT,
         description_uz TEXT,
+        source_lang TEXT DEFAULT 'English',
         user_id TEXT,
         text_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -332,6 +337,7 @@ def init_db():
         context_en TEXT,
         context_ru TEXT,
         context_uz TEXT,
+        source_lang TEXT DEFAULT 'English',
         user_id TEXT,
         text_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -347,6 +353,7 @@ def init_db():
         long_en TEXT,
         long_ru TEXT,
         long_uz TEXT,
+        source_lang TEXT DEFAULT 'English',
         user_id TEXT,
         text_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -355,6 +362,17 @@ def init_db():
         status TEXT DEFAULT 'active'
     )
     ''')
+
+    # Migrate: add source_lang if not exists
+    try:
+        cursor.execute("ALTER TABLE annotated_words ADD COLUMN source_lang TEXT DEFAULT 'English'")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE disputed_words ADD COLUMN source_lang TEXT DEFAULT 'English'")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE abbreviations ADD COLUMN source_lang TEXT DEFAULT 'English'")
+    except Exception: pass
 
     # ═══════════════════════════════════════════════
     # Phase 12: AI Cache (Optimization)
@@ -393,9 +411,11 @@ def init_db():
         word TEXT NOT NULL,
         synonym TEXT NOT NULL,
         lang TEXT NOT NULL DEFAULT 'uz',
+        part_of_speech TEXT,
         frequency INTEGER DEFAULT 0,
+        probability_scale REAL DEFAULT 0.0,
         source TEXT DEFAULT 'ai',
-        created_by TEXT,
+        author TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(word, synonym, lang)
     )
@@ -1596,3 +1616,59 @@ def get_user_password_hash(user_id: str):
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else None
+def increment_synonym_frequency(word: str, synonym: str, lang: str = 'uz'):
+    """Record that a specific synonym was chosen, building the Tier 1 knowledge base."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    # Update frequency
+    cursor.execute('''
+        UPDATE synonyms 
+        SET frequency = frequency + 1 
+        WHERE (word = ? AND synonym = ? AND lang = ?)
+    ''', (word, synonym, lang))
+    
+    if cursor.rowcount == 0:
+        # If not found, add it
+        cursor.execute('''
+            INSERT INTO synonyms (word, synonym, lang, frequency, source, author)
+            VALUES (?, ?, ?, 1, 'user_choice', 'expert')
+        ''', (word, synonym, lang))
+        
+    conn.commit()
+    conn.close()
+
+def add_synonyms_batch(word: str, synonyms: list, lang: str, author: str = 'ai'):
+    """Immediate save of AI-generated synonyms to the DB."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    for syn in synonyms:
+        try:
+            cursor.execute('''
+                INSERT OR IGNORE INTO synonyms (word, synonym, lang, source, author)
+                VALUES (?, ?, ?, 'ai', ?)
+            ''', (word, syn, lang, author))
+        except: pass
+    conn.commit()
+    conn.close()
+
+def get_synonyms_with_stats(word: str, lang: str):
+    """Get synonyms for a word including frequency-based probability."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT synonym, frequency, probability_scale, part_of_speech, source, author
+        FROM synonyms 
+        WHERE word = ? AND lang = ?
+        ORDER BY frequency DESC, probability_scale DESC
+    ''', (word, lang))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+    conn.close()
+def update_source_lang(text_id: str, lang: str):
+    """Save the selected source language for a project."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE projects SET source_lang = ? WHERE id = ?", (lang, text_id))
+    conn.commit()
+    conn.close()
