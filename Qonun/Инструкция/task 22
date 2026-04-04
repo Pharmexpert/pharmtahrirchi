@@ -1,0 +1,5 @@
+- [ ] Backend: Update Sayqallash prompt to use tag-based edits (`<edit old="...">`) for precision.
+- [ ] Backend: Implement parser for tag-based AI response to calculate exact character indices.
+- [ ] Frontend: Update `TableEditor.tsx` to show suggestion tooltips more clearly.
+- [ ] Frontend: Ensure overlay text-slicing is robust against NaN/undefined indices.
+- [ ] Verification: Test with text containing duplicate words to ensure correct highlighting.

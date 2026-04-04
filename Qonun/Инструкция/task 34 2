@@ -1,0 +1,3 @@
+- `[ ]` Remove `confirm()` from `ProjectContext.tsx`
+- `[ ]` Update `handleFinishWork` in `TableEditor.tsx` to include parallel save-on-exit
+- `[ ]` Verify immediate redirection and data persistence in browser

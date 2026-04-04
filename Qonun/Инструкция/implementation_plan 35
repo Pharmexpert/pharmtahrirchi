@@ -1,0 +1,55 @@
+# Implementation Plan - PDF Conversion & Deletion Fixes
+
+This plan outlines the steps to implement PDF-to-DOCX conversion during upload, add file deletion in the Files Directory, and fix the broken deletion functionality in the linguistic tables.
+
+## User Review Required
+
+> [!IMPORTANT]
+> - PDF conversion using `pdf2docx` might vary in quality depending on the PDF structure. The user will be able to refine the converted text in the Dashboard.
+> - Deleting a file from the "Files Directory" will permanently remove its database records (alignments, project metadata) and the physical file from the server.
+
+## Proposed Changes
+
+### Backend - PDF Conversion & Project Deletion
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+- Update `upload_file` endpoint:
+    - Check if the uploaded file is a PDF.
+    - If PDF, save it, convert it to DOCX using `pdf2docx.Converter`, and then process the resulting DOCX.
+    - Ensure the PDF is also stored if needed, or just the converted DOCX.
+- Implement/Fix `@app.delete("/api/projects/{project_id}")`:
+    - Call the DB to delete metadata and alignments.
+    - Use `os.remove` to delete the physical file from `backend/uploads/`.
+
+#### [MODIFY] [db.py](file:///c:/Users/Администратор/Desktop/2/backend/db.py)
+- Ensure `delete_project` correctly removes ALL associated data from `projects` and `alignments` tables.
+- Add a helper to get the file path before deletion if not already present.
+
+### Frontend - UI Updates & Bug Fixes
+
+#### [MODIFY] [Rules DB](file:///c:/Users/Администратор/Desktop/2/frontend/app/rules/page.tsx) (and related components)
+- Fix the `onDelete` handler to correctly call `DELETE /api/admin/rules/{id}`.
+- Ensure the state is updated locally after a successful deletion.
+
+#### [MODIFY] [Linguistic Tables](file:///c:/Users/Администратор/Desktop/2/frontend/app/linguistic/[category]/page.tsx)
+- Fix deletion for Annotated Words, Disputed Words, Abbreviations, and Paragraphs.
+- Ensure they call `DELETE /api/linguistic/delete/{category}/{id}`.
+
+#### [MODIFY] [Files Directory](file:///c:/Users/Администратор/Desktop/2/frontend/app/files/page.tsx)
+- Add a "Delete" icon/button to the file cards.
+- Implement the deletion logic with a confirmation dialog.
+
+## Verification Plan
+
+### Automated Tests
+- Upload a test PDF file and verify it appears in the Dashboard as editable text.
+- Upload a DOCX file and verify normal processing.
+- Delete a project and verify:
+    - It disappears from the UI.
+    - Database records are gone.
+    - Physical file in `backend/uploads` is deleted.
+- Delete a rule/annotated word and verify it's removed from the DB and UI.
+
+### Manual Verification
+- Testing the PDF upload flow with a sample pharmaceutical document.
+- Verifying the "Confirm Delete" flow on all 5 tables mentioned by the user.

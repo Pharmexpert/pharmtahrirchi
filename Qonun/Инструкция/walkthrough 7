@@ -1,0 +1,45 @@
+# Pharma Translation Platform: UI/UX Overhaul Walkthrough
+
+We have successfully transformed the Pharma Translation Platform into a professional, premium-grade system. The interface now adopts the "Milky/Cream" design language with a sophisticated dashboard structure.
+
+## 🎨 New Design System (Milky/Cream)
+
+The application now uses a curated color palette and modern design tokens:
+- **Primary Background**: Warm Milky/Cream (`#FDF8F2`)
+- **Accent Gradients**: Bronze/Copper (`linear-gradient(135deg, #C07840, #85512B)`)
+- **Glassmorphism**: Header and Sidebar use backdrop blurring for a premium layered feel.
+- **Modern Typography**: Integrated `Inter` font for high legibility in technical documents.
+
+## 🚀 Key Features Implemented
+
+### 1. Dashboard & Sidebar Navigation
+- **Persistent Sidebar**: Provides quick access to the Dashboard, History, Rules DB, and Admin Panel.
+- **Project Overview**: The new home page lists recent translation projects with status indicators and specialist assignments.
+- **Quick Upload**: A redesigned upload modal with drag-and-drop support.
+
+### 2. Premium Table Editor
+- **Trilingual Grid**: Optimized for USP/Ph. Eur documents. English acts as the source master, while Russian and Uzbek are editable target columns.
+- **Contextual AI**: "AI Sayqal" (Polishing) buttons are integrated directly into each cell.
+- **Dynamic Resizing**: Columns can be resized in real-time to focus on specific languages.
+- **Visual Feedback**: Real-time "Modified" indicators and "V1 Original" reference blocks for each cell.
+
+### 3. High-Precision Alignment Algorithm
+- **Priority Logic**: Updated `processor.py` to strictly follow the **EN > RU > UZ** priority.
+- **Fallback Mechanism**: If English text is missing for a segment, the system uses Russian as a secondary master to ensure the Uzbek translation remains perfectly aligned.
+
+### 4. Admin & User Management
+- **Role-Based Access**: Redesigned Admin Panel for managing users, approving registrations, and assigning roles (Specialist, Expert, Admin).
+
+---
+
+> [!IMPORTANT]
+> **Action Required**: To use Google Sign-In on `localhost:3001`, please add `http://localhost:3001` to the **Authorized JavaScript origins** in your [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+
+## 🗂️ Modified Files
+- [globals.css](file:///c:/Users/Администратор/Desktop/2/frontend/app/globals.css) - New Theme
+- [DashboardLayout.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/DashboardLayout.tsx) - Modern Navigation
+- [TableEditor.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/TableEditor.tsx) - Redesigned Grid
+- [processor.py](file:///c:/Users/Администратор/Desktop/2/backend/processor.py) - Alignment Logic
+- [db.py](file:///c:/Users/Администратор/Desktop/2/backend/db.py) - Project Management Data
+
+![Dashboard Screenshot](file:///C:/Users/%D0%90%D0%B4%D0%BC%D0%B8%D0%BD%D0%B8%D1%81%D1%82%D1%80%D0%B0%D1%82%D0%BE%D1%80/.gemini/antigravity/brain/9cb568d0-9d31-4edf-afca-88675e5c74f7/pharma_aligner_dashboard_check_1774963747007.png)

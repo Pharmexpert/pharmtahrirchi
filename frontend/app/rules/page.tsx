@@ -33,7 +33,7 @@ export default function RulesPage() {
   const fetchRules = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/sayqallash-rules?lang=${lang}&limit=500`)
+      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}&limit=500`)
       const data = await res.json()
       setRules(data.rules || [])
     } catch (err) {
@@ -51,7 +51,7 @@ export default function RulesPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Bu qoidani o'chirishni tasdiqlaysizmi?")) return
     try {
-      const res = await fetch(`${API_BASE}/sayqallash-rules/${id}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/api/admin/rules/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
       if (res.ok) {
         setRules(rules.filter(r => r.id !== id))
         showMessage('Qoida muvaffaqiyatli o\'chirildi')
@@ -62,7 +62,7 @@ export default function RulesPage() {
   const handleSave = async () => {
     if (!editingRule?.wrong_form || !editingRule?.correct_form) return
     const isNew = !editingRule.id
-    const url = isNew ? `${API_BASE}/sayqallash-rules` : `${API_BASE}/sayqallash-rules/${editingRule.id}`
+    const url = isNew ? `${API_BASE}/api/admin/rules` : `${API_BASE}/api/admin/rules/${editingRule.id}`
     const method = isNew ? 'POST' : 'PUT'
     try {
       const res = await fetch(url, {

@@ -1,0 +1,76 @@
+# Тўлиқ текширув натижалари
+
+## 🐛 Топилган ва тузатилган жиддий муаммо
+
+### Маълумотлар базаси йўли хатоси (DB Split)
+
+**Муаммо**: `db.py` даги `DB_PATH` проект **root** папкасидаги `pharma_editor.db` (438 KB, 1 user) ишлатарди, лекин **асосий маълумотлар** `backend/pharma_editor.db` (3 MB, 2 users, 16 projects, 2209 alignments) папкада эди.
+
+| | Root DB (438 KB) | Backend DB (3 MB) |
+|---|---|---|
+| Users | 1 | **2** ✅ |
+| Projects | 6 | **16** ✅ |
+| Alignments | 378 | **2209** ✅ |
+| Linguistic tables | бор (бўш) | ❌ **йўқ эди** |
+
+**Тузатишлар:**
+1. `db.py` — `DB_PATH` `backend/` папкадаги DB-га ўзгартирилди
+2. `backend/pharma_editor.db` га лингвистик жадвал яратилди (`annotated_words`, `disputed_words`, `abbreviations`)
+3. `init_db()` ишлаганда ҳам автоматик яратади
+
+render_diffs(file:///c:/Users/Администратор/Desktop/2/backend/db.py)
+
+---
+
+## ✅ Олдин амалга оширилган ва тўғри ишлаётган қисмлар
+
+### Backend (`linguistic_routes.py`)
+- `POST /api/linguistic/analyze` — AI таҳлил ✅
+- `POST /api/linguistic/save` — сақлаш (upsert) ✅
+- `PUT /api/linguistic/update/{category}/{id}` — янгилаш ✅
+- `GET /api/linguistic/all` — барча маълумотлар ✅
+- `DELETE /api/linguistic/delete/{category}/{id}` — ўчириш ✅
+
+### Frontend — Dashboard (TableEditor.tsx)
+- 3 тугма (Изоҳли, Мунозарали, Қисқартмалар) ✅
+- Манба тили модали (English/Russian/Uzbek) ✅
+- AI таҳлил + Preview жадвал ✅
+- Сақлаш тугмаси тўғри стилланган ✅
+
+### Frontend — Linguistic Category Page
+- **Жадвал** — фильтрлаш, қатор рақамлари, сана ✅
+- **Янги қўшиш** — модал, 3 тил ✅
+- **Таҳрирлаш** — PUT endpoint чақирилади ✅
+- **Ўчириш** — тасдиқлаш + ўчириш ✅
+
+### Sidebar навигация
+- Изоҳли сўзлар → `/linguistic/annotated` ✅
+- Мунозарали сўзлар → `/linguistic/disputed` ✅
+- Қисқартмалар → `/linguistic/abbreviations` ✅
+
+### Build
+- `npm run build` → **Exit code: 0** ✅
+- TypeScript — хатосиз ✅
+
+---
+
+## Тўлиқ оқим (End-to-End)
+
+```
+Dashboard → [Изоҳли] тугмаси
+    → Манба тили танлаш (EN/RU/UZ)
+    → AI таҳлил (Claude)
+    → Preview жадвал (таҳрирлаш мумкин)
+    → [САҚЛАШ] → backend/pharma_editor.db ← annotated_words жадвали
+    → Sidebar → "Изоҳли сўзлар" → жадвалда кўриш/таҳрирлаш/ўчириш
+```
+
+## Ўзгартирилган файллар хулосаси
+
+| Файл | Ўзгариш |
+|------|---------|
+| `backend/db.py` | DB_PATH → `backend/` папкасига тўғрилланди |
+| `backend/linguistic_routes.py` | UPDATE endpoint, upsert save, search endpoint |
+| `frontend/components/TableEditor.tsx` | Preview modal стиллари, Check import |
+| `frontend/app/linguistic/[category]/page.tsx` | Тўлиқ CRUD, 3 тилли форма, UI |
+| `frontend/app/linguistic/linguistic.css` | Modal кенглиги, hover/disabled эффектлар |

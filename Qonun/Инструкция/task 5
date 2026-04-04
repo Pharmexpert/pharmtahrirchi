@@ -1,0 +1,7 @@
+# Task List - Unified Features & Secure Integration
+
+- [/] Update `backend/db.py`: Add `specialist_name` column and autocomplete logic.
+- [ ] Update `backend/processor.py`: Implement `langdetect` for single-language column mapping.
+- [ ] Update `backend/main.py`: Add specialist endpoints and update `/upload`.
+- [ ] Update `frontend/app/page.tsx`: Rename toggle, add specialist field with autocomplete.
+- [ ] Start HTTPS Tunnel (Localtunnel/Cloudflare) and sync to GitHub.

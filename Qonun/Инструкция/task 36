@@ -1,0 +1,6 @@
+- [ ] Standardize backend route prefixes in `main.py` (`/api/history`, `/api/alignments`, etc.)
+- [ ] Update Dashboard (`page.tsx`) upload and specialists fetching URLs
+- [ ] Fix "Dashboard-da ochish" mapping and fetch logic in `files/page.tsx`
+- [ ] Restart backend server to apply route changes
+- [ ] Verify Dashboard upload functionality in browser
+- [ ] Verify File Directory -> Dashboard navigation in browser

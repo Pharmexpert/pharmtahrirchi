@@ -1,0 +1,54 @@
+# Бажарилган ишлар ҳулосаси
+
+## 1. ✅ Dynamic API_BASE — Барча hardcoded URL-лар тузатилди
+
+**Муаммо**: `TableEditor.tsx` даги 10 та `fetch` чақируви `http://localhost:8000` деб ёзилган эди — GitHub Pages да ишламасди.
+
+**Ечим**: Ҳар бир компонентда (`TableEditor` ва `LangCell`) `API_BASE` ўзгарувчиси қўшилди:
+```typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+```
+Барча 10 та URL `${API_BASE}/...` форматига ўтказилди.
+
+---
+
+## 2. ✅ 3-устунли файл юклаш муаммоси тузатилди
+
+**Муаммо**: 3 устунли DOCX юклаганда, процессор сарлавҳа қаторини (Row 0: "Инглиз тилида", "Рус тилида", "Ўзбек тилида") контент деб олган — фақат 2 қатор чиқарди.
+
+**Ечим**: `processor.py` дaги `process()` методи тубдан ўзгартирилди:
+- Сарлавҳа қаторлари автоматик аниқланиб ўтказиб юборилади (< 30 символ текст)
+- Бир катта ячейкали ҳужжатлар (>200 символ) — `get_blocks()` орқали параграфларга бўлинади
+- Кўп қаторли жадваллар — `process_ready_form()` га йўналтирилади
+
+**Натижа**: 217 қатор тўғри чиқади (аввал 2 та эди)
+
+---
+
+## 3. ✅ DOCX экспорт — файл номи тузатилди
+
+**Муаммо**: Export DOCX тугмаси босилганда файл UUID номи билан тушарди (масалан `6469ae42-99c6...`), `.docx` кенгайтмаси ҳам йўқ эди.
+
+**Ечим**:
+- **Frontend** (`TableEditor.tsx`): `a.download` қиймати `confirmed_{filename}.docx` деб аниқ белгиланди, `window.URL.revokeObjectURL()` қўшилди
+- **Backend** (`main.py`): `Content-Disposition: attachment; filename="..."` ҳедер қўшилди
+
+---
+
+## 4. ✅ Specialist tracking — Сақлаш тизими
+
+**DB схема**: `alignments` жадвалига `specialist_name` устуни қўшилган ва:
+- `save_single_row()` — бир қаторни сақлаганда specialist_name ёзилади
+- `save_alignments()` — ҳаммасини сақлаганда specialist_name ёзилади
+- `/specialists` — автотўлдириш учун ноёб исмлар рўйхати
+
+---
+
+## Ўзгартирилган файллар
+
+| Файл | Ўзгаришлар |
+|------|-----------|
+| `frontend/components/TableEditor.tsx` | 10 та API URL динамик, экспорт файл номи тузатилди |
+| `backend/processor.py` | `process()` — сарлавҳа аниқлаш ва мос mode танлаш |
+| `backend/main.py` | Export Content-Disposition ҳедер |
+| `backend/db.py` | specialist_name устуни |

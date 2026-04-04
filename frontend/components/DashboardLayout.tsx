@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { 
   Database, Menu, X, LayoutDashboard, FileText, Settings, 
   LogOut, User, Globe, ChevronLeft, ChevronRight, Search, 
-  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare
+  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen
 } from 'lucide-react'
 import { useAuth } from './LoginGuard'
 import Link from 'next/link'
@@ -17,9 +17,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { name: 'Paragraphs', icon: FileText, path: '/paragraphs' },
-    { name: 'Projects', icon: History, path: '/projects' },
-    { name: 'Dictionary', icon: Database, path: '/dictionary' },
+    { name: 'Хатбошилар', icon: FileText, path: '/paragraphs' },
+    { name: 'Лойиҳалар', icon: History, path: '/projects' },
+    { name: 'Sayqallash DB', icon: Database, path: '/rules' },
+    { name: 'Изоҳли луғат', icon: BookOpen, path: '/linguistic/annotated' },
+    { name: 'Мунозарали', icon: MessageSquare, path: '/linguistic/disputed' },
+    { name: 'Қисқартмалар', icon: Info, path: '/linguistic/abbreviations' },
   ]
 
   if (isAdmin) {

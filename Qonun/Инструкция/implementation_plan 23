@@ -1,0 +1,72 @@
+# Лингвистик тугмалар ва менюлар учун тўлиқ ишлаш режаси
+
+## Мақсад
+
+Dashboard таҳрир жараёнидаги 3 тугма (Изоҳли, Мунозарали, Қисқартмалар) босилганда:
+1. Манба тили танланади (English/Russian/Uzbek)
+2. AI матнни таҳлил қилиб, 3 тилдаги натижаларни кўрсатади
+3. **"Сақлаш"** тугмаси босилганда маълумотлар тўғридан-тўғри `pharma_editor.db` базасига сақланади
+4. Катта менюдаги (sidebar) саҳифаларда барча маълумотлар кўрилади, таҳрирланади, фильтрланади
+
+## Жорий ҳолат таҳлили
+
+### ✅ Аллақачон мавжуд:
+- **DB жадваллар**: `annotated_words`, `disputed_words`, `abbreviations` — яратилган
+- **Backend API**: `/api/linguistic/analyze`, `/save`, `/all`, `/delete` — мавжуд  
+- **Sidebar менюлар**: 3 та ёзув (Изоҳли, Мунозарали, Қисқартмалар) — мавжуд
+- **Dashboard тугмалар**: TableEditor header-даги 3 тугма — мавжуд
+- **Манба тили модали**: English/Russian/Uzbek — мавжуд
+- **Preview модали**: АI натижаларини кўриш ва таҳрирлаш — мавжуд
+- **[category] саҳифа**: `/linguistic/[category]` динамик маршрут — мавжуд
+
+### ❌ Муаммолар ва тузатиш лозим:
+1. **Backend**: Маълумотларни янгилаш (UPDATE) endpoint йўқ — фақат INSERT бор
+2. **Backend**: `pharma_editor.db` йўли нотўғри — `BASE_DIR` проект root-га олиб боради, лекин DB `backend/` папкасида
+3. **Frontend**: Preview modal-да сақлаш тугмаси стили тўғри ишлаши учун `border: 'none'` қўшилиши керак
+4. **Frontend**: Linguistic category page-да update қилиш функционаллиги йўқ — фақат INSERT
+5. **Frontend**: Linguistic category page `context_en`/`context_ru`/`context_uz` колонкаларни disputed учун кўрсатмайди
+
+## Таклиф қилинаётган ўзгартиришлар
+
+---
+
+### Backend компоненти
+
+#### [MODIFY] [linguistic_routes.py](file:///c:/Users/Администратор/Desktop/2/backend/linguistic_routes.py)
+
+1. **UPDATE endpoint қўшиш**: `PUT /api/linguistic/update/{category}/{item_id}` — мавжуд ёзувни янгилаш
+2. **Save endpoint-ни яхшилаш**: Агар `id` мавжуд бўлса — UPDATE, йўқ бўлса INSERT (upsert)
+3. **Disputed category-нинг `context_*` колонкалари тўғри save бўлиши**
+
+---
+
+### Frontend компоненти
+
+#### [MODIFY] [TableEditor.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/TableEditor.tsx)
+
+1. **Preview modal-дан сақлаш тўғри ишлашини таъминлаш** — `confirmSaveLinguisticItems` функциясида сақлаш натижасидан кейин рефреш
+2. **Сақлаш тугмаси стилини тўғрилаш** 
+
+#### [MODIFY] [page.tsx (linguistic category)](file:///c:/Users/Администратор/Desktop/2/frontend/app/linguistic/%5Bcategory%5D/page.tsx)
+
+1. **UPDATE функционаллиги**: Таҳрирлаш тугмаси босилганда модал очилиб, маълумот янгиланиши
+2. **Disputed words учун context_* колонкаларни кўрсатиш**  
+3. **Annotated words учун description_en/ru/uz колонкаларни кўрсатиш**
+4. **Abbreviations учун long_en колонкасини кўрсатиш**
+5. **UI яхшилаш**: Фильтрлаш ва қидириш интерфейсини яхшилаш
+
+---
+
+## Текшириш режаси
+
+### Автоматик тестлар
+- Backend API `PUT /api/linguistic/update/{category}/{id}` endpoint ишлашини текшириш 
+- Frontend build ишлашини `npm run build` орқали текшириш
+
+### Қўлда текшириш
+1. Dashboard-да файл очиб, "Изоҳли" тугмасини босиш → тил танлаш → AI таҳлил → Preview → Сақлаш → DB-да бор эканлигини текшириш
+2. Sidebar-дан "Изоҳли сўзлар" саҳифасини очиш → жадвалда маълумотлар кўриниши
+3. Таҳрирлаш тугмасини босиш → маълумотни ўзгартириш → сақлаш → янгиланганигини текшириш
+4. Фильтр ишлашини текшириш
+5. Ўчириш ишлашини текшириш
+6. Юқоридагиларни "Мунозарали" ва "Қисқартмалар" учун ҳам такрорлаш

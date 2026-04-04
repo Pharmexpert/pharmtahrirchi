@@ -1,0 +1,58 @@
+# Implementation Plan: Linguistic Encyclopedia Professionalization
+
+This plan addresses the UI duplication issue and enhances the Linguistic Encyclopedia (Annotated, Disputed, Abbreviations) with a professional tabular interface, advanced filtering, and administrative audit tracking.
+
+## User Review Required
+
+> [!IMPORTANT]
+> The sidebar duplication will be fixed by moving the layout responsibility entirely to the root layout, ensuring a consistent dashboard experience across all pages.
+
+> [!TIP]
+> Audit columns (Author and Date) will be automatically hidden for non-admin users to maintain a clean interface for regular specialists.
+
+## Proposed Changes
+
+---
+
+### Backend: Data Enhancement
+
+#### [MODIFY] [linguistic_routes.py](file:///c:/Users/Администратор/Desktop/2/backend/linguistic_routes.py)
+- Update the `GET /api/linguistic/all` endpoint.
+- Perform a `LEFT JOIN` with the `users` table for all three linguistic categories (annotated, disputed, abbreviations).
+- Return `user_name` and `user_email` fields alongside the item data.
+
+---
+
+### Frontend: UI/UX Refinement
+
+#### [MODIFY] [linguistic/[category]/page.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/app/linguistic/[category]/page.tsx)
+- **Fix Layout**: Remove the `<DashboardLayout>` wrapper since it is already provided by `layout.tsx`.
+- **Tabular Redesign**: Replace the card-based grid with a high-fidelity `<table>`.
+- **Column Structure**:
+    1. **English**: Term/Phrase in English.
+    2. **Russian**: Term/Phrase in Russian.
+    3. **Uzbek**: Term/Phrase in Uzbek.
+    4. **Description / Note**: Linguistic context or expansion.
+    5. **Author (Admin Only)**: Name and Email of the person who added/last modified the entry.
+    6. **Date (Admin Only)**: Creation/Modification timestamp.
+    7. **Actions**: Edit and Delete buttons.
+- **Advanced Filtering**:
+    - Add individual search inputs for English, Russian, and Uzbek columns.
+    - Implement real-time filtering logic that combines all active filters.
+- **Enhanced Modal**:
+    - Build a comprehensive modal for adding/editing entries that handles category-specific fields (e.g., `short_form` for abbreviations vs `en`/`ru`/`uz` for terms).
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Verify backend API response manually using `curl` or browser tools to ensure `user_name` is present.
+- Use `npm run build` (if applicable) to check for TypeScript errors in the new table logic.
+
+### Manual Verification
+- **Sidebar Check**: Navigate to `/linguistic/annotated` and verify only one sidebar is visible.
+- **Role Check**: Log in as a regular user and verify the "Author" and "Date" columns are hidden.
+- **Admin Check**: Log in as admin and verify all 6 columns are visible and populated.
+- **Filtering Check**: Type in the English filter and verify only matching rows remain. Combine with Uzbek filter to verify multi-column filtering.
+- **CRUD Check**: Add a new abbreviation, edit it, and then delete it to ensure full lifecycle functionality.

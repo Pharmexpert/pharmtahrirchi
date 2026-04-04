@@ -1,0 +1,78 @@
+# V.6 Functionality Restoration into Current Architecture
+
+## Problem
+Admin panel integration broke the core Dashboard and Editor functions. The v.6 backup at `2 v.6 31.03.2026/` contains the **fully working** version with all functionality intact. The goal is to port that functionality into the current modern architecture (LoginGuard + DashboardLayout).
+
+## Analysis: What V.6 Has That Current Version Lost
+
+| Feature | V.6 (Working) | Current (Broken) |
+|---------|---------------|-------------------|
+| **LangCell** with V1/Proposed dual blocks | ✅ Full with drag-and-drop swap | ❌ Simplified single textarea |
+| **Sayqallash** inline annotated text | ✅ Red strikethrough + green correction + ✓/✕ buttons per word | ❌ Simplified panel without inline view |
+| **AI Yaxshilash** with expert pharma prompt | ✅ Full expert prompt with `<b>` tag support | ❌ Shortened generic prompt |
+| **Block-level drag & drop** (swap V1↔Proposed between rows) | ✅ Working | ❌ Missing |
+| **Row drag & drop** (reorder rows) | ✅ Working | ❌ Missing |
+| **Auto-notes** (diff detection on save) | ✅ Called `/auto-notes` endpoint | ❌ Missing |
+| **Insert row after** with sub-numbering | ✅ Working | ❌ Missing |
+| **Delete row** with backend sync | ✅ Calls `/delete-row` endpoint | ❌ Client-only confirm |
+| **RichContent** (images, tables, formulas) | ✅ Full parser | ❌ Missing |
+| **Upload Dashboard** with Text ID + Specialist | ✅ Full with progress bar | ❌ Replaced with simple project list |
+| **Backend Sayqallash prompt** | ✅ Detailed expert prompt with rules integration | ❌ Simplified generic check |
+| **Backend improve-row** | ✅ Full expert pharma prompt | ❌ Shortened prompt |
+| **Backend suggest-edits** | ✅ Full pharma expert prompt | ❌ Simplified |
+
+## Proposed Changes
+
+### Strategy
+Replace the **current broken** frontend files with the **working v.6 functionality**, but adapted to work within the current `LoginGuard` + `DashboardLayout` architecture. The backend will be replaced with v.6's full endpoints plus the auth/admin features from the current version.
+
+---
+
+### Phase 1: Backend — Full Feature Restoration
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+- Replace `improve-row`, `suggest-edits`, `sayqallash` endpoints with v.6's full expert prompts
+- Add missing endpoints: `/auto-notes`, `/specialists`, `/delete-row/{text_id}/{sentence_no}`
+- Keep current auth/admin endpoints (`/api/admin/*`, `/auth/*`, etc.)
+- Update ALL model names to `claude-3-5-sonnet-20241022`
+- Keep `/api/split-row` and `/api/merge-rows` from recent additions
+
+---
+
+### Phase 2: Frontend — Component Restoration
+
+#### [MODIFY] [TableEditor.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/TableEditor.tsx)
+- **Replace entirely** with v.6's TableEditor, but adapted:
+  - Add `useAuth()` hook for token-based API calls
+  - Add `Authorization` headers to all fetch calls
+  - Keep the `LangCell` component with full V1/Proposed blocks and Sayqallash
+  - Keep `RichContent`, `handleBlockDrop`, `insertRowAfter`, `deleteRow`
+  - Add split/merge buttons from current version
+  - Model name fix applied
+
+#### [MODIFY] [page.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/app/page.tsx)
+- Restore v.6's upload form as the main Dashboard view
+- Add `useAuth()` for token
+- Keep the existing project list as a separate section (history)
+- Add Text ID, Specialist Name fields from v.6
+
+---
+
+### Phase 3: Keep Admin Infrastructure
+- `LoginGuard.tsx`, `DashboardLayout.tsx`, `layout.tsx` — **no changes**
+- Admin routes (`/admin`, `/history`) — **no changes**
+
+## Verification Plan
+
+### Automated Tests
+1. Start backend: `cd backend && python main.py`
+2. Start frontend: `cd frontend && npm run dev`
+3. Open browser → verify upload form appears
+4. Upload a DOCX file → verify TableEditor opens with all features
+5. Test AI Yaxshilash, Sayqallash, row drag-and-drop
+
+### Manual Verification
+- Verify inline Sayqallash annotations work (red/green + accept/reject)
+- Verify block-level drag and drop between V1 and Proposed
+- Verify row reordering via drag
+- Verify export DOCX works

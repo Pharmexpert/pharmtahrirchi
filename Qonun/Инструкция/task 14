@@ -1,0 +1,18 @@
+- [ ] 1. Model Version update (main.py) (DONE)
+- [ ] 2. Setup BERT (uzbert)
+    - [ ] Install dependencies (transformers, torch)
+    - [ ] Create `bert_engine.py` with background init
+    - [ ] Test mask prediction locally
+- [ ] 3. Tahrirchi.db Integration
+    - [ ] Locate/Link `Tahrirchi.db`
+    - [ ] Implement sync script for CSV/JSON import
+    - [ ] Update `db.py` for dictionary lookups
+- [ ] 4. Cross-Alphabet Support
+    - [ ] Create `translit.py` (Latin <-> Cyrillic)
+    - [ ] Update search logic in `db.py`
+- [ ] 5. Hybrid Sayqallash Engine
+    - [ ] Merge BERT + Local DB + Claude logic
+    - [ ] Update frontend to show source labels (AI/DB)
+- [ ] 6. Final Polish & Testing
+    - [ ] Export DOCX verification
+    - [ ] Standards validation prompt refinement

@@ -35,6 +35,16 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = FastAPI()
 
+# Enable CORS — allow all Vercel deployments and localhost
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+)
+
 @app.on_event("startup")
 async def startup_event():
     # Initialize tahrirchi.db if needed (for Railway deployment)

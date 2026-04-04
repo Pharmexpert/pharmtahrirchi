@@ -1,0 +1,11 @@
+- [x] Backend: Update `/history/{text_id}` and `/alignments/{text_id}` to wrap in `{"alignments": ...}` object.
+- [x] Backend: Refine `/sayqallash` prompt and response to match `tahrir 111` schema.
+- [x] Backend: Add `difflib.SequenceMatcher` to `save_corrections_as_rules` for better precision.
+- [x] Frontend: Complete rewrite of `linguistic.css` using Vanilla CSS (Premium & Professional).
+- [x] Frontend: Redesign `LinguisticCategoryPage.tsx` (Remove Tailwind, implement centered modals).
+- [x] Frontend: Overhaul `TableEditor.tsx` Sayqallash UI with Tahrirchi-style Popovers.
+- [x] Frontend: Implement `BroadcastChannel` and focus listener for real-time highlighting updates.
+- [x] Bugfix: Resolution of `ReferenceError: onLinguisticRefresh is not defined` in TableEditor.
+- [x] Verification: Test project loading from History ('Ochish' button).
+- [x] Verification: Verify Sayqallash Popover design (colors, space symbols).
+- [x] Verification: Verify Highlighter sync across tabs.

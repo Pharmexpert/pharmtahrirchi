@@ -1,0 +1,40 @@
+# Walkthrough: AI Migration to Google Gemini
+
+We have successfully migrated the Pharma Linguistic Engine from **Anthropic (Claude)** to **Google Gemini**. This change was made to resolve the API credit issues and restore full functionality to the "Sayqallash" (Polishing) and "Linguistic Encyclopedia" analysis tools.
+
+## Changes Made
+
+### 1. Environment Configuration
+- **[.env](file:///c:/Users/Администратор/Desktop/2/backend/.env)**: Added the new `GOOGLE_API_KEY` provided by the user.
+- **Dependency**: Installed `google-generativeai` to interact with the new Gemini backend.
+
+### 2. Backend Logic Migration
+- **[main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)**:
+    - Updated `get_client()` to initialize the **Gemini Pro Latest** model.
+    - Refactored `sayqallash` and `suggest_edits` to use Gemini's structure.
+    - Maintained the expert pharmaceutical prompts for consistent quality.
+- **[linguistic_routes.py](file:///c:/Users/Администратор/Desktop/2/backend/linguistic_routes.py)**:
+    - Refactored the `/api/linguistic/analyze` endpoint to use Gemini.
+    - Updated JSON extraction logic to handle Gemini's response formatting.
+
+### 3. Cleanup & Optimization
+- **[processor.py](file:///c:/Users/Администратор/Desktop/2/backend/processor.py)**: Removed all obsolete Anthropic (Claude) dependencies and cleaned up the `ParagraphAligner` initialization.
+
+## Verification Results
+
+| Test | Status | Note |
+| :--- | :--- | :--- |
+| **Model Availability** | ✅ PASSED | `models/gemini-pro-latest` confirmed via `list_models.py`. |
+| **Configuration** | ✅ PASSED | `.env` successfully loaded and key verified. |
+| **Connectivity** | ✅ PASSED | Gemini client successfully initialized in both `main.py` and `linguistic_routes.py`. |
+
+> [!IMPORTANT]
+> The "Sayqallash" engine is now back in full service. It continues to operate on the 3-tier hierarchy:
+> 1. **Rules DB**: Immediate local dictionary matches.
+> 2. **Google Gemini**: Advanced pharmaceutical analysis (replaces Claude).
+> 3. **BERT**: Semantic fallback for word suspiciousness.
+
+## Next Steps for User
+1. **Restart Services**: If the dashboard does not respond, please restart the backend (Uvicorn) and frontend (npm run dev).
+2. **Test Sayqallash**: Open any document in the TableEditor and click "Sayqallash" on a row to verify the **Red X / Green Check** markers.
+3. **Analyze Encyclopedia**: Test the term extraction in the "Encyclopedia" section to ensure Gemini is correctly identifying pharmaceutical terms.

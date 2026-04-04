@@ -1,0 +1,46 @@
+# Phase 7: Vector Search Scaling with FAISS 🚀
+
+The objective is to replace the current $O(n)$ manual similarity search loop with an $O(1)$ or $O(\log n)$ high-performance vector search engine using Facebook's **FAISS** library. This will allow the platform to scale to millions of linguistic rules without increasing latency.
+
+## Proposed Changes
+
+### [Component] Backend: Vector Engine (`backend/db.py`)
+
+#### [MODIFIED] [db.py](file:///c:/Users/Администратор/Desktop/2/backend/db.py)
+1. **FAISS Manager Strategy**:
+   - Initialize a global `faiss` index on startup.
+   - We will use `IndexFlatIP` (Inner Product index) combined with `L2 normalization` to achieve exact Cosine Similarity matches.
+   - Maintain a `rule_id_map` (List) to link FAISS index positions back to SQLite rule records.
+
+2. **`init_faiss_index()`**:
+   - Query all records from `sayqallash_rules` where `vector` is not null.
+   - Unpickle vectors, stack into a `numpy` matrix, normalize, and add to the index.
+
+3. **`get_rules_for_text()` Refactor**:
+   - Collect embeddings for all unique words in the input text.
+   - Perform a **batch search** against the FAISS index: `index.search(query_vectors, k=1)`.
+   - Filter results using the similarity threshold (0.92+).
+
+4. **`add_sayqallash_rule()` Sync**:
+   - When a new rule is added, immediately normalize its vector and add it to the memory-resident FAISS index.
+
+### [Component] Backend: BERT Logic (`backend/bert_engine.py`)
+
+#### [MODIFIED] [bert_engine.py](file:///c:/Users/Администратор/Desktop/2/backend/bert_engine.py)
+- Update `get_embedding` to optionally return normalized `numpy` arrays directly, reducing overhead during search.
+
+## Verification Plan
+
+### Automated Tests
+1. **Benchmark**: Perform a `get_rules_for_text` call on a large paragraph and compare latency before/after FAISS integration.
+2. **Precision Check**: Verify that FAISS returns the same top match as the manual cosine similarity calculation for known test cases.
+
+### Manual Verification
+- Add a new "Proposed" correction in the `TableEditor`, save it to the DB, and verify that the next time the same word appears, it is caught by the FAISS semantic engine instantly.
+
+> [!IMPORTANT]
+> FAISS is a memory-resident index. In multi-process environments (like certain Gunicorn setups), we would need a shared memory solution or a dedicated vector DB. However, for the current FastAPI setup, a singleton index in a dedicated module is optimal.
+
+## Open Questions
+- Should we use a more advanced index like `IndexIVFFlat` for even faster search if the rule set grows to 100k+? 
+  - *Recommendation*: Stick to `IndexFlatIP` for now as it provides exact matches and is extremely fast for under 1M vectors.

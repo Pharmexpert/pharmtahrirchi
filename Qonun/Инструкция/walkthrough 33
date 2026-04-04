@@ -1,0 +1,35 @@
+# Walkthrough - Paragraphs Dashboard Integration
+
+We have successfully integrated the **Paragraphs Dashboard** into the Pharma Translation Platform. This update unifies the linguistic database architecture and introduces a comprehensive audit-ready history tracking system for all translation activities.
+
+## Key Accomplishments
+
+### 1. Unified Database Architecture
+- **New Table**: Integrated `paragraphs_dashboard` into `pharma_editor.db` to serve as the centralized repository for paragraph-level translation history.
+- **Audit Logic**: Every manual save, AI polish, and project verification is now automatically recorded with full metadata (specialist name, document ID, action type).
+
+### 2. Backend API Enhancement
+- **Automatic Logging**: Updated the `/save-row` endpoint to trigger a dashboard record whenever a specialist confirms a translation.
+- **Dashboard Endpoints**: Exposed `GET /api/dashboard/all` and `POST /api/dashboard/record` for seamless data retrieval and manual audit entries.
+
+### 3. Dynamic Trilingual UI
+- **Unified Interface**: Leveraged the dynamic linguistic engine to create the Paragraphs Dashboard UI, maintaining 100% design consistency with the "Linguistic Encyclopedia".
+- **Advanced Filtering**: Added per-column search for English, Russian, Uzbek, Specialist, and Document ID.
+- **Premium Tools**:
+  - **XLSX Export**: One-click professional report generation.
+  - **Action Badges**: Visual indicators for "Manual Edit", "AI Polished", and "Verified" actions.
+
+## Visual Verification
+
+![Paragraphs Dashboard UI](file:///C:/Users/Администратор/.gemini/antigravity/brain/d4dac58e-b400-47a0-a40e-1112034c78c4/paragraphs_dashboard_1775125570442.png)
+
+## Technical Summary
+- **Database**: `paragraphs_dashboard` (id, en, ru, uz, specialist, text_id, action_type, timestamp).
+- **Frontend**: Navigation added to sidebar; unified `[category]/page.tsx` now handles the 4th linguistic category dynamically.
+- **Tracking**:
+  - **Manual Edit**: Recorded on individual row save in TableEditor.
+  - **AI Polished**: Recorded after individual or batch "Sayqallash" actions.
+  - **Verified**: Recorded when clicking "Ишни якунлаш" (Finish Work).
+
+> [!TIP]
+> The system now maintains a "Golden Source" of translations in the Paragraphs Dashboard, which can be reused for future AI training or cross-document consistency checks.

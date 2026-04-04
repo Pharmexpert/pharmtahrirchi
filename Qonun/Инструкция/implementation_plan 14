@@ -1,0 +1,82 @@
+# PharmaEditor AI Enhancement Plan (Phase 2)
+
+This plan outlines the steps to modernize the PharmaEditor platform by migrating to a specific Claude model version, integrating local BERT-based contextual processing, and implementing a massive multilingual dictionary (Tahrirchi.db) with cross-alphabet support.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Model Migration**: We are switching all AI endpoints to use `claude-sonnet-4-20250514` as requested. Ensure your API keys are active for this specific model version.
+> [!WARNING]
+> **Resource Usage**: BERT integration will require `transformers` and `torch`. This adds ~2GB to the backend environment size and increases RAM usage on startup.
+
+## Proposed Changes
+
+### 1. Model & API Migration
+Update all instances of the Anthropic model in the backend to ensure consistency and take advantage of the latest performance improvements.
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+*   Replace `claude-3-5-sonnet-20241022` with `claude-sonnet-4-20250514` in:
+    *   `align_document`
+    *   `improve_row`
+    *   `suggest_edits`
+    *   `sayqallash`
+    *   `split_row`
+
+### 3. BERT & Hybrid "Sayqallash" Engine
+Introduce a local BERT model (specifically `uzbert` or a multilingual variant) for contextual word masking and grammatical analysis.
+
+#### [NEW] [bert_engine.py](file:///c:/Users/Администратор/Desktop/2/backend/bert_engine.py)
+*   Initialize `transformers` pipeline using `mohir/uzbert-v1` or a similar high-quality Uzbek model.
+*   Implement background thread for model initialization.
+*   Integrate into `/sayqallash` and `/suggest-edits`.
+
+### 2. Tahrirchi.db Integration (8.7M words)
+Integrate the 8.7M word `tahrirchi.db` (located at `backend/tahrirchi.db`) and implement parallel import/optimization scripts.
+
+#### [MODIFY] [db.py](file:///c:/Users/Администратор/Desktop/2/backend/db.py)
+*   Connect to `tahrirchi.db`.
+*   Implement `search_dictionary(word, lang)` using the `dictionary` table (8.7M words).
+*   Use `normalize_for_lookup` from `transliterate.py` for cross-alphabet search.
+*   Sync `sayqallash_rules` with `tahrirchi.db`'s `corrections` and `confirmed_words`.
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+*   Update `/sayqallash` and `/suggest-edits` to use a **Hybrid Approach**: Check BERT/Local DB first → Fallback to Claude for complex linguistic nuances.
+
+### 4. Transliteration & Cross-Alphabet Support
+Implement a seamless Latin <-> Cyrillic toggle for the Uzbek column using `transliterate.py`.
+
+#### [NEW] [transliterate.py](file:///c:/Users/Администратор/Desktop/2/transliterate.py) (EXISTING)
+*   Verify and use the official standard mapping provided in the file.
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+*   Add `/api/transliterate` endpoint to handle bulk/single text conversion.
+
+#### [MODIFY] [TableEditor.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/TableEditor.tsx)
+*   Add a "Lat/Kir" toggle button in the Uzbek column header.
+*   Implement logic to transliterate the entire column or specific rows on demand.
+
+### 5. Scientific Standard Validation (USP/Ph. Eur.)
+Formalize the checking of terminology against international pharmacopoeia standards.
+
+#### [MODIFY] [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+*   Inject specialized System Prompts for "Standards Compliance" in the `improve_row` endpoint.
+
+---
+
+## Open Questions
+
+1.  **Transliteration Scope**: Should the "Lat/Kir" button transliterate the entire "Proposed" column at once, or should it be a per-cell action?
+2.  **Database Connection**: Should `tahrirchi.db` be attached to the main `pharma_editor.db` connection for JOIN queries, or kept as a separate read-only connection?
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1.  **AI Version Check**: Call `/api/health` (to be added) or verify the model string in logs during a request.
+2.  **Dictionary Lookup**: Query a known pharmaceutical term and verify local DB response.
+3.  **Transliteration Test**: Input Latin text and verify Cyrillic output.
+
+### Manual Verification
+1.  Check the "Sayqallash" (Sayqallash) UI to ensure annotations appear from both "Local DB" and "AI".
+2.  Verify the download speed of "Export DOCX" after complex edits.

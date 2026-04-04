@@ -1,0 +1,36 @@
+# Platform Restoration & Modernization — Walkthrough
+
+## Summary
+The **Pharma Translation Platform** has been successfully stabilized by unifying the high-performance editing capabilities of the `v.6` backup with the modern security and administrative features of the current version. All regressions have been resolved, and the system is now fully operational and type-safe.
+
+## Key Changes
+
+### 1. Core Editor Engine Restoration
+- **Dual-Block LangCell**: Restored the V1/Proposed editing mode with drag-and-drop block swapping.
+- **Sayqallash Engine**: Fully restored the expert pharmaceutical grammar correction with red/green inline annotations and bulk-acceptance functionality.
+- **AI-Powered Row Manipulation**: Re-implemented "Magic Split" and manual row reordering using `claude-sonnet-4-20250514`.
+- **Rich Content Support**: Re-enabled support for inline images (`§IMG:...§`), tables (`§TBL:...§`), and mathematical formulas.
+
+### 2. Infrastructure & Startup Stabilization
+- **start_app.bat**: Fixed to correctly use the root-level virtual environment (`.venv`). Added dependency checks for `node_modules` and the Python interpreter.
+- **Model Standard**: Standardized all AI endpoints to use the user-verified `claude-sonnet-4-20250514` model name.
+- **API Security**: Integrated `useAuth()` to ensure all frontend-to-backend calls include the `Authorization: Bearer <token>` header.
+
+### 3. User Experience & Admin Integration
+- **Admin Panel Access**: Added a secure "🛡️ Admin Panel" link to the main Dashboard, visible only to users with the `admin` role.
+- **Project History**: Restored the history panel with Text ID and Specialist Name tracking.
+- **Type Safety**: Refactored the codebase to replace `any` types with the `RowData` interface, ensuring long-term maintainability.
+
+## Verification
+
+| Component | Status | Verification Detail |
+|-----------|--------|---------------------|
+| **Backend** | ✅ Operational | Ports 8000 (FastAPI) and 3001 (Next.js) verified. |
+| **Frontend** | ✅ Compiled | `npx next build` successful with no lint errors. |
+| **AI Client** | ✅ Verified | `claude-sonnet-4-20250514` model and API key verified. |
+| **Startup** | ✅ Fixed | `start_app.bat` handles `.venv` and paths correctly. |
+
+---
+
+> [!TIP]
+> **Тизимни ишга тушириш:** Иш столидаги `start_app.bat` файлини икки марта босинг. Платформа автоматик тарзда браузерда очилади.

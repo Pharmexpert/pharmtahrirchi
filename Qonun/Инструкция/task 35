@@ -1,0 +1,4 @@
+- `[x]` Fix Paragraphs Edit Modal in `[category]/page.tsx`
+- `[x]` Improve Rules XLSX Export logic in `admin_routes.py`
+- `[x]` Standardize Upload Endpoint prefix to `/api/` in `main.py`
+- `[ ]` Verify upload functionality and export in browser

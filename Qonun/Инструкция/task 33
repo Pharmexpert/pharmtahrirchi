@@ -1,0 +1,4 @@
+- `[ ]` Restart backend from correct directory
+- `[ ]` Refactor `handleFinishWork` in `TableEditor.tsx`
+- `[ ]` Verify dashboard endpoints are active
+- `[ ]` Verify button functionality in browser

@@ -1,0 +1,67 @@
+# Тизим функционаллигини тўлиқ тиклаш ва янгилаш
+
+## Бажарилган ишлар
+
+### 1. Backend — Sayqallash Rules CRUD эндпоинтлари
+**Файл**: [main.py](file:///c:/Users/Администратор/Desktop/2/backend/main.py)
+
+4 та янги эндпоинт қўшилди:
+- `GET /sayqallash-rules` — қоидаларни олиш
+- `POST /sayqallash-rules` — янги қоида яратиш
+- `PUT /sayqallash-rules/{id}` — қоидани таҳрирлаш
+- `DELETE /sayqallash-rules/{id}` — қоидани ўчириш
+
+---
+
+### 2. History саҳифаси яратилди
+**Файл**: [page.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/app/history/page.tsx) [NEW]
+
+- Лойиҳалар тарихини кўрсатувчи жадвал
+- Қидирув, ўчириш, ва лойиҳани очиш функциялари
+- "Milky/Cream" дизайнга тўлиқ мослаштирилган
+
+![History Page](file:///C:/Users/Администратор/.gemini/antigravity/brain/9cb568d0-9d31-4edf-afca-88675e5c74f7/.system_generated/click_feedback/click_feedback_1774975469470.png)
+
+---
+
+### 3. Rules DB "Milky/Cream" дизайнда қайта ишланди
+**Файл**: [page.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/app/rules/page.tsx) [REWRITE]
+
+- TailwindCSS classlари CSS variables (`--bg-card`, `--accent-primary` ва ҳ.к.) билан алмаштирилди
+- Тил алмаштириш, қоида қўшиш модали ва жадвал тўлиқ стилланди
+- 8 та мавжуд қоида тўғри юкланди
+
+![Rules DB Page](file:///C:/Users/Администратор/.gemini/antigravity/brain/9cb568d0-9d31-4edf-afca-88675e5c74f7/.system_generated/click_feedback/click_feedback_1774975498094.png)
+
+---
+
+### 4. Sayqallash тугмаси TableEditor'га интеграция қилинди
+**Файл**: [TableEditor.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/components/TableEditor.tsx)
+
+- Ўзбек колонкасида **"AI Yaxshilash"** ёнига **"Sayqallash"** тугмаси қўшилди
+- `POST /sayqallash` чақирилгач, аниқланган хатоликлар жадвали кўрсатилади:
+  - Хато шакл → Тўғри шакл + хато тури
+  - Ҳар бир хатоликни алоҳида **"✓ Қабул қилиш"** тугмаси билан тузатиш
+  - **"Ҳаммасини қабул қилиш"** — барча хатоликларни бирданига тузатиш
+  - **"✕"** — натижаларни ёпиш
+
+---
+
+### 5. Dashboard функционаллиги тузатилди
+**Файл**: [page.tsx](file:///c:/Users/Администратор/Desktop/2/frontend/app/page.tsx)
+
+- `useSearchParams` орқали `?project=ID` қўллаб-қувватланади
+- History саҳифасидан лойиҳани очиш тўғри ишлайди
+
+![Dashboard](file:///C:/Users/Администратор/.gemini/antigravity/brain/9cb568d0-9d31-4edf-afca-88675e5c74f7/.system_generated/click_feedback/click_feedback_1774975637676.png)
+
+---
+
+## Текшириш натижалари
+
+| Саҳифа | Олдинги ҳолати | Ҳозирги ҳолати |
+|--------|---------------|---------------|
+| History | ❌ 404 хатолик | ✅ Тўлиқ функционал |
+| Rules DB | ❌ Содда дизайн, CRUD ишламайди | ✅ Premium дизайн, CRUD тўлиқ |
+| Dashboard | ❌ Бўш жадвал | ✅ Лойиҳалар кўрсатилади |
+| Sayqallash | ❌ Тугма йўқ | ✅ UZ колонкада интеграция |

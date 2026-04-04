@@ -1,0 +1,20 @@
+# Task: Authentication Stabilization & Forgot Password
+
+## Backend Fixes
+- [x] Add `password_resets` table to `tahrirchi.db` (update `db.py`'s `init_db`).
+- [x] Implement `db.py` functions for generating/verifying reset codes.
+- [x] Add `/api/auth/forgot-password` endpoint to `main.py`.
+- [x] Add `/api/auth/reset-password` endpoint to `main.py`.
+- [x] Auto-approve Google users (already done).
+
+## Frontend Fixes
+- [x] Fix Google Button initialization in `LoginGuard.tsx` (dependency fix).
+- [x] Add "Forgot Password" UI states and forms in `LoginGuard.tsx`.
+- [x] Implement `handleForgotPassword` and `handleResetPassword` logic.
+- [x] Remove any Guest Mode references.
+
+## Deployment & Verification
+- [x] Push backend changes to Railway.
+- [x] Push frontend changes to Vercel.
+- [/] Test Google Login (Automatic registration/approval).
+- [/] Test Forgot Password flow (using mock code in logs).

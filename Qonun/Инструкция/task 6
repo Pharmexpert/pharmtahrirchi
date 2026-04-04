@@ -1,0 +1,10 @@
+- [ ] Backend: Database Migration (Users table & admin seed)
+- [ ] Backend: Google Auth Implementation (JWT & Token verification)
+- [ ] Backend: Admin API Endpoints (User list, approve/reject)
+- [ ] Backend: AI Logic Update (Russian-to-Uzbek context)
+- [ ] Frontend: Google Identity Services Integration
+- [ ] Frontend: LoginGuard & Auth State Management
+- [ ] Frontend: Admin Dashboard Page
+- [ ] Frontend: UI Restrictions (Remove/Hide buttons)
+- [ ] Alignment Fix: Improve fuzzy matching for parallel tables
+- [ ] Final Verification
