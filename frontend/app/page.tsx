@@ -5,9 +5,12 @@ import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen, User,
 import Link from 'next/link'
 import TableEditor, { RowData } from '../components/TableEditor'
 import { useAuth } from '../components/LoginGuard'
+import { useSearchParams } from 'next/navigation'
 
 export default function Home() {
   const { user, token } = useAuth()
+  const searchParams = useSearchParams()
+  const urlTextId = searchParams.get('text_id')
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +44,13 @@ export default function Home() {
       .catch(() => {})
       .finally(() => setLoadingProjects(false))
   }, [API_BASE, token])
+
+  // AUTO-OPEN project if text_id param exists in URL
+  useEffect(() => {
+    if (urlTextId && token && !data) {
+      openProject(urlTextId)
+    }
+  }, [urlTextId, token, data])
 
   const [uploadProgress, setUploadProgress] = useState(0)
  
@@ -129,21 +139,27 @@ export default function Home() {
   }
 
   const openProject = async (projectId: string) => {
+    if (!projectId) return
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/api/history/${projectId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
-        const rows = await res.json()
+        const result = await res.json()
+        const rows = Array.isArray(result) ? result : (result.alignments || [])
+        
         if (rows.length > 0) {
           setData(rows)
           setTextId(projectId)
           setFilename(projectId + '.docx')
+        } else {
+          setError('Лойиҳа бўш ёки топилмади')
         }
       }
     } catch (err) {
       console.error(err)
+      setError('Лойиҳани юклашда хатолик юз берди')
     } finally {
       setLoading(false)
     }
