@@ -36,11 +36,14 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = FastAPI()
 
-# Enable CORS — allow all Vercel deployments and localhost
+# ═══════════════════════════════════════════════════
+# Middleware: CORS & Initialization
+# ═══════════════════════════════════════════════════
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
@@ -72,16 +75,6 @@ async def startup_event():
     
     asyncio.create_task(run_migration())
 
-# Enable CORS for frontend integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
-    allow_origin_regex=r"https://.*\.(vercel\.app|railway\.app|up\.railway\.app)",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
-)
 
 os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 

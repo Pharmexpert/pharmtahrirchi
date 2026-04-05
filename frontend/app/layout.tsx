@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import LoginGuard from '../components/LoginGuard'
 import DashboardLayout from '../components/DashboardLayout'
 
+// Rebuild triggered: 2026-04-05
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
@@ -17,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="uz">
       <body className={inter.className}>
         <LoginGuard>
           <DashboardLayout>
@@ -29,4 +30,3 @@ export default function RootLayout({
     </html>
   )
 }
-
