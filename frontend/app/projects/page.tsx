@@ -43,8 +43,8 @@ export default function ProjectsPage() {
   }
 
   const filtered = projects.filter(p =>
-    (p.text_id || '').toLowerCase().includes(search.toLowerCase()) ||
-    (p.specialist || '').toLowerCase().includes(search.toLowerCase())
+    (p.text_id || p.id || '').toLowerCase().includes(search.toLowerCase()) ||
+    (p.specialist_name || p.specialist || p.name || '').toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -107,9 +107,9 @@ export default function ProjectsPage() {
                     fontFamily: 'monospace', fontSize: '0.9rem', padding: '4px 10px',
                     background: 'var(--accent-bg)', color: 'var(--accent-primary)',
                     borderRadius: '6px', fontWeight: 700
-                  }}>{p.text_id || '—'}</span>
+                  }}>{p.text_id || p.id || '—'}</span>
                 </td>
-                <td style={{ padding: '16px 20px', fontWeight: 600 }}>{p.specialist || '—'}</td>
+                <td style={{ padding: '16px 20px', fontWeight: 600 }}>{p.specialist_name || p.specialist || '—'}</td>
                 <td style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                   {p.updated_at ? new Date(p.updated_at).toLocaleDateString('uz-UZ') : '—'}
                 </td>

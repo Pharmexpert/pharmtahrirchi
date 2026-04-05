@@ -12,7 +12,7 @@ export default function DashboardPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const [stats, setStats] = useState({
     projects: 0, alignments: 0, rules: 0,
-    annotated: 0, disputed: 0, abbreviations: 0, files: 0
+    annotated: 0, disputed: 0, abbreviations: 0, files: 0, synonyms: 0
   })
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,7 +38,9 @@ export default function DashboardPage() {
           setStats(prev => ({ 
             ...prev, 
             projects: d.projects || d.counts?.projects || 0,
-            rules: d.sayqallash_rules || d.counts?.sayqallash_rules || 0 
+            rules: d.sayqallash_rules || d.counts?.sayqallash_rules || 0,
+            alignments: d.counts?.alignments || 0,
+            synonyms: d.synonyms || d.counts?.synonyms || 0
           }))
         }
         if (lingRes.status === 'fulfilled' && lingRes.value.ok) {
@@ -48,7 +50,6 @@ export default function DashboardPage() {
             annotated: (d.annotated || []).length,
             disputed: (d.disputed || []).length,
             abbreviations: (d.abbreviations || []).length,
-            alignments: (d.paragraphs || []).length,
           }))
         }
         if (projRes.status === 'fulfilled' && projRes.value.ok) {
@@ -125,6 +126,8 @@ export default function DashboardPage() {
     { label: 'Изоҳли луғат', value: stats.annotated, icon: BookOpen, color: '#5B7FDE', bg: '#F0F4FF', path: '/linguistic/annotated' },
     { label: 'Мунозарали', value: stats.disputed, icon: MessageSquare, color: '#D47B3F', bg: '#FFF4EE', path: '/linguistic/disputed' },
     { label: 'Қисқартмалар', value: stats.abbreviations, icon: Hash, color: '#9B3B9B', bg: '#FDF0FF', path: '/linguistic/abbreviations' },
+    { label: 'Синонимлар', value: stats.synonyms, icon: TrendingUp, color: '#0891B2', bg: '#F0FDFF', path: '/synonyms' },
+    { label: 'Хатбошилар', value: stats.alignments, icon: BarChart3, color: '#D97706', bg: '#FFFBEB', path: '/paragraphs' },
   ]
 
   return (
