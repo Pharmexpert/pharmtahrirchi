@@ -29,7 +29,7 @@ export default function SynonymsPage() {
   const [newSynonym, setNewSynonym] = useState('')
   const [newLang, setNewLang] = useState('uz')
   const [page, setPage] = useState(0)
-  const PER_PAGE = 25
+  const [perPage, setPerPage] = useState(25)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -85,8 +85,8 @@ export default function SynonymsPage() {
   }
 
   const filtered = synonyms
-  const totalPages = Math.ceil(filtered.length / PER_PAGE)
-  const pageData = filtered.slice(page * PER_PAGE, (page + 1) * PER_PAGE)
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const pageData = filtered.slice(page * perPage, (page + 1) * perPage)
 
   const langLabel = (l: string) => l === 'uz' ? '🇺🇿 UZ' : l === 'ru' ? '🇷🇺 RU' : l === 'en' ? '🇬🇧 EN' : l
   const langColor = (l: string) => l === 'uz' ? '#16A34A' : l === 'ru' ? '#2563EB' : l === 'en' ? '#9333EA' : '#666'
@@ -209,7 +209,7 @@ export default function SynonymsPage() {
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
               >
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{page * PER_PAGE + i + 1}</span>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{page * perPage + i + 1}</span>
                 <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{s.word}</span>
                 <span style={{ fontSize: '0.88rem', color: '#16A34A', fontWeight: 600 }}>{s.synonym}</span>
                 <span style={{
@@ -238,7 +238,7 @@ export default function SynonymsPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
           <button disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{
             padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)',
             background: page === 0 ? '#F1F5F9' : 'white', cursor: page === 0 ? 'default' : 'pointer',
@@ -252,6 +252,14 @@ export default function SynonymsPage() {
             background: page >= totalPages - 1 ? '#F1F5F9' : 'white', cursor: page >= totalPages - 1 ? 'default' : 'pointer',
             fontWeight: 700, fontSize: '0.82rem', color: page >= totalPages - 1 ? '#94A3B8' : '#334155'
           }}>Кейинги →</button>
+          <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(0) }} style={{
+            padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)',
+            fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer'
+          }}>
+            <option value={25}>25 / бет</option>
+            <option value={50}>50 / бет</option>
+            <option value={100}>100 / бет</option>
+          </select>
         </div>
       )}
 
