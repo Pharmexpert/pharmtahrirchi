@@ -284,49 +284,71 @@ async def update_linguistic_item(category: str, item_id: int, payload: Dict[str,
     return {"success": True}
 
 @router.get("/all")
-async def get_all_linguistic_data(current_user: Dict = Depends(get_current_user)):
-    """Get all encyclopedia data with creator and modifier info."""
+async def get_all_linguistic_data(q: str = Query(None), current_user: Dict = Depends(get_current_user)):
+    """Get linguistic data with optional keyword search."""
     conn = db.connect_db()
     conn.row_factory = db.sqlite3.Row
     cursor = conn.cursor()
     
-    cursor.execute("""
+    search_clause = ""
+    params = []
+    if q:
+        search_clause = " WHERE en LIKE ? OR ru LIKE ? OR uz LIKE ? "
+        params = [f"%{q}%", f"%{q}%", f"%{q}%"]
+
+    # 1. Annotated
+    cursor.execute(f"""
         SELECT a.*, 
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM annotated_words a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN users m ON a.modified_by_id = m.id
+        {search_clause}
         ORDER BY a.created_at DESC
-    """)
+    """, params)
     annotated = [dict(r) for r in cursor.fetchall()]
     
-    cursor.execute("""
+    # 2. Disputed
+    cursor.execute(f"""
         SELECT d.*, 
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM disputed_words d
         LEFT JOIN users u ON d.user_id = u.id
         LEFT JOIN users m ON d.modified_by_id = m.id
+        {search_clause}
         ORDER BY d.created_at DESC
-    """)
+    """, params)
     disputed = [dict(r) for r in cursor.fetchall()]
     
-    cursor.execute("""
+    # 3. Abbreviations
+    abbrev_search = ""
+    abbrev_params = []
+    if q:
+        abbrev_search = " WHERE short_form LIKE ? OR long_en LIKE ? OR long_ru LIKE ? OR long_uz LIKE ? "
+        abbrev_params = [f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"]
+
+    cursor.execute(f"""
         SELECT b.*, 
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM abbreviations b
         LEFT JOIN users u ON b.user_id = u.id
         LEFT JOIN users m ON b.modified_by_id = m.id
+        {abbrev_search}
         ORDER BY b.created_at DESC
-    """)
+    """, abbrev_params)
     abbreviations = [dict(r) for r in cursor.fetchall()]
     
+    # 4. Paragraphs (Search in en_text/ru_text/uz_text)
+    para_search = ""
+    if q:
+        para_search = " WHERE en_text LIKE ? OR ru_text LIKE ? OR uz_text LIKE ? "
     
-    cursor.execute("""
-        SELECT * FROM paragraphs_dashboard ORDER BY created_at DESC
-    """)
+    cursor.execute(f"""
+        SELECT * FROM paragraphs_dashboard {para_search} ORDER BY created_at DESC
+    """, params)
     paragraphs = [dict(r) for r in cursor.fetchall()]
     
     conn.close()

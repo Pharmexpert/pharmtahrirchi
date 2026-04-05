@@ -52,7 +52,10 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const [isLinguisticLoading, setIsLinguisticLoading] = useState(false)
   const [linguisticProgress, setLinguisticProgress] = useState(0)
   const [showSourceLangModal, setShowSourceLangModal] = useState<string | null>(null)
-  const [linguisticPreview, setLinguisticPreview] = useState<{ category: string, results: any[] } | null>(null)
+  const [linguisticPreview, setLinguisticPreview] = useState<{ category: string, results: any[], mode?: 'ai' | 'db' } | null>(null)
+  const [linguisticSearchQuery, setLinguisticSearchQuery] = useState('')
+  const [isBatchPolishing, setIsBatchPolishing] = useState(false)
+  const [batchSummary, setBatchSummary] = useState<{ total: number, corrected: number, annotations: number } | null>(null)
   const [isDraggingPopup, setIsDraggingPopup] = useState(false)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const popupRef = useRef<HTMLDivElement>(null)
@@ -396,6 +399,79 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     } catch (_e) { notify('Сақлашда хатолик') }
   }
 
+  const searchLinguisticDatabase = async (category: string, query: string) => {
+    setIsLinguisticLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/linguistic/all?q=${encodeURIComponent(query)}`, {
+        headers: authHeaders
+      })
+      if (!res.ok) throw new Error()
+      const r = await res.json()
+      // Filter the relevant category from the 'all' results
+      const results = r[category] || []
+      setLinguisticPreview({ category, results, mode: 'db' })
+    } catch (_e) {
+      notify('Қидирувда хатолик')
+    } finally {
+      setIsLinguisticLoading(false)
+    }
+  }
+
+  const runBatchSayqallash = async () => {
+    const contentRows = data.filter(r => r.type === 'content')
+    if (contentRows.length === 0) return
+    
+    setIsBatchPolishing(true)
+    setLinguisticProgress(0)
+    notify('Ҳужжат сайқалланмоқда...')
+    
+    let correctedCount = 0
+    let totalAnns = 0
+    
+    // Process in sequential chunks to avoid overloading AI/DB
+    const CHUNK_SIZE = 5
+    const newData = [...data]
+    
+    for (let i = 0; i < contentRows.length; i += CHUNK_SIZE) {
+      const chunk = contentRows.slice(i, i + CHUNK_SIZE)
+      // Map global indices for current chunk
+      const chunkIndices = data.map((r, idx) => r.type === 'content' ? idx : -1)
+                              .filter(idx => idx !== -1)
+                              .slice(i, i + CHUNK_SIZE)
+      
+      try {
+        const payload = chunk.map(r => ({ text: r.uz_proposed || r.uz_v1, lang: 'uz', en: r.en }))
+        const res = await fetch(`${API_BASE}/api/sayqallash-batch`, {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ rows: payload, lang: 'uz' })
+        })
+        if (res.ok) {
+          const r = await res.json()
+          r.results.forEach((res: any, j: number) => {
+            const dataIdx = chunkIndices[j]
+            if (res.corrected && res.corrected !== (newData[dataIdx].uz_proposed || newData[dataIdx].uz_v1)) {
+              newData[dataIdx] = { 
+                ...newData[dataIdx], 
+                uz_proposed: res.corrected,
+                notes: (newData[dataIdx].notes ? newData[dataIdx].notes + '\n' : '') + `AI Сайқаллаш: ${res.annotations?.length || 0} та тузатиш.`
+              }
+              correctedCount++
+              totalAnns += res.annotations?.length || 0
+            }
+          })
+        }
+      } catch (err) {
+        console.error("Batch polish chunk error:", err)
+      }
+      
+      setLinguisticProgress(Math.min(100, Math.round(((i + CHUNK_SIZE) / contentRows.length) * 100)))
+    }
+    
+    setData(newData)
+    setIsBatchPolishing(false)
+    setBatchSummary({ total: contentRows.length, corrected: correctedCount, annotations: totalAnns })
+  }
+
   const handleSaveAll = async () => {
     setSavingAll(true)
     try {
@@ -514,6 +590,9 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             <BookOpen size={14} />
             Rules DB
           </Link>
+          <button onClick={runBatchSayqallash} disabled={isBatchPolishing} style={{ padding: '5px 10px', background: isBatchPolishing ? '#4b5563' : 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: isBatchPolishing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+            {isBatchPolishing ? 'Сайқалланмоқда...' : '✦ Сайқаллаш (Barchasi)'}
+          </button>
           <button onClick={aiAlign} disabled={isAiAligning} style={{ padding: '5px 10px', background: isAiAligning ? '#4b5563' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: isAiAligning ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
             {isAiAligning ? 'Moslashtirilmoqda...' : 'AI Moslash'}
           </button>
@@ -526,16 +605,52 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         </div>
       </header>
 
-      {/* Progress Modal */}
-      {isLinguisticLoading && (
+      {/* Progress Modal (Batch Polishing / AI Analysis) */}
+      {(isLinguisticLoading || isBatchPolishing) && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '30px', borderRadius: 20, width: '400px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
-            <h3 style={{ margin: '0 0 15px 0', fontSize: '1.1rem', color: '#1e293b' }}>AI Таҳлил қилинмоқда...</h3>
+            <h3 style={{ margin: '0 0 15px 0', fontSize: '1.1rem', color: '#1e293b' }}>
+              {isBatchPolishing ? 'Ҳужжат сайқалланмоқда...' : 'AI Таҳлил қилинмоқда...'}
+            </h3>
             <div style={{ height: '10px', background: '#e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: '10px', position: 'relative' }}>
-              <div style={{ height: '100%', width: `${linguisticProgress}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)', transition: 'width 0.3s ease' }} />
+              <div style={{ height: '100%', width: `${linguisticProgress}%`, background: 'linear-gradient(90deg, #059669, #10b981)', transition: 'width 0.3s ease' }} />
             </div>
-            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#6366f1' }}>{Math.round(linguisticProgress)}%</span>
-            <p style={{ margin: '15px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>Бутун ҳужжат бўйича қидирилмоқда (бўлакларга бўлинган ҳолда)</p>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#059669' }}>{Math.round(linguisticProgress)}%</span>
+            <p style={{ margin: '15px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+              {isBatchPolishing ? 'Барча қаторлар автоматик тузатилмоқда' : 'Бутун ҳужжат бўйича қидирилмоқда'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Summary Modal */}
+      {batchSummary && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '30px', borderRadius: 20, width: '450px', textAlign: 'center', boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ background: '#dcfce7', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <Sparkles size={30} color="#16a34a" />
+            </div>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.3rem', color: '#1e293b' }}>Сайқаллаш якунланди!</h3>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '25px' }}>Ҳужжат тўлиқ таҳлил қилинди ва тузатишлар киритилди.</p>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '30px' }}>
+              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: 12 }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b' }}>{batchSummary.total}</div>
+                <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase' }}>Қаторлар</div>
+              </div>
+              <div style={{ background: '#f0fdf4', padding: '15px', borderRadius: 12, border: '1px solid #dcfce7' }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#16a34a' }}>{batchSummary.corrected}</div>
+                <div style={{ fontSize: '0.65rem', color: '#16a34a', textTransform: 'uppercase' }}>Тузатилди</div>
+              </div>
+              <div style={{ background: '#f5f3ff', padding: '15px', borderRadius: 12, border: '1px solid #ddd6fe' }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#7c3aed' }}>{batchSummary.annotations}</div>
+                <div style={{ fontSize: '0.65rem', color: '#7c3aed', textTransform: 'uppercase' }}>Хатолар</div>
+              </div>
+            </div>
+            
+            <button onClick={() => setBatchSummary(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>
+              Натижаларни кўриш
+            </button>
           </div>
         </div>
       )}
@@ -543,22 +658,45 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
       {/* Source Language Selection Modal */}
       {showSourceLangModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', padding: '25px', borderRadius: 15, width: '350px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '1rem', color: '#1e293b', textAlign: 'center' }}>Манба тилини танланг</h3>
+          <div style={{ background: 'white', padding: '25px', borderRadius: 15, width: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#1e293b', textAlign: 'center' }}>Лингвистик режим</h3>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', textAlign: 'center', marginBottom: '20px' }}>
+              Танланган категория: <span style={{ fontWeight: 800, color: '#6366f1' }}>{showSourceLangModal === 'annotated' ? 'Изоҳли луғат' : showSourceLangModal === 'disputed' ? 'Мунозарали' : 'Қисқартмалар'}</span>
+            </p>
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => startLinguisticAnalysis('English')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
-                <span>English (Original)</span>
-                <span style={{ color: '#6366f1' }}>→</span>
-              </button>
-              <button onClick={() => startLinguisticAnalysis('Russian')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Russian (Русский)</span>
-                <span style={{ color: '#6366f1' }}>→</span>
-              </button>
-              <button onClick={() => startLinguisticAnalysis('Uzbek')} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Uzbek (O'zbekcha)</span>
-                <span style={{ color: '#6366f1' }}>→</span>
-              </button>
-              <button onClick={() => setShowSourceLangModal(null)} style={{ marginTop: '10px', padding: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem' }}>Бекор қилиш</button>
+              <div style={{ border: '1.5px solid #6366f1', borderRadius: 12, padding: '12px', background: '#f5f3ff', marginBottom: 10 }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>Базадан қидириш (4,365+ та)</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input 
+                    type="text" 
+                    placeholder="Калит сўзни ёзинг..." 
+                    value={linguisticSearchQuery}
+                    onChange={e => setLinguisticSearchQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && searchLinguisticDatabase(showSourceLangModal, linguisticSearchQuery)}
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                  <button onClick={() => searchLinguisticDatabase(showSourceLangModal, linguisticSearchQuery)} style={{ padding: '8px 15px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                    <Search size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px', background: '#f8fafc' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>АИ Таҳлил (Янгиларни топиш)</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button onClick={() => startLinguisticAnalysis('English')} style={{ padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, background: 'white', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span>English (Original) бўйича таҳлил</span>
+                    <span style={{ color: '#6366f1' }}>🤖</span>
+                  </button>
+                  <button onClick={() => startLinguisticAnalysis('Russian')} style={{ padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, background: 'white', fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span>Русча бўйича таҳлил</span>
+                    <span style={{ color: '#6366f1' }}>🤖</span>
+                  </button>
+                </div>
+              </div>
+
+              <button onClick={() => setShowSourceLangModal(null)} style={{ marginTop: '5px', padding: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem' }}>Бекор қилиш</button>
             </div>
           </div>
         </div>
@@ -570,9 +708,14 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
           <div style={{ background: 'white', padding: '0', borderRadius: 15, width: '90%', maxWidth: '900px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
               <h3 style={{ margin: 0, fontSize: '1rem', color: '#1e293b' }}>
-                Таҳлил натижалари: <span style={{ textTransform: 'capitalize', color: '#6366f1' }}>{linguisticPreview.category}</span>
+                {linguisticPreview.mode === 'db' ? 'Базадан топилган натижалар' : 'AI Таҳлил натижалари'}: <span style={{ textTransform: 'capitalize', color: '#6366f1' }}>{linguisticPreview.category === 'annotated' ? 'Изоҳли' : linguisticPreview.category === 'disputed' ? 'Мунозарали' : 'Қисқартмалар'}</span>
               </h3>
-              <button onClick={() => setLinguisticPreview(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {linguisticPreview.mode === 'db' && (
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Жами: <b>{linguisticPreview.results.length}</b> та</span>
+                )}
+                <button onClick={() => setLinguisticPreview(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              </div>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -607,7 +750,9 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             </div>
             <div style={{ padding: '15px 20px', borderTop: '1px solid #e2e8f0', textAlign: 'right', background: '#f8fafc' }}>
               <button onClick={() => setLinguisticPreview(null)} style={{ padding: '8px 15px', marginRight: '10px', borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}>Ёпиш</button>
-              <button onClick={confirmSaveLinguisticItems} style={{ padding: '8px 25px', borderRadius: 8, border: 'none', background: '#6366f1', color: 'white', fontWeight: 700, cursor: 'pointer' }}>БАРЧАСИНИ САҚЛАШ</button>
+              {linguisticPreview.mode !== 'db' && (
+                <button onClick={confirmSaveLinguisticItems} style={{ padding: '8px 25px', borderRadius: 8, border: 'none', background: '#6366f1', color: 'white', fontWeight: 700, cursor: 'pointer' }}>БАРЧАСИНИ САҚЛАШ</button>
+              )}
             </div>
           </div>
         </div>

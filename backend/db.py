@@ -145,6 +145,46 @@ def migrate_vectors():
     conn.close()
     logger.info(f"[+] Migration complete. {count} rules updated with vectors.")
 
+class RulesCache:
+    def __init__(self):
+        self.rules = {} # key: (wrong_form.lower(), lang), value: {correct, type, freq}
+        self.last_load = 0
+        self.ttl = 300 # cache for 5 minutes
+
+    def load(self):
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT wrong_form, correct_form, error_type, lang, frequency FROM sayqallash_rules")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            new_rules = {}
+            for r in rows:
+                key = (r['wrong_form'].lower().strip(), r['lang'])
+                if key not in new_rules or r['frequency'] > new_rules[key]['frequency']:
+                    new_rules[key] = {
+                        'correct': r['correct_form'],
+                        'type': r['error_type'],
+                        'frequency': r['frequency']
+                    }
+            self.rules = new_rules
+            self.last_load = time.time()
+            logger.info(f"[+] RulesCache loaded {len(self.rules)} rules into memory.")
+        except Exception as e:
+            logger.error(f"[!] RulesCache load error: {e}")
+
+    def get_all(self, lang):
+        if time.time() - self.last_load > self.ttl:
+            self.load()
+        return [
+            {'wrong_form': k[0], 'correct_form': v['correct'], 'error_type': v['type'], 'frequency': v['frequency']}
+            for k, v in self.rules.items() if k[1] == lang
+        ]
+
+rules_cache = RulesCache()
+
 def connect_db():
     return sqlite3.connect(DB_PATH)
 
@@ -504,17 +544,12 @@ def add_sayqallash_rule(wrong: str, correct: str, error_type: str = 'S/Spelling'
     conn.close()
 
 def is_word_wrong(word: str, lang: str = 'uz') -> bool:
-    """Check if a word is explicitly marked as 'wrong' in any rule."""
+    """Check if a word is explicitly marked as 'wrong' in any rule using in-memory cache."""
     if not word: return False
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT 1 FROM sayqallash_rules WHERE wrong_form = ? AND lang = ?",
-        (word.lower().strip(), lang)
-    )
-    res = cursor.fetchone() is not None
-    conn.close()
-    return res
+    key = (word.lower().strip(), lang)
+    if rules_cache.last_load == 0:
+        rules_cache.load()
+    return key in rules_cache.rules
 
 def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     """Find known correction rules that apply to the given text.
@@ -525,16 +560,11 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     """
     if not text:
         return []
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    # Get all rules for this language, ordered by frequency (most common first)
-    cursor.execute(
-        "SELECT * FROM sayqallash_rules WHERE lang = ? ORDER BY frequency DESC",
-        (lang,)
-    )
-    rules = cursor.fetchall()
-    conn.close()
+    
+    # Use in-memory cache instead of database query per call
+    rules = rules_cache.get_all(lang)
+    # Sort by frequency (most common first) to prioritize certain corrections
+    rules.sort(key=lambda x: x['frequency'], reverse=True)
 
     # Build set of known CORRECT forms (lowercase) — these should NEVER be flagged as wrong
     correct_forms_set = set()
@@ -647,39 +677,45 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
             
     # ═══════════════════════════════════════════════════
     # Dictionary-based spell checking (Tahrirchi 8.7M)
+    # Optimized Batch Version
     # ═══════════════════════════════════════════════════
     if lang == 'uz' and os.path.exists(TAHRIRCHI_DB_PATH):
         words = re.findall(r"\w+", text)
-        dict_conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
-        dict_cursor = dict_conn.cursor()
-        
-        for word in words:
-            if len(word) < 2: continue
+        if words:
+            # Collect all unique variants to lookup in one batch
+            all_variants = set()
+            word_to_variants = {}
+            for word in words:
+                if len(word) < 2: continue
+                vars = transliterate.normalize_for_lookup(word)
+                all_variants.update(vars)
+                word_to_variants[word] = vars
             
-            # Normalize for both Latin/Cyrillic lookup
-            variants = transliterate.normalize_for_lookup(word)
-            found_in_dict = False
-            for v in variants:
-                dict_cursor.execute("SELECT 1 FROM dictionary WHERE word = ? LIMIT 1", (v,))
-                if dict_cursor.fetchone():
-                    found_in_dict = True
-                    break
-            
-            if not found_in_dict:
-                # Word not in 8.7M dictionary -> mark as potential typo
-                # Find start index in original text (case insensitive)
-                idx = text.lower().find(word.lower())
-                if idx != -1:
-                    found.append({
-                        'from_index': idx,
-                        'to_index': idx + len(word),
-                        'old_value': word,
-                        'new_value': '[Луғатда топилмади]',
-                        'error_type': 'S/Spelling',
-                        'source': 'tahrirchi_dict',
-                        'frequency': 0
-                    })
-        dict_conn.close()
+            if all_variants:
+                dict_conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+                dict_cursor = dict_conn.cursor()
+                
+                # Use a temporary table or a large IN clause for batch lookup
+                # For 8.7M rows, an Index lookup in a batch is much faster than sequential opens
+                placeholders = ','.join(['?'] * len(all_variants))
+                dict_cursor.execute(f"SELECT word FROM dictionary WHERE word IN ({placeholders})", list(all_variants))
+                found_variants = {row[0] for row in dict_cursor.fetchall()}
+                dict_conn.close()
+                
+                for word, vars in word_to_variants.items():
+                    if not any(v in found_variants for v in vars):
+                        # Word not in 8.7M dictionary -> mark as potential typo
+                        idx = text.lower().find(word.lower())
+                        if idx != -1:
+                            found.append({
+                                'from_index': idx,
+                                'to_index': idx + len(word),
+                                'old_value': word,
+                                'new_value': '[Луғатда топилмади]',
+                                'error_type': 'S/Spelling',
+                                'source': 'tahrirchi_dict',
+                                'frequency': 0
+                            })
 
     return found
 
