@@ -245,7 +245,7 @@ async def get_specialists():
 
 @router.get("/api/synonyms")
 async def get_synonyms_list(word: str = None, lang: str = None, current_user: Dict = Depends(get_current_user)):
-    syns = db.get_synonyms(word=word, lang=lang, limit=10000)
+    syns = db.get_synonyms(word=word, lang=lang, limit=100000)
     return {"synonyms": syns, "total": len(syns)}
 
 
