@@ -12,9 +12,16 @@ interface UploadedFile {
   size: number
   modified_at: number
   extension: string
+  folder?: string
   project_id?: string
   project_name?: string
   specialist_name?: string
+}
+
+interface Folder {
+  name: string
+  path: string
+  file_count: number
 }
 
 function formatFileSize(bytes: number): string {
@@ -50,6 +57,11 @@ export default function FilesPage() {
   const [openingFile, setOpeningFile] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [currentFolder, setCurrentFolder] = useState('')
+  const [showNewFolder, setShowNewFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [dragFile, setDragFile] = useState<string | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -70,7 +82,46 @@ export default function FilesPage() {
     finally { setLoading(false) }
   }, [API_BASE, token])
 
-  useEffect(() => { fetchFiles() }, [fetchFiles])
+  const fetchFolders = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/folders`, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setFolders((await res.json()).folders || [])
+    } catch {}
+  }, [API_BASE, token])
+
+  useEffect(() => { fetchFiles(); fetchFolders() }, [fetchFiles, fetchFolders])
+
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return
+    try {
+      await fetch(`${API_BASE}/api/folders/create`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: newFolderName.trim(), parent: currentFolder })
+      })
+      showToast('Папка яратилди ✓')
+      setNewFolderName(''); setShowNewFolder(false); fetchFolders(); fetchFiles()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const deleteFolder = async (folderPath: string) => {
+    if (!confirm(`"${folderPath}" папкани ўчиришни тасдиқлайсизми?`)) return
+    try {
+      await fetch(`${API_BASE}/api/folders/${encodeURIComponent(folderPath)}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+      })
+      showToast('Папка ўчирилди ✓'); fetchFolders(); fetchFiles()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const moveFile = async (filename: string, targetFolder: string) => {
+    try {
+      await fetch(`${API_BASE}/api/files/move`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ filename, target_folder: targetFolder })
+      })
+      showToast('Файл кўчирилди ✓'); fetchFiles()
+    } catch { showToast('Хатолик', 'error') }
+  }
 
   const handleUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
@@ -163,7 +214,14 @@ export default function FilesPage() {
 
   const filtered = files.filter(f => {
     const q = search.toLowerCase()
-    return !q || (f.filename || '').toLowerCase().includes(q) || (f.original_filename || '').toLowerCase().includes(q) || (f.specialist_name || '').toLowerCase().includes(q)
+    const matchSearch = !q || (f.filename || '').toLowerCase().includes(q) || (f.original_filename || '').toLowerCase().includes(q) || (f.specialist_name || '').toLowerCase().includes(q)
+    const matchFolder = (f.folder || '') === currentFolder
+    return matchSearch && matchFolder
+  })
+
+  const currentFolders = folders.filter(f => {
+    if (!currentFolder) return !f.path.includes('/')
+    return f.path.startsWith(currentFolder + '/') && !f.path.slice(currentFolder.length + 1).includes('/')
   })
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0)
@@ -270,6 +328,61 @@ export default function FilesPage() {
         </div>
       </div>
 
+      {/* Folder Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <button onClick={() => setCurrentFolder('')} style={{
+          padding: '6px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+          border: currentFolder ? '1px solid var(--border)' : '1.5px solid #B48C64',
+          background: currentFolder ? 'white' : '#FFF8F0', color: currentFolder ? 'var(--text-secondary)' : '#B48C64'
+        }}>📁 Асосий</button>
+        {currentFolder && (
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>/ {currentFolder}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        {showNewFolder ? (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="Папка номи..."
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1.5px solid #B48C64', fontSize: '0.82rem', width: '180px' }}
+              autoFocus onKeyDown={e => { if (e.key === 'Enter') createFolder(); if (e.key === 'Escape') setShowNewFolder(false) }} />
+            <button onClick={createFolder} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#B48C64', color: 'white', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}>✓</button>
+            <button onClick={() => setShowNewFolder(false)} style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #ccc', background: 'white', fontSize: '0.8rem', cursor: 'pointer' }}>✕</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowNewFolder(true)} style={{
+            padding: '6px 14px', borderRadius: '8px', border: '1.5px dashed #B48C64',
+            background: 'transparent', color: '#B48C64', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer'
+          }}>+ Янги папка</button>
+        )}
+      </div>
+
+      {/* Subfolders */}
+      {currentFolders.length > 0 && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {currentFolders.map(f => (
+            <div key={f.path} style={{
+              padding: '12px 18px', borderRadius: '12px', border: '1px solid var(--border)',
+              background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px',
+              minWidth: '140px', transition: 'all 0.15s'
+            }}
+              onClick={() => setCurrentFolder(f.path)}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.style.border = '2px solid #B48C64' }}
+              onDragLeave={e => { e.currentTarget.style.border = '1px solid var(--border)' }}
+              onDrop={e => { e.preventDefault(); e.currentTarget.style.border = '1px solid var(--border)'; if (dragFile) moveFile(dragFile, f.path) }}
+            >
+              <span style={{ fontSize: '1.5rem' }}>📁</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{f.name}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.file_count} файл</div>
+              </div>
+              <button onClick={e => { e.stopPropagation(); deleteFolder(f.path) }} style={{
+                marginLeft: 'auto', padding: '4px', borderRadius: '6px', border: '1px solid #FECACA',
+                background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', fontSize: '0.7rem'
+              }}><Trash2 size={12} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* File List */}
       <div style={{
         background: 'var(--bg-card)', borderRadius: '16px',
@@ -306,10 +419,14 @@ export default function FilesPage() {
             {/* File Rows */}
             {filtered.map((file, i) => (
               <div key={file.filename}
+                draggable
+                onDragStart={() => setDragFile(file.filename)}
+                onDragEnd={() => setDragFile(null)}
                 style={{
                   display: 'grid', gridTemplateColumns: '40px 1fr 100px 120px 110px 200px',
                   padding: '14px 20px', borderBottom: '1px solid var(--border)',
-                  gap: '12px', alignItems: 'center', transition: 'background 0.15s'
+                  gap: '12px', alignItems: 'center', transition: 'background 0.15s',
+                  cursor: 'grab', opacity: dragFile === file.filename ? 0.5 : 1
                 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}

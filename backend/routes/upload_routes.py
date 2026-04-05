@@ -135,6 +135,73 @@ async def upload_file_to_directory(file: UploadFile = File(...), current_user: D
     return {"success": True, "filename": safe_name, "original": file.filename}
 
 
+@router.post("/api/folders/create")
+async def create_folder(payload: Dict[str, Any] = {}, current_user: Dict = Depends(get_current_user)):
+    """Create a new folder in uploads directory."""
+    folder_name = payload.get("name", "").strip()
+    parent = payload.get("parent", "").strip()
+    if not folder_name:
+        raise HTTPException(status_code=400, detail="Папка номи керак")
+    # Sanitize
+    folder_name = folder_name.replace("/", "_").replace("\\", "_").replace("..", "")
+    base = os.path.join(UPLOADS_DIR, parent) if parent else UPLOADS_DIR
+    folder_path = os.path.join(base, folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+    return {"success": True, "folder": folder_name, "path": os.path.relpath(folder_path, UPLOADS_DIR)}
+
+
+@router.get("/api/folders")
+async def list_folders(current_user: Dict = Depends(get_current_user)):
+    """List all folders in uploads directory."""
+    folders = []
+    for root, dirs, files_in_dir in os.walk(UPLOADS_DIR):
+        rel = os.path.relpath(root, UPLOADS_DIR)
+        if rel == ".":
+            rel = ""
+        for d in dirs:
+            folder_path = os.path.join(rel, d) if rel else d
+            full_path = os.path.join(root, d)
+            file_count = len([f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))])
+            folders.append({"name": d, "path": folder_path, "file_count": file_count})
+    return {"folders": folders}
+
+
+@router.delete("/api/folders/{folder_name}")
+async def delete_folder(folder_name: str, current_user: Dict = Depends(get_current_user)):
+    """Delete an empty folder."""
+    folder_path = os.path.join(UPLOADS_DIR, folder_name)
+    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        raise HTTPException(status_code=404, detail="Папка топилмади")
+    try:
+        import shutil
+        shutil.rmtree(folder_path)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/files/move")
+async def move_file(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Move a file to a different folder."""
+    filename = payload.get("filename", "")
+    target_folder = payload.get("target_folder", "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Файл номи керак")
+
+    src = os.path.join(UPLOADS_DIR, filename)
+    if not os.path.exists(src):
+        raise HTTPException(status_code=404, detail="Файл топилмади")
+
+    dst_dir = os.path.join(UPLOADS_DIR, target_folder) if target_folder else UPLOADS_DIR
+    os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir, os.path.basename(filename))
+
+    import shutil
+    shutil.move(src, dst)
+    new_path = os.path.relpath(dst, UPLOADS_DIR)
+    return {"success": True, "new_path": new_path}
+
+
 @router.delete("/api/files/{filename}")
 async def delete_file(filename: str, current_user: Dict = Depends(get_current_user)):
     file_path = os.path.join(UPLOADS_DIR, filename)

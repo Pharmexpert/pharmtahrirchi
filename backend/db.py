@@ -1533,17 +1533,22 @@ def list_uploaded_files() -> List[Dict[str, Any]]:
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     
     files = []
-    # Get files from uploads directory
-    for fname in os.listdir(UPLOADS_DIR):
-        fpath = os.path.join(UPLOADS_DIR, fname)
-        if os.path.isfile(fpath):
+    # Get files from uploads directory (including subfolders)
+    for root, dirs, fnames in os.walk(UPLOADS_DIR):
+        rel_dir = os.path.relpath(root, UPLOADS_DIR)
+        if rel_dir == ".":
+            rel_dir = ""
+        for fname in fnames:
+            fpath = os.path.join(root, fname)
             stat = os.stat(fpath)
+            rel_path = os.path.join(rel_dir, fname) if rel_dir else fname
             files.append({
-                "filename": fname,
+                "filename": rel_path,
                 "path": fpath,
                 "size": stat.st_size,
                 "modified_at": stat.st_mtime,
-                "extension": os.path.splitext(fname)[1].lower()
+                "extension": os.path.splitext(fname)[1].lower(),
+                "folder": rel_dir
             })
     
     # Enrich with project info from DB
