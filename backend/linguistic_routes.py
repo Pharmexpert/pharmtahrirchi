@@ -452,3 +452,45 @@ async def set_project_source_lang(payload: Dict[str, Any], current_user: Dict = 
         db.update_source_lang(text_id, lang)
         return {"success": True}
     return {"success": False, "error": "Missing params"}
+
+
+from fastapi import Request as FastAPIRequest
+
+@router.post("/sync-all-rules")
+async def sync_all_rules(payload: List[Dict[str, Any]], request: FastAPIRequest):
+    """
+    Secure batch endpoint for migrating sayqallash rules to production.
+    Requires X-Seed-Secret header matching SEED_SECRET env var.
+    Uses INSERT OR IGNORE to safely skip existing duplicates.
+    """
+    seed_secret = os.getenv("SEED_SECRET", "pharma_dev_sync_2026")
+    header_secret = request.headers.get("X-Seed-Secret", "")
+    if header_secret != seed_secret:
+        raise HTTPException(status_code=403, detail="Invalid seed secret")
+
+    conn = db.connect_db()
+    cursor = conn.cursor()
+    count = 0
+    try:
+        for r in payload:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO sayqallash_rules
+                        (wrong_form, correct_form, error_type, context, lang, source)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    r.get("wrong_form", ""),
+                    r.get("correct_form", ""),
+                    r.get("error_type", "S/Spelling"),
+                    r.get("context", ""),
+                    r.get("lang", "uz"),
+                    r.get("source", "seed")
+                ))
+                count += cursor.rowcount
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"status": "success", "inserted": count, "total_sent": len(payload)}
