@@ -115,7 +115,7 @@ export default function ProjectsPage() {
                 </td>
                 <td style={{ padding: '16px 20px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <Link href={`/?text_id=${p.text_id}`} style={{
+                    <Link href={`/?text_id=${p.text_id || p.id}`} style={{
                       padding: '7px 14px', borderRadius: '8px',
                       background: 'var(--accent-bg)', color: 'var(--accent-primary)',
                       fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none',
@@ -124,7 +124,7 @@ export default function ProjectsPage() {
                       <Eye size={14} /> Ochish
                     </Link>
                     {isAdmin && (
-                      <button onClick={() => setDeleteConfirm(p.text_id)} style={{
+                      <button onClick={() => setDeleteConfirm(p.text_id || p.id)} style={{
                         padding: '7px', borderRadius: '8px', border: 'none',
                         background: 'var(--danger-bg)', color: 'var(--danger)', cursor: 'pointer'
                       }}>

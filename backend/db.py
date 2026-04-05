@@ -940,7 +940,7 @@ def list_projects() -> List[Dict[str, Any]]:
     cursor = conn.cursor()
     # Join with users to get the real name and email
     cursor.execute('''
-        SELECT p.*, u.name as user_full_name, u.email as user_email
+        SELECT p.*, p.id as text_id, u.name as user_full_name, u.email as user_email
         FROM projects p
         LEFT JOIN users u ON p.user_id = u.id
         ORDER BY p.updated_at DESC

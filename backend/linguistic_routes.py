@@ -284,7 +284,7 @@ async def update_linguistic_item(category: str, item_id: int, payload: Dict[str,
     return {"success": True}
 
 @router.get("/all")
-async def get_all_linguistic_data():
+async def get_all_linguistic_data(current_user: Dict = Depends(get_current_user)):
     """Get all encyclopedia data with creator and modifier info."""
     conn = db.connect_db()
     conn.row_factory = db.sqlite3.Row
