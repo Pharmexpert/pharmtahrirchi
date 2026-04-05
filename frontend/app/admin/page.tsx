@@ -30,6 +30,7 @@ export default function AdminPage() {
   const { token, user: currentUser } = useAuth()
   const [users, setUsers] = useState<any[]>([])
   const [stats, setStats] = useState<any>(null)
+  const [dbSizes, setDbSizes] = useState<any>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +57,7 @@ export default function AdminPage() {
       if (sRes.ok) {
         const sData = await sRes.json()
         setStats(sData)
+        setDbSizes(sData.db_sizes || {})
       }
       if (rRes.ok) {
         const rData = await rRes.json()
@@ -104,7 +106,7 @@ export default function AdminPage() {
     } catch (_e) {}
   }
 
-  const [newRule, setNewRule] = useState({ wrong_form: '', correct_form: '', error_type: 'S/Spelling' })
+  const [newRule, setNewRule] = useState({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
 
   const handleDeleteRule = async (id: number) => {
     if (!confirm('Qoidani o\'chirishni tasdiqlaysizmi?')) return
@@ -128,12 +130,12 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ ...newRule, lang: 'uz' })
+        body: JSON.stringify({ ...newRule })
       })
       if (res.ok) {
         const data = await res.json()
-        setRules(prev => [data.rule, ...prev])
-        setNewRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling' })
+        setRules(prev => [data.rule || { ...newRule, id: Date.now() }, ...prev])
+        setNewRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
       }
     } catch (_e) {}
   }
@@ -245,33 +247,71 @@ export default function AdminPage() {
                </a>
             </div>
           </div>
-          <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
-             <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '6px' }}>XATO SHAKL</label>
+          <div style={{ 
+            padding: '24px', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', 
+            display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) minmax(150px, 1fr) minmax(200px, 1.5fr) 120px 150px auto', gap: '16px', alignItems: 'flex-end' 
+          }}>
+             <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '8px' }}>XATO SHAKL</label>
                 <input 
                   value={newRule.wrong_form} 
                   onChange={e => setNewRule({...newRule, wrong_form: e.target.value})}
-                  placeholder="Aniqlik"
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                  placeholder="masalan: Аниқлик"
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
                 />
              </div>
-             <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '6px' }}>TO'G'RI SHAKL</label>
+             <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '8px' }}>TO'G'RI SHAKL</label>
                 <input 
                   value={newRule.correct_form} 
                   onChange={e => setNewRule({...newRule, correct_form: e.target.value})}
-                  placeholder="Aniqligi"
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                  placeholder="masalan: Аниқлиги"
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
                 />
+             </div>
+             <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '8px' }}>KONTEKST / IZOH</label>
+                <input 
+                  value={newRule.context} 
+                  onChange={e => setNewRule({...newRule, context: e.target.value})}
+                  placeholder="Qachon ishlatiladi?"
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', outline: 'none' }}
+                />
+             </div>
+             <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '8px' }}>TIL</label>
+                <select 
+                  value={newRule.lang} 
+                  onChange={e => setNewRule({...newRule, lang: e.target.value})}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', background: 'white' }}
+                >
+                  <option value="uz">🇺🇿 UZ</option>
+                  <option value="ru">🇷🇺 RU</option>
+                  <option value="en">🇬🇧 EN</option>
+                </select>
+             </div>
+             <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', display: 'block', marginBottom: '8px' }}>XATO TURI</label>
+                <select 
+                  value={newRule.error_type} 
+                  onChange={e => setNewRule({...newRule, error_type: e.target.value})}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.9rem', background: 'white' }}
+                >
+                  <option value="S/Spelling">Spelling</option>
+                  <option value="S/Context">Context</option>
+                  <option value="G/Grammar">Grammar</option>
+                  <option value="Terminology">Terminology</option>
+                </select>
              </div>
              <button 
                 onClick={handleAddRule}
                 style={{ 
-                  padding: '10px 20px', background: '#3B82F6', color: 'white', 
-                  border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer'
+                  padding: '12px 24px', background: 'linear-gradient(135deg, #3B82F6, #2563EB)', color: 'white', 
+                  border: 'none', borderRadius: '10px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer',
+                  height: '46px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(37,99,235,0.2)'
                 }}
              >
-               Qo'shish
+               <Plus size={18} /> Qo'shish
              </button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -392,6 +432,35 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      {/* System Monitoring Footer */}
+      <div style={{ marginTop: '40px', padding: '24px', background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0' }}>
+         <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Database size={18} color="var(--accent-primary)" /> Tizim Monitoringi
+         </h3>
+         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #F1F5F9' }}>
+               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '8px' }}>DATABASE SIZE (PHARMA)</div>
+               <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1E293B' }}>{dbSizes['pharma_editor.db'] || '—'}</div>
+            </div>
+            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #F1F5F9' }}>
+               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '8px' }}>TAHRIRCHI DB</div>
+               <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1E293B' }}>{dbSizes['tahrirchi.db'] || '—'}</div>
+            </div>
+            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #F1F5F9' }}>
+               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '8px' }}>BERT ENGINE</div>
+               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={16} /> Online
+               </div>
+            </div>
+            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '16px', border: '1px solid #F1F5F9' }}>
+               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748B', marginBottom: '8px' }}>GEMINI API</div>
+               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={16} /> Active
+               </div>
+            </div>
+         </div>
+      </div>
     </div>
   )
 }

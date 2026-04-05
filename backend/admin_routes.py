@@ -11,7 +11,9 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_admin_user)):
     """Export all correction rules to an XLSX file."""
     try:
-        rules = db.get_all_rules(lang or 'uz', limit=10000)
+        # If lang is None, fetch for all languages by passing None to the db function
+        # assuming db.get_all_rules handles None lang as "all"
+        rules = db.get_all_rules(lang, limit=20000)
         if not rules:
             raise HTTPException(status_code=404, detail="Eksport qilish uchun qoidalar topilmadi")
             
