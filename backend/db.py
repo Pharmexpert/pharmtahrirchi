@@ -1527,7 +1527,9 @@ def get_dashboard_entries():
 def list_uploaded_files() -> List[Dict[str, Any]]:
     """List all uploaded files from both uploads directory and projects table."""
     import os
-    UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+    _IS_RAILWAY = os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data")
+    _DATA_DIR = os.getenv("DATA_DIR", "/app/data" if _IS_RAILWAY else os.path.dirname(os.path.abspath(__file__)))
+    UPLOADS_DIR = os.path.join(_DATA_DIR, "uploads")
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     
     files = []

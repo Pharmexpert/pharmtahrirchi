@@ -14,7 +14,11 @@ from routes.rate_limit import upload_limiter
 logger = logging.getLogger("upload")
 
 BACKEND_DIR = os.environ.get("BACKEND_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads")
+# Use persistent volume for uploads on Railway, local dir otherwise
+IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
+DATA_DIR = os.getenv("DATA_DIR", "/app/data" if IS_RAILWAY else BACKEND_DIR)
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 router = APIRouter(tags=["upload"])
 
@@ -167,8 +171,15 @@ async def open_file_in_editor(filename: str, background_tasks: BackgroundTasks, 
         aligner = ParagraphAligner(processing_path)
         data = aligner.process_ready_form() if mode == "ready" else aligner.process()
 
-        specialist_short = current_user.get("name", "User").split()[0][:6] if current_user.get("name") else "User"
-        text_id = f"{specialist_short}_{int(datetime.utcnow().timestamp())}"
+        # Auto-extract text_id from filename (e.g. "3.2. CONTAINERS..." → "3.2")
+        import re as _re
+        clean_name = _re.sub(r'^\d+_', '', original_filename)  # Remove timestamp prefix
+        num_match = _re.match(r'^([\d]+\.[\d.]*\d)', clean_name)
+        if num_match:
+            text_id = num_match.group(1)
+        else:
+            specialist_short = current_user.get("name", "User").split()[0][:6] if current_user.get("name") else "User"
+            text_id = f"{specialist_short}_{int(datetime.utcnow().timestamp())}"
 
         for row in data:
             row["text_id"] = text_id

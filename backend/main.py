@@ -23,7 +23,10 @@ import admin_routes
 import linguistic_routes
 from routes import auth_routes, upload_routes, sayqallash_routes, editor_routes, projects_routes
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
-UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads")
+# Use persistent volume for uploads on Railway
+IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
+DATA_DIR = os.getenv("DATA_DIR", "/app/data" if IS_RAILWAY else BACKEND_DIR)
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
