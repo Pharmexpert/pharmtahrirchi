@@ -83,8 +83,8 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
 
     # TIER 1: Rules DB
     try:
-        local_annotations = db.get_rules_for_text(text, lang)
-        rules_count = db.get_rules_count(lang)
+        local_annotations = db.get_rules_for_text(text, lang) or []
+        rules_count = db.get_rules_count(lang) or 0
     except Exception as e:
         logger.error(f"Rules DB error: {e}")
         local_annotations = []
