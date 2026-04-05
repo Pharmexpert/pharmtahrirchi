@@ -175,7 +175,8 @@ async def sayqallash_endpoint(request: Request, payload: Dict[str, Any]):
     try:
         return await _sayqallash_logic(payload)
     except Exception as e:
-        logger.error(f"Sayqallash error: {e}")
+        import traceback
+        logger.error(f"Sayqallash error: {e}\n{traceback.format_exc()}")
         text = payload.get("text", "")
         return {"annotations": [], "corrected_text": text, "rules_count": 0, "confidence": 0, "error": str(e)}
 
