@@ -1472,16 +1472,22 @@ def set_ai_cache(text: str, lang: str, result_dict: Dict, prompt_type: str = "sa
 # ═══════════════════════════════════════════════
 
 def record_dashboard_entry(en: str, ru: str, uz: str, specialist: str, text_id: str, action_type: str):
-    """Record a new entry in the Paragraphs Dashboard history (Audit Trail)."""
+    """Record a new entry in the Paragraphs Dashboard history (Audit Trail).
+    Skips 'Verified' / 'All rows verified' entries — these are bulk confirmations, not real edits.
+    """
+    # Filter out verification-only entries
+    SKIP_TYPES = {'verified', 'all rows verified', 'barcha qatorlar tasdiqlandi'}
+    if action_type and action_type.strip().lower() in SKIP_TYPES:
+        return
+
     conn = connect_db()
     cursor = conn.cursor()
-    
-    # Always insert a new record to create a historical audit log
+
     cursor.execute('''
         INSERT INTO paragraphs_dashboard (en_text, ru_text, uz_text, specialist_name, text_id, action_type)
         VALUES (?, ?, ?, ?, ?, ?)
     ''', (en, ru, uz, specialist, text_id, action_type))
-    
+
     conn.commit()
     conn.close()
 
@@ -1502,11 +1508,17 @@ def sync_paragraphs_to_alignments(text_id: str, en: str, ru: str, uz: str):
     conn.close()
 
 def get_dashboard_entries():
-    """Retrieve all history from the Paragraphs Dashboard."""
+    """Retrieve all history from the Paragraphs Dashboard.
+    Excludes 'Verified' entries — bulk confirmations are not real edits.
+    """
     conn = connect_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM paragraphs_dashboard ORDER BY created_at DESC")
+    cursor.execute("""
+        SELECT * FROM paragraphs_dashboard
+        WHERE LOWER(action_type) NOT IN ('verified', 'all rows verified', 'barcha qatorlar tasdiqlandi')
+        ORDER BY created_at DESC
+    """)
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
