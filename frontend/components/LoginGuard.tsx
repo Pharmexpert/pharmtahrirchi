@@ -816,12 +816,6 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
               <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
                 © 2026 Pharma Translation Platform
               </p>
-              <div style={{ fontSize: '0.7rem', color: '#6B5744', lineHeight: '1.6', marginTop: '12px', borderTop: '1px dashed rgba(180, 140, 100, 0.2)', paddingTop: '12px' }}>
-                <p style={{ fontWeight: 600 }}>Давлат фармакопеясини ишлаб чиқиш тизими</p>
-                <p>Саволлар ва таклифлар билан <strong>Акмалходжа Зайнидинов</strong> номига,</p>
-                <p>қуйидаги почта манзилига мурожаат қилишингиз мумкин:</p>
-                <a href="mailto:texnopharm@gmail.com" style={{ color: '#C07840', fontWeight: 700, textDecoration: 'underline' }}>texnopharm@gmail.com</a>
-            </div>
 
           </div>
         </div>
