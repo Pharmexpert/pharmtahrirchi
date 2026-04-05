@@ -244,8 +244,25 @@ async def get_specialists():
 
 
 @router.get("/api/synonyms")
-async def get_synonyms_list(word: str = None, lang: str = None, current_user: Dict = Depends(get_current_user)):
+async def get_synonyms_list(word: str = None, lang: str = None, grouped: str = None, current_user: Dict = Depends(get_current_user)):
     syns = db.get_synonyms(word=word, lang=lang, limit=100000)
+
+    if grouped == "true":
+        # Group synonyms by word: word → [synonym1, synonym2, ...]
+        from collections import defaultdict
+        groups = defaultdict(lambda: {"synonyms": [], "lang": "", "total_freq": 0, "ids": []})
+        for s in syns:
+            key = (s["word"], s.get("lang", "uz"))
+            g = groups[key]
+            g["word"] = s["word"]
+            g["lang"] = s.get("lang", "uz")
+            g["synonyms"].append({"id": s["id"], "synonym": s["synonym"], "frequency": s.get("frequency", 0), "source": s.get("source", "")})
+            g["total_freq"] += s.get("frequency", 0)
+            g["ids"].append(s["id"])
+
+        result = sorted(groups.values(), key=lambda x: -x["total_freq"])
+        return {"groups": result, "total_words": len(result), "total_synonyms": len(syns)}
+
     return {"synonyms": syns, "total": len(syns)}
 
 

@@ -5,21 +5,14 @@ import { Repeat2, Search, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, X, R
 import { useAuth } from '../../components/LoginGuard'
 import * as XLSX from 'xlsx'
 
-interface Synonym {
-  id: number
-  word: string
-  synonym: string
-  lang: string
-  frequency: number
-  source: string
-  created_by: string
-  created_at: string
-}
+interface SynEntry { id: number; synonym: string; frequency: number; source: string }
+interface SynGroup { word: string; lang: string; synonyms: SynEntry[]; total_freq: number; ids: number[] }
 
 export default function SynonymsPage() {
   const { token, user } = useAuth()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-  const [synonyms, setSynonyms] = useState<Synonym[]>([])
+  const [groups, setGroups] = useState<SynGroup[]>([])
+  const [totalSynonyms, setTotalSynonyms] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [lang, setLang] = useState<string>('')
@@ -28,6 +21,8 @@ export default function SynonymsPage() {
   const [newWord, setNewWord] = useState('')
   const [newSynonym, setNewSynonym] = useState('')
   const [newLang, setNewLang] = useState('uz')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editValue, setEditValue] = useState('')
   const [page, setPage] = useState(0)
   const [perPage, setPerPage] = useState(25)
 
@@ -42,12 +37,14 @@ export default function SynonymsPage() {
       const params = new URLSearchParams()
       if (search) params.set('word', search)
       if (lang) params.set('lang', lang)
+      params.set('grouped', 'true')
       const res = await fetch(`${API_BASE}/api/synonyms?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.ok) {
         const d = await res.json()
-        setSynonyms(d.synonyms || [])
+        setGroups(d.groups || [])
+        setTotalSynonyms(d.total_synonyms || 0)
       }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -79,12 +76,31 @@ export default function SynonymsPage() {
       })
       if (res.ok) {
         showToast('Ўчирилди ✓')
-        setSynonyms(synonyms.filter(s => s.id !== id))
+        fetchSynonyms()
       }
     } catch { showToast('Хатолик', 'error') }
   }
 
-  const filtered = synonyms
+  const handleEdit = async (id: number, newSyn: string) => {
+    try {
+      // Delete old + create new with same word
+      await fetch(`${API_BASE}/api/synonyms/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      // Find the group this synonym belongs to
+      const group = groups.find(g => g.ids.includes(id))
+      if (group) {
+        await fetch(`${API_BASE}/api/synonyms/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ word: group.word, synonym: newSyn, lang: group.lang })
+        })
+      }
+      showToast('Таҳрирланди ✓')
+      setEditingId(null)
+      fetchSynonyms()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const filtered = groups
   const totalPages = Math.ceil(filtered.length / perPage)
   const pageData = filtered.slice(page * perPage, (page + 1) * perPage)
 
@@ -124,15 +140,15 @@ export default function SynonymsPage() {
           <div>
             <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Синонимлар базаси</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-              3 тилда (EN/RU/UZ) синонимлар • Жами: <strong>{filtered.length}</strong> та
+              3 тилда (EN/RU/UZ) синонимлар • <strong>{filtered.length}</strong> сўз • <strong>{totalSynonyms}</strong> синоним
             </p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={() => {
-            const ws = XLSX.utils.json_to_sheet(filtered.map((s: Synonym, i: number) => ({
-              '№': i + 1, 'Сўз': s.word, 'Синоним': s.synonym, 'Тил': s.lang,
-              'Частота': s.frequency, 'Манба': s.source, 'Яратувчи': s.created_by, 'Сана': s.created_at
+            const ws = XLSX.utils.json_to_sheet(filtered.map((g: SynGroup, i: number) => ({
+              '№': i + 1, 'Сўз': g.word, 'Синонимлар': g.synonyms.map(s => s.synonym).join(', '),
+              'Тил': g.lang, 'Сони': g.synonyms.length, 'Жами частота': g.total_freq
             })))
             const wb = XLSX.utils.book_new()
             XLSX.utils.book_append_sheet(wb, ws, 'Синонимлар')
@@ -193,40 +209,63 @@ export default function SynonymsPage() {
         ) : (
           <>
             <div style={{
-              display: 'grid', gridTemplateColumns: '50px 1fr 1fr 80px 100px 120px 120px 60px',
+              display: 'grid', gridTemplateColumns: '50px 200px 1fr 80px 80px 60px',
               padding: '14px 20px', background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)', gap: '12px'
             }}>
-              {['№', 'СЎЗ', 'СИНОНИМ', 'ТИЛ', 'ЧАСТОТА', 'МАНБА', 'МУАЛЛИФ', ''].map(h => (
+              {['№', 'СЎЗ', 'СИНОНИМЛАР', 'ТИЛ', 'СОНИ', ''].map(h => (
                 <span key={h} style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{h}</span>
               ))}
             </div>
-            {pageData.map((s, i) => (
-              <div key={s.id} style={{
-                display: 'grid', gridTemplateColumns: '50px 1fr 1fr 80px 100px 120px 120px 60px',
-                padding: '12px 20px', borderBottom: '1px solid var(--border)', gap: '12px', alignItems: 'center',
+            {pageData.map((g: SynGroup, i: number) => (
+              <div key={`${g.word}-${g.lang}`} style={{
+                display: 'grid', gridTemplateColumns: '50px 200px 1fr 80px 80px 60px',
+                padding: '14px 20px', borderBottom: '1px solid var(--border)', gap: '12px', alignItems: 'flex-start',
                 transition: 'background 0.15s'
               }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
               >
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{page * perPage + i + 1}</span>
-                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{s.word}</span>
-                <span style={{ fontSize: '0.88rem', color: '#16A34A', fontWeight: 600 }}>{s.synonym}</span>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', paddingTop: '4px' }}>{page * perPage + i + 1}</span>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem', paddingTop: '4px' }}>{g.word}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {g.synonyms.sort((a,b) => b.frequency - a.frequency).map((s) => (
+                    editingId === s.id ? (
+                      <div key={s.id} style={{ display: 'flex', gap: '4px' }}>
+                        <input value={editValue} onChange={e => setEditValue(e.target.value)}
+                          style={{ padding: '4px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '0.8rem', width: '120px' }}
+                          autoFocus onKeyDown={e => { if (e.key === 'Enter') handleEdit(s.id, editValue); if (e.key === 'Escape') setEditingId(null) }}
+                        />
+                        <button onClick={() => handleEdit(s.id, editValue)} style={{ padding: '2px 8px', borderRadius: '6px', border: 'none', background: '#16A34A', color: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✓</button>
+                        <button onClick={() => setEditingId(null)} style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #ccc', background: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✕</button>
+                      </div>
+                    ) : (
+                      <span key={s.id} style={{
+                        padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600,
+                        background: s.frequency > 5 ? '#DCFCE7' : s.frequency > 0 ? '#FEF3C7' : '#F1F5F9',
+                        color: s.frequency > 5 ? '#16A34A' : s.frequency > 0 ? '#D97706' : '#64748B',
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        border: `1px solid ${s.frequency > 5 ? '#BBF7D0' : s.frequency > 0 ? '#FDE68A' : '#E2E8F0'}`,
+                        transition: 'all 0.15s'
+                      }}
+                        onClick={() => { setEditingId(s.id); setEditValue(s.synonym) }}
+                        title={`Частота: ${s.frequency} | Манба: ${s.source} | Таҳрирлаш учун босинг`}
+                      >
+                        {s.synonym}
+                        {s.frequency > 0 && <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>{s.frequency}×</span>}
+                      </span>
+                    )
+                  ))}
+                  <button onClick={() => { setShowAdd(true); setNewWord(g.word); setNewLang(g.lang) }}
+                    style={{ padding: '4px 8px', borderRadius: '8px', border: '1px dashed #BBF7D0', background: 'transparent', color: '#16A34A', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 700 }}
+                    title="Янги синоним қўшиш"
+                  >+ қўшиш</button>
+                </div>
                 <span style={{
-                  fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: '6px',
-                  background: `${langColor(s.lang)}15`, color: langColor(s.lang), display: 'inline-block'
-                }}>{langLabel(s.lang)}</span>
-                <span style={{
-                  fontSize: '0.85rem', fontWeight: 800,
-                  color: s.frequency > 5 ? '#16A34A' : s.frequency > 0 ? '#D97706' : '#94A3B8'
-                }}>{s.frequency}×</span>
-                <span style={{
-                  fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: '6px',
-                  background: s.source === 'ai' ? '#EFF6FF' : '#F0FDF4',
-                  color: s.source === 'ai' ? '#2563EB' : '#16A34A'
-                }}>{s.source === 'ai' ? '🤖 AI' : '✏️ Қўлда'}</span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.created_by || '—'}</span>
-                <button onClick={() => handleDelete(s.id)} style={{
+                  fontSize: '0.72rem', fontWeight: 700, padding: '4px 8px', borderRadius: '6px',
+                  background: `${langColor(g.lang)}15`, color: langColor(g.lang), display: 'inline-block'
+                }}>{langLabel(g.lang)}</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#16A34A', paddingTop: '4px' }}>{g.synonyms.length}</span>
+                <button onClick={() => g.ids.forEach(id => handleDelete(id))} style={{
                   padding: '6px', borderRadius: '8px', border: '1px solid #FECACA',
                   background: '#FEF2F2', color: '#DC2626', cursor: 'pointer'
                 }}><Trash2 size={14} /></button>
