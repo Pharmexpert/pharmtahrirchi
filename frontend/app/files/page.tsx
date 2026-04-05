@@ -62,6 +62,9 @@ export default function FilesPage() {
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [dragFile, setDragFile] = useState<string | null>(null)
+  const [dragFolder, setDragFolder] = useState<string | null>(null)
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -119,8 +122,36 @@ export default function FilesPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ filename, target_folder: targetFolder })
       })
-      showToast('Файл кўчирилди ✓'); fetchFiles()
+      showToast('Файл кўчирилди ✓'); fetchFiles(); fetchFolders()
     } catch { showToast('Хатолик', 'error') }
+  }
+
+  const moveFolder = async (folderPath: string, targetFolder: string) => {
+    try {
+      await fetch(`${API_BASE}/api/folders/move`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ folder: folderPath, target: targetFolder })
+      })
+      showToast('Папка кўчирилди ✓'); fetchFolders(); fetchFiles()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const renameFolder = async (path: string, newName: string) => {
+    if (!newName.trim()) return
+    try {
+      await fetch(`${API_BASE}/api/folders/rename`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ path, new_name: newName.trim() })
+      })
+      showToast('Номи ўзгартирилди ✓'); setRenamingFolder(null); fetchFolders()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const handleFolderDrop = (e: React.DragEvent, targetFolder: string) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).style.border = '1px solid var(--border)'
+    if (dragFile) { moveFile(dragFile, targetFolder); setDragFile(null) }
+    if (dragFolder && dragFolder !== targetFolder) { moveFolder(dragFolder, targetFolder); setDragFolder(null) }
   }
 
   const handleUpload = async (fileList: FileList | null) => {
@@ -330,7 +361,11 @@ export default function FilesPage() {
 
       {/* Folder Bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <button onClick={() => setCurrentFolder('')} style={{
+        <button onClick={() => setCurrentFolder('')}
+          onDragOver={e => { e.preventDefault(); e.currentTarget.style.border = '2px solid #B48C64'; e.currentTarget.style.background = '#FFF0E0' }}
+          onDragLeave={e => { e.currentTarget.style.border = currentFolder ? '1px solid var(--border)' : '1.5px solid #B48C64'; e.currentTarget.style.background = currentFolder ? 'white' : '#FFF8F0' }}
+          onDrop={e => { e.preventDefault(); e.currentTarget.style.border = '1px solid var(--border)'; e.currentTarget.style.background = 'white'; handleFolderDrop(e, '') }}
+          style={{
           padding: '6px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
           border: currentFolder ? '1px solid var(--border)' : '1.5px solid #B48C64',
           background: currentFolder ? 'white' : '#FFF8F0', color: currentFolder ? 'var(--text-secondary)' : '#B48C64'
@@ -359,23 +394,41 @@ export default function FilesPage() {
       {currentFolders.length > 0 && (
         <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {currentFolders.map(f => (
-            <div key={f.path} style={{
-              padding: '12px 18px', borderRadius: '12px', border: '1px solid var(--border)',
-              background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px',
-              minWidth: '140px', transition: 'all 0.15s'
-            }}
+            <div key={f.path}
+              draggable
+              onDragStart={() => setDragFolder(f.path)}
+              onDragEnd={() => setDragFolder(null)}
+              style={{
+                padding: '12px 18px', borderRadius: '12px', border: '1px solid var(--border)',
+                background: 'var(--bg-card)', cursor: 'grab', display: 'flex', alignItems: 'center', gap: '10px',
+                minWidth: '140px', transition: 'all 0.15s',
+                opacity: dragFolder === f.path ? 0.5 : 1
+              }}
               onClick={() => setCurrentFolder(f.path)}
-              onDragOver={e => { e.preventDefault(); e.currentTarget.style.border = '2px solid #B48C64' }}
+              onDragOver={e => { e.preventDefault(); if (dragFolder !== f.path) e.currentTarget.style.border = '2px solid #B48C64' }}
               onDragLeave={e => { e.currentTarget.style.border = '1px solid var(--border)' }}
-              onDrop={e => { e.preventDefault(); e.currentTarget.style.border = '1px solid var(--border)'; if (dragFile) moveFile(dragFile, f.path) }}
+              onDrop={e => handleFolderDrop(e, f.path)}
             >
               <span style={{ fontSize: '1.5rem' }}>📁</span>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{f.name}</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.file_count} файл</div>
+              <div style={{ flex: 1 }}>
+                {renamingFolder === f.path ? (
+                  <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                    <input value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                      style={{ padding: '3px 6px', borderRadius: '6px', border: '1.5px solid #B48C64', fontSize: '0.82rem', fontWeight: 700, width: '120px' }}
+                      autoFocus onKeyDown={e => { if (e.key === 'Enter') renameFolder(f.path, renameValue); if (e.key === 'Escape') setRenamingFolder(null) }}
+                    />
+                    <button onClick={() => renameFolder(f.path, renameValue)} style={{ padding: '2px 6px', borderRadius: '4px', border: 'none', background: '#B48C64', color: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✓</button>
+                  </div>
+                ) : (
+                  <div onDoubleClick={e => { e.stopPropagation(); setRenamingFolder(f.path); setRenameValue(f.name) }}
+                    title="Номини ўзгартириш учун 2 марта босинг">
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{f.name}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.file_count} файл</div>
+                  </div>
+                )}
               </div>
               <button onClick={e => { e.stopPropagation(); deleteFolder(f.path) }} style={{
-                marginLeft: 'auto', padding: '4px', borderRadius: '6px', border: '1px solid #FECACA',
+                padding: '4px', borderRadius: '6px', border: '1px solid #FECACA',
                 background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', fontSize: '0.7rem'
               }}><Trash2 size={12} /></button>
             </div>

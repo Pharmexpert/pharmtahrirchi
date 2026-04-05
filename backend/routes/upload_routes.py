@@ -202,6 +202,53 @@ async def move_file(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
     return {"success": True, "new_path": new_path}
 
 
+@router.put("/api/folders/rename")
+async def rename_folder(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Rename a folder."""
+    old_path = payload.get("path", "")
+    new_name = payload.get("new_name", "").strip().replace("/", "_").replace("\\", "_").replace("..", "")
+    if not old_path or not new_name:
+        raise HTTPException(status_code=400, detail="Йўл ва янги ном керак")
+
+    src = os.path.join(UPLOADS_DIR, old_path)
+    if not os.path.exists(src) or not os.path.isdir(src):
+        raise HTTPException(status_code=404, detail="Папка топилмади")
+
+    parent = os.path.dirname(src)
+    dst = os.path.join(parent, new_name)
+    os.rename(src, dst)
+    return {"success": True, "new_path": os.path.relpath(dst, UPLOADS_DIR)}
+
+
+@router.post("/api/folders/move")
+async def move_folder(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Move a folder into another folder or back to root."""
+    folder_path = payload.get("folder", "")
+    target = payload.get("target", "")  # empty = root
+    if not folder_path:
+        raise HTTPException(status_code=400, detail="Папка номи керак")
+
+    src = os.path.join(UPLOADS_DIR, folder_path)
+    if not os.path.exists(src) or not os.path.isdir(src):
+        raise HTTPException(status_code=404, detail="Папка топилмади")
+
+    folder_name = os.path.basename(folder_path)
+    dst_parent = os.path.join(UPLOADS_DIR, target) if target else UPLOADS_DIR
+    dst = os.path.join(dst_parent, folder_name)
+
+    if os.path.abspath(src) == os.path.abspath(dst):
+        return {"success": True, "new_path": folder_path}
+    # Prevent moving into itself
+    if os.path.abspath(dst).startswith(os.path.abspath(src)):
+        raise HTTPException(status_code=400, detail="Папкани ўзига кўчириш мумкин эмас")
+
+    import shutil
+    os.makedirs(dst_parent, exist_ok=True)
+    shutil.move(src, dst)
+    new_path = os.path.relpath(dst, UPLOADS_DIR)
+    return {"success": True, "new_path": new_path}
+
+
 @router.delete("/api/files/{filename}")
 async def delete_file(filename: str, current_user: Dict = Depends(get_current_user)):
     file_path = os.path.join(UPLOADS_DIR, filename)
