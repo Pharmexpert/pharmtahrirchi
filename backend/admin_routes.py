@@ -216,6 +216,7 @@ async def get_users(current_user: dict = Depends(get_admin_user)):
     return {"users": users}
 
 @router.post("/users/approve")
+@router.post("/approve")
 async def approve_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
     """Approve or update a user status."""
     user_id = payload.get("userId")

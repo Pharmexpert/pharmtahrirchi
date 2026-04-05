@@ -185,6 +185,26 @@ def convert_text(text, target='latin'):
     return text
 
 
+def cross_alphabet_variants(text):
+    """
+    Қидирув учун матнни ҳар иккала алифбода қайтаради.
+    Returns both Cyrillic and Latin variants for cross-alphabet search.
+    """
+    if not text or not text.strip():
+        return []
+    text = text.strip()
+    variants = [text]
+    if is_cyrillic(text):
+        latin = to_latin(text)
+        if latin and latin != text:
+            variants.append(latin)
+    else:
+        cyrillic = to_cyrillic(text)
+        if cyrillic and cyrillic != text:
+            variants.append(cyrillic)
+    return variants
+
+
 # ═══════════════════════════════════════════════════════════
 #  ТЕСТ
 # ═══════════════════════════════════════════════════════════

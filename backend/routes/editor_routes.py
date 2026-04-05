@@ -170,16 +170,28 @@ async def dict_autocomplete(payload: Dict[str, Any]):
     if len(prefix) < 2 or not os.path.exists(db.TAHRIRCHI_DB_PATH):
         return {"words": []}
 
+    # Cross-alphabet search: try both Cyrillic and Latin variants
+    variants = transliterate.cross_alphabet_variants(prefix)
+
     import sqlite3 as sq
     conn = sq.connect(db.TAHRIRCHI_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT word, frequency FROM dictionary WHERE word LIKE ? ORDER BY frequency DESC LIMIT ?",
-        (prefix + '%', limit)
-    )
-    results = [{"word": w, "frequency": f} for w, f in cursor.fetchall()]
+
+    seen = set()
+    results = []
+    for variant in variants:
+        cursor.execute(
+            "SELECT word, frequency FROM dictionary WHERE word LIKE ? ORDER BY frequency DESC LIMIT ?",
+            (variant.lower() + '%', limit)
+        )
+        for w, f in cursor.fetchall():
+            if w not in seen:
+                seen.add(w)
+                results.append({"word": w, "frequency": f})
+
     conn.close()
-    return {"words": results}
+    results.sort(key=lambda x: -x["frequency"])
+    return {"words": results[:limit]}
 
 
 @router.post("/api/dictionary/suggest")
