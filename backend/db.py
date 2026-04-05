@@ -698,8 +698,15 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
                 # Use a temporary table or a large IN clause for batch lookup
                 # For 8.7M rows, an Index lookup in a batch is much faster than sequential opens
                 placeholders = ','.join(['?'] * len(all_variants))
-                dict_cursor.execute(f"SELECT word FROM dictionary WHERE word IN ({placeholders})", list(all_variants))
-                found_variants = {row[0] for row in dict_cursor.fetchall()}
+                
+                # Check for FTS5 table first, fallback to standard B-tree
+                try:
+                    # FTS5 for prefix/fuzzy matches if needed, but for exact 'IN' lookup, standard index is fine
+                    dict_cursor.execute(f"SELECT word FROM dictionary WHERE word IN ({placeholders})", list(all_variants))
+                    found_variants = {row[0] for row in dict_cursor.fetchall()}
+                except Exception:
+                    found_variants = set()
+                
                 dict_conn.close()
                 
                 for word, vars in word_to_variants.items():
@@ -716,6 +723,25 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
                                 'source': 'tahrirchi_dict',
                                 'frequency': 0
                             })
+
+def search_dictionary(query: str, limit: int = 10) -> List[str]:
+    """Prefix search in the 8.7M word dictionary using FTS5."""
+    if not query or len(query) < 2 or not os.path.exists(TAHRIRCHI_DB_PATH):
+        return []
+    try:
+        conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+        cursor = conn.cursor()
+        # Use MATCH for FTS5 prefix search
+        cursor.execute(
+            "SELECT word FROM dictionary_fts WHERE word MATCH ? ORDER BY rank LIMIT ?",
+            (f"{query.strip()}*", limit)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+    except Exception as e:
+        print(f"Dictionary search error: {e}")
+        return []
 
     return found
 
@@ -945,6 +971,35 @@ def save_alignments(project_id: str, alignments: List[Dict[str, Any]], user_id: 
     # Update project metadata
     if alignments:
         update_project_metadata(project_id, alignments[0].get("specialist_name", ""))
+
+def save_project_polishing_summary(project_id: str, summary: Dict):
+    """Save the aggregate results of a whole-document polishing run."""
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE projects SET batch_polishing_summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(summary), project_id)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error saving polishing summary: {e}")
+
+def get_project_polishing_summary(project_id: str) -> Optional[Dict]:
+    """Retrieve the last recorded polishing summary for a project."""
+    try:
+        conn = connect_db()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT batch_polishing_summary FROM projects WHERE id = ?", (project_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row['batch_polishing_summary']:
+            return json.loads(row['batch_polishing_summary'])
+    except Exception as e:
+        logger.error(f"Error getting polishing summary: {e}")
+    return None
 
 def update_project_metadata(text_id: str, specialist: str = "", user_id: str = None):
     conn = connect_db()

@@ -110,8 +110,21 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         setPopup(p => ({ ...p, visible: false }))
     }
     document.addEventListener('mousedown', h)
+    
+    // NEW: Fetch polishing summary on mount to show background results
+    if (textId) {
+      fetch(`${API_BASE}/api/projects/${textId}/polishing-summary`, { headers: authHeaders })
+        .then(res => res.json())
+        .then(r => {
+          if (r.status === 'success' && r.summary) {
+            setBatchSummary(r.summary)
+          }
+        })
+        .catch(err => console.error("Summary fetch error:", err))
+    }
+
     return () => document.removeEventListener('mousedown', h)
-  }, [])
+  }, [textId])
 
   const notify = (msg: string) => {
     setSaveStatus(msg)

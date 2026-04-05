@@ -681,36 +681,51 @@ async def pre_polish_document(text_id: str):
     rows = db.get_alignments_by_text_id(text_id)
     if not rows: return
 
+    total_corrected = 0
+    total_annotations = 0
+    total_rows = len(rows)
+
     # Process in batches of 10 sentences (20 AI calls) to optimize throughput
     BATCH_SIZE = 10
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i:i + BATCH_SIZE]
         tasks = []
         for row in batch:
-            # Skip if row is a marker
             if row.get("row_type") == "marker": continue
-            
-            # Parallelize UZ and RU corrections
             tasks.append(sayqallash({"text": row["confirmed_uz_text"], "lang": "uz", "context_en": row["en_text"]}))
             tasks.append(sayqallash({"text": row["confirmed_ru_text"], "lang": "ru", "context_en": row["en_text"]}))
         
         if not tasks: continue
-        
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for j, res in enumerate(results):
             if isinstance(res, Exception) or not res: continue
             
-            # Map result back to row (UZ is even, RU is odd in this task list)
             row_idx = i + (j // 2)
             lang = 'uz' if j % 2 == 0 else 'ru'
-            db.update_alignment_ai_result(
-                rows[row_idx]["id"], 
-                lang, 
-                res["corrected_text"], 
-                res["annotations"], 
-                res["confidence"]
-            )
+            
+            # Check if correction actually changed something
+            original_text = rows[row_idx]["confirmed_uz_text"] if lang == 'uz' else rows[row_idx]["confirmed_ru_text"]
+            if res["corrected_text"] and res["corrected_text"].strip() != (original_text or "").strip():
+                total_corrected += 1
+                total_annotations += len(res.get("annotations", []))
+                
+                db.update_alignment_ai_result(
+                    rows[row_idx]["id"], 
+                    lang, 
+                    res["corrected_text"], 
+                    res["annotations"], 
+                    res["confidence"]
+                )
+    
+    # Save statistics for the Final Summary
+    summary = {
+        "total": total_rows,
+        "corrected": total_corrected,
+        "annotations": total_annotations,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    db.save_project_polishing_summary(text_id, summary)
 
 @app.post("/api/sayqallash/batch")
 async def sayqallash_batch(payload: Dict[str, Any]):
@@ -838,6 +853,14 @@ async def export_project_live(project_id: str, current_user: Dict = Depends(get_
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects/{project_id}/polishing-summary")
+async def get_polishing_summary(project_id: str, current_user: Dict = Depends(get_current_user)):
+    """Fetch the aggregate result summary for the last polishing run."""
+    summary = db.get_project_polishing_summary(project_id)
+    if not summary:
+        return {"status": "none"}
+    return {"status": "success", "summary": summary}
 
 @app.get("/api/projects/{project_id}/preview")
 async def preview_project(project_id: str, current_user: Dict = Depends(get_current_user)):
