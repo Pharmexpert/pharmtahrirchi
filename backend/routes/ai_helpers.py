@@ -1,21 +1,26 @@
 import os
 import logging
-import google.generativeai as genai
 
 logger = logging.getLogger("ai")
 
-_gemini_model = None
+_gemini_client = None
 _anthropic_client = None
 
 
 def get_gemini():
-    global _gemini_model
-    if not _gemini_model:
+    global _gemini_client
+    if not _gemini_client:
         api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
-            genai.configure(api_key=api_key)
-            _gemini_model = genai.GenerativeModel("models/gemini-2.0-flash")
-    return _gemini_model
+            try:
+                from google import genai
+                _gemini_client = genai.Client(api_key=api_key)
+            except ImportError:
+                # Fallback to old package
+                import google.generativeai as genai_old
+                genai_old.configure(api_key=api_key)
+                _gemini_client = genai_old.GenerativeModel("models/gemini-2.0-flash")
+    return _gemini_client
 
 
 def get_anthropic():
@@ -46,8 +51,17 @@ async def generate_ai_content(prompt: str) -> str:
     gemini = get_gemini()
     if gemini:
         try:
-            response = gemini.generate_content(prompt)
-            return response.text
+            # New google-genai API
+            if hasattr(gemini, 'models'):
+                response = gemini.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt
+                )
+                return response.text
+            else:
+                # Old google-generativeai API
+                response = gemini.generate_content(prompt)
+                return response.text
         except Exception as e:
             logger.warning(f"[AI] Gemini failed: {e} — switching to Anthropic...")
 

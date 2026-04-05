@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Repeat2, Search, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Languages } from 'lucide-react'
+import { Repeat2, Search, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Languages, Download } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import * as XLSX from 'xlsx'
 
 interface Synonym {
   id: number
@@ -128,6 +129,19 @@ export default function SynonymsPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => {
+            const ws = XLSX.utils.json_to_sheet(filtered.map((s: Synonym, i: number) => ({
+              '№': i + 1, 'Сўз': s.word, 'Синоним': s.synonym, 'Тил': s.lang,
+              'Частота': s.frequency, 'Манба': s.source, 'Яратувчи': s.created_by, 'Сана': s.created_at
+            })))
+            const wb = XLSX.utils.book_new()
+            XLSX.utils.book_append_sheet(wb, ws, 'Синонимлар')
+            XLSX.writeFile(wb, `synonyms_${new Date().toISOString().slice(0,10)}.xlsx`)
+          }} style={{
+            padding: '8px 16px', borderRadius: '10px', border: '1.5px solid #93C5FD',
+            background: 'white', color: '#2563EB', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px'
+          }}><Download size={14} /> XLSX</button>
           <button onClick={fetchSynonyms} style={{
             padding: '8px 16px', borderRadius: '10px', border: '1.5px solid #BBF7D0',
             background: 'white', color: '#16A34A', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',

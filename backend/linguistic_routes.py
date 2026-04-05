@@ -5,42 +5,25 @@ import re
 import db
 from auth import get_current_user
 import bert_engine
-import google.generativeai as genai
 import os
 from datetime import datetime
+import asyncio
 
 router = APIRouter(prefix="/api/linguistic", tags=["linguistic"])
 
-import anthropic as _anthropic_lib
 
 def get_ai_text(prompt: str) -> str:
-    """Dual-AI: Gemini first, Anthropic Claude fallback."""
-    # Try Gemini
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if api_key:
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("models/gemini-2.0-flash")
-            return model.generate_content(prompt).text
-        except Exception as e:
-            print(f"[linguistic] Gemini failed: {e} → trying Anthropic...")
-
-    # Fallback to Anthropic
-    ant_key = os.getenv("ANTHROPIC_API_KEY")
-    if ant_key:
-        try:
-            client = _anthropic_lib.Anthropic(api_key=ant_key)
-            msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return msg.content[0].text
-        except Exception as e:
-            print(f"[linguistic] Anthropic also failed: {e}")
-            raise
-
-    raise Exception("No AI configured. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY.")
+    """Dual-AI: uses shared ai_helpers module."""
+    from routes.ai_helpers import generate_ai_content
+    # Run async function synchronously
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, generate_ai_content(prompt))
+            return future.result(timeout=60)
+    else:
+        return asyncio.run(generate_ai_content(prompt))
 
 
 @router.post("/analyze")
