@@ -96,7 +96,7 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
 
     # TIER 2: Dual AI
     if get_client():
-        known_rules = db.get_all_rules(lang, limit=20)
+        known_rules = db.get_all_rules(lang, limit=20) or []
         rules_examples = ""
         if known_rules:
             examples = [f"\u00ab{r['wrong_form']}\u00bb\u2192\u00ab{r['correct_form']}\u00bb" for r in known_rules]
