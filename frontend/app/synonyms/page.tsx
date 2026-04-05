@@ -23,6 +23,8 @@ export default function SynonymsPage() {
   const [newLang, setNewLang] = useState('uz')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [editingWord, setEditingWord] = useState<string | null>(null)
+  const [editWordValue, setEditWordValue] = useState('')
   const [page, setPage] = useState(0)
   const [perPage, setPerPage] = useState(25)
 
@@ -82,20 +84,35 @@ export default function SynonymsPage() {
   }
 
   const handleEdit = async (id: number, newSyn: string) => {
+    if (!newSyn.trim()) return
     try {
-      // Delete old + create new with same word
-      await fetch(`${API_BASE}/api/synonyms/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-      // Find the group this synonym belongs to
-      const group = groups.find(g => g.ids.includes(id))
-      if (group) {
-        await fetch(`${API_BASE}/api/synonyms/save`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ word: group.word, synonym: newSyn, lang: group.lang })
-        })
-      }
+      await fetch(`${API_BASE}/api/synonyms/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ synonym: newSyn.trim() })
+      })
       showToast('Таҳрирланди ✓')
       setEditingId(null)
+      fetchSynonyms()
+    } catch { showToast('Хатолик', 'error') }
+  }
+
+  const handleEditWord = async (oldWord: string, newWord: string, lang: string) => {
+    if (!newWord.trim()) return
+    try {
+      // Update all synonyms of this word
+      const group = groups.find(g => g.word === oldWord && g.lang === lang)
+      if (group) {
+        for (const id of group.ids) {
+          await fetch(`${API_BASE}/api/synonyms/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ word: newWord.trim() })
+          })
+        }
+      }
+      showToast('Сўз таҳрирланди ✓')
+      setEditingWord(null)
       fetchSynonyms()
     } catch { showToast('Хатолик', 'error') }
   }
@@ -226,7 +243,21 @@ export default function SynonymsPage() {
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
               >
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', paddingTop: '4px' }}>{page * perPage + i + 1}</span>
-                <span style={{ fontWeight: 700, fontSize: '0.9rem', paddingTop: '4px' }}>{g.word}</span>
+                {editingWord === `${g.word}:${g.lang}` ? (
+                  <div style={{ display: 'flex', gap: '4px', paddingTop: '2px' }}>
+                    <input value={editWordValue} onChange={e => setEditWordValue(e.target.value)}
+                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1.5px solid #B48C64', fontSize: '0.85rem', fontWeight: 700, width: '150px' }}
+                      autoFocus onKeyDown={e => { if (e.key === 'Enter') handleEditWord(g.word, editWordValue, g.lang); if (e.key === 'Escape') setEditingWord(null) }}
+                    />
+                    <button onClick={() => handleEditWord(g.word, editWordValue, g.lang)} style={{ padding: '2px 8px', borderRadius: '6px', border: 'none', background: '#B48C64', color: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✓</button>
+                    <button onClick={() => setEditingWord(null)} style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #ccc', background: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✕</button>
+                  </div>
+                ) : (
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', paddingTop: '4px', cursor: 'pointer' }}
+                    onClick={() => { setEditingWord(`${g.word}:${g.lang}`); setEditWordValue(g.word) }}
+                    title="Таҳрирлаш учун босинг"
+                  >{g.word}</span>
+                )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {g.synonyms.sort((a,b) => b.frequency - a.frequency).map((s) => (
                     editingId === s.id ? (

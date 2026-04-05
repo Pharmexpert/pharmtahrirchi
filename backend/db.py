@@ -1689,6 +1689,22 @@ def delete_synonym(syn_id: int):
     conn.commit()
     conn.close()
 
+def update_synonym(syn_id: int, data: dict):
+    """Update a synonym's word, synonym text, or other fields."""
+    conn = connect_db()
+    cursor = conn.cursor()
+    fields = []
+    values = []
+    for k in ['word', 'synonym', 'lang', 'frequency']:
+        if k in data:
+            fields.append(f"{k} = ?")
+            values.append(data[k])
+    if fields:
+        values.append(syn_id)
+        cursor.execute(f"UPDATE synonyms SET {', '.join(fields)} WHERE id = ?", tuple(values))
+        conn.commit()
+    conn.close()
+
 def get_synonyms_count():
     """Get total synonym count."""
     conn = connect_db()

@@ -277,6 +277,13 @@ async def save_synonym_endpoint(payload: Dict[str, Any], current_user: Dict = De
     return {"status": "saved"}
 
 
+@router.put("/api/synonyms/{syn_id}")
+async def update_synonym_endpoint(syn_id: int, payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Update a synonym's word or synonym text."""
+    db.update_synonym(syn_id, payload)
+    return {"status": "updated"}
+
+
 @router.post("/api/synonyms/select")
 async def select_synonym(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     word = payload.get("word", "").strip()
