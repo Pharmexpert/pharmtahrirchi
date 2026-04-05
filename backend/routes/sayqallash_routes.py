@@ -114,7 +114,7 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
             resp_text = await generate_ai_content(prompt_system + "\n\n" + user_message)
             match = re.search(r'\{.*\}', resp_text, re.DOTALL)
             if match:
-                result = json.loads(match.group())
+                result = __import__('json').loads(match.group())
                 raw_ai = result.get("annotations", [])
                 confidence = result.get("confidence", 90)
 
