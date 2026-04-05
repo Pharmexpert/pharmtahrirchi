@@ -260,7 +260,7 @@ async def get_synonyms_list(word: str = None, lang: str = None, grouped: str = N
             g["total_freq"] += s.get("frequency", 0)
             g["ids"].append(s["id"])
 
-        result = sorted(groups.values(), key=lambda x: -x["total_freq"])
+        result = sorted(groups.values(), key=lambda x: x["word"].lower())
         return {"groups": result, "total_words": len(result), "total_synonyms": len(syns)}
 
     return {"synonyms": syns, "total": len(syns)}
