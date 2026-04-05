@@ -61,6 +61,7 @@ def get_sayqallash_prompt(lang: str, rules_examples: str) -> str:
 
 async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
     """Core sayqallash logic, callable both from HTTP endpoint and internally."""
+    import json  # ensure json is available in async context
     text = payload.get("text", "").strip()
     lang = payload.get("lang", "uz")
     context_en = payload.get("context_en", "")

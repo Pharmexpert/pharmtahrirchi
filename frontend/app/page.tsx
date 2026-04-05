@@ -53,6 +53,16 @@ export default function Home() {
   }, [urlTextId, token, data])
 
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadPhase, setUploadPhase] = useState('')
+
+  const getPhaseLabel = (pct: number): string => {
+    if (pct < 15) return 'Матн тайёрланмоқда...'
+    if (pct < 35) return 'AI модел юкланмоқда...'
+    if (pct < 60) return 'Терминология таҳлили...'
+    if (pct < 80) return 'Таржима солиштирилмоқда...'
+    if (pct < 95) return 'Натижалар тўпланмоқда...'
+    return 'Тайёр!'
+  }
  
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -77,6 +87,17 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setUploadProgress(5)
+    setUploadPhase(getPhaseLabel(5))
+
+    // Simulate progressive phases while server processes
+    const phaseInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) { clearInterval(phaseInterval); return prev }
+        const next = prev + 1
+        setUploadPhase(getPhaseLabel(next))
+        return next
+      })
+    }, 400)
  
     const formData = new FormData()
     formData.append('file', file)
@@ -103,15 +124,18 @@ export default function Home() {
         })
  
         xhr.addEventListener('load', () => {
+          clearInterval(phaseInterval)
           if (xhr.status >= 200 && xhr.status < 300) {
             setUploadProgress(100)
+            setUploadPhase('Тайёр!')
             resolve(JSON.parse(xhr.responseText))
           } else {
+            setUploadPhase('')
             reject(new Error('Файлни қайта ишлашда хатолик'))
           }
         })
- 
-        xhr.addEventListener('error', () => reject(new Error('Сарвер билан боғланишда хатолик')))
+
+        xhr.addEventListener('error', () => { clearInterval(phaseInterval); setUploadPhase(''); reject(new Error('Сарвер билан боғланишда хатолик')) })
         xhr.open('POST', url)
         xhr.setRequestHeader('Authorization', `Bearer ${token}`)
         xhr.send(formData)
@@ -273,9 +297,12 @@ export default function Home() {
               <input type="file" accept=".docx,.pdf" onChange={handleFileChange} style={{ display: 'none' }} id="file-upload" />
               <div style={{ textAlign: 'center' }}>
                 {loading ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>{uploadProgress}%</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Файл юкланмоқда...</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '8px 0' }}>
+                    <div style={{ width: '80%', height: '8px', background: 'rgba(0,0,0,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #B48C64, #C07840)', borderRadius: '4px', transition: 'width 0.3s ease-out' }} />
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-primary, #B48C64)' }}>{uploadProgress}%</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #6B5744)', fontWeight: 500 }}>{uploadPhase || 'Файл юкланмоқда...'}</div>
                   </div>
                 ) : (
                   <>
