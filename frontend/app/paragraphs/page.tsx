@@ -36,9 +36,13 @@ export default function ParagraphsPage() {
   const [entries, setEntries] = useState<ParagraphEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [enFilter, setEnFilter] = useState('')
+  const [ruFilter, setRuFilter] = useState('')
+  const [uzFilter, setUzFilter] = useState('')
   const [textIdFilter, setTextIdFilter] = useState('')
   const [specialistFilter, setSpecialistFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState('')
   const [editEntry, setEditEntry] = useState<Partial<ParagraphEntry> | null>(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -119,10 +123,14 @@ export default function ParagraphsPage() {
       (entry.en_text || '').toLowerCase().includes(q) ||
       (entry.ru_text || '').toLowerCase().includes(q) ||
       (entry.uz_text || '').toLowerCase().includes(q)
+    const matchEn = !enFilter || (entry.en_text || '').toLowerCase().includes(enFilter.toLowerCase())
+    const matchRu = !ruFilter || (entry.ru_text || '').toLowerCase().includes(ruFilter.toLowerCase())
+    const matchUz = !uzFilter || (entry.uz_text || '').toLowerCase().includes(uzFilter.toLowerCase())
     const matchTextId = !textIdFilter || (entry.text_id || '').toLowerCase().includes(textIdFilter.toLowerCase())
     const matchSpecialist = !specialistFilter || (entry.specialist_name || '').toLowerCase().includes(specialistFilter.toLowerCase())
     const matchAction = !actionFilter || (entry.action_type || '').toLowerCase().includes(actionFilter.toLowerCase())
-    return matchSearch && matchTextId && matchSpecialist && matchAction
+    const matchDate = !dateFilter || (entry.created_at || '').includes(dateFilter)
+    return matchSearch && matchEn && matchRu && matchUz && matchTextId && matchSpecialist && matchAction && matchDate
   })
 
   // Unique action types for badges
@@ -252,38 +260,43 @@ export default function ParagraphsPage() {
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '7%' }}>САНА</th>
               <th style={{ padding: '14px 16px', textAlign: 'right', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '5%' }}>АМАЛ</th>
             </tr>
-            {/* Filter Row */}
+            {/* Filter Row — each column has its own filter */}
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '6px 8px' }}></td>
-              <td colSpan={3} style={{ padding: '6px 8px' }}>
-                <div style={{ position: 'relative' }}>
-                  <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input placeholder="Матн бўйича қидириш..." value={search} onChange={e => setSearch(e.target.value)}
-                    style={{
-                      width: '100%', padding: '7px 10px 7px 32px', borderRadius: '8px',
-                      border: '1px solid var(--border)', background: 'white',
-                      fontSize: '0.8rem', outline: 'none', boxSizing: 'border-box'
-                    }} />
-                </div>
+              <td style={{ padding: '4px 6px' }}>
+                <input placeholder="№" value={search} onChange={e => setSearch(e.target.value)}
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }} />
               </td>
-              <td style={{ padding: '6px 8px' }}>
+              <td style={{ padding: '4px 6px' }}>
+                <input placeholder="English..." value={enFilter} onChange={e => setEnFilter(e.target.value)}
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }} />
+              </td>
+              <td style={{ padding: '4px 6px' }}>
+                <input placeholder="Русский..." value={ruFilter} onChange={e => setRuFilter(e.target.value)}
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }} />
+              </td>
+              <td style={{ padding: '4px 6px' }}>
+                <input placeholder="Ўзбекча..." value={uzFilter} onChange={e => setUzFilter(e.target.value)}
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }} />
+              </td>
+              <td style={{ padding: '4px 6px' }}>
                 <input placeholder="Исм..." value={specialistFilter} onChange={e => setSpecialistFilter(e.target.value)}
-                  style={{
-                    width: '100%', padding: '7px 10px', borderRadius: '8px',
-                    border: '1px solid var(--border)', background: 'white',
-                    fontSize: '0.8rem', outline: 'none', boxSizing: 'border-box'
-                  }} />
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', boxSizing: 'border-box' }} />
               </td>
-              <td style={{ padding: '6px 8px' }}>
+              <td style={{ padding: '4px 6px' }}>
                 <input placeholder="№" value={textIdFilter} onChange={e => setTextIdFilter(e.target.value)}
-                  style={{
-                    width: '100%', padding: '7px 10px', borderRadius: '8px',
-                    border: '1px solid var(--border)', background: 'white',
-                    fontSize: '0.8rem', outline: 'none', textAlign: 'center', boxSizing: 'border-box'
-                  }} />
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.75rem', outline: 'none', textAlign: 'center', boxSizing: 'border-box' }} />
               </td>
-              <td></td>
-              <td></td>
+              <td style={{ padding: '4px 6px' }}>
+                <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+                  style={{ width: '100%', padding: '5px 4px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.7rem', outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}>
+                  <option value="">Барчаси</option>
+                  {actionTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </td>
+              <td style={{ padding: '4px 6px' }}>
+                <input placeholder="Сана..." value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+                  style={{ width: '100%', padding: '5px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', fontSize: '0.7rem', outline: 'none', boxSizing: 'border-box' }} />
+              </td>
               <td></td>
             </tr>
           </thead>
@@ -308,20 +321,20 @@ export default function ParagraphsPage() {
 
                   <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.82rem' }}>{i + 1}</td>
 
-                  <td style={{ padding: '12px 16px', fontSize: '0.85rem', lineHeight: '1.5', maxWidth: '200px' }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                  <td style={{ padding: '12px 16px', fontSize: '0.82rem', lineHeight: '1.6', verticalAlign: 'top' }}>
+                    <div>
                       {entry.en_text || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}
                     </div>
                   </td>
 
-                  <td style={{ padding: '12px 16px', fontSize: '0.85rem', lineHeight: '1.5', maxWidth: '200px' }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                  <td style={{ padding: '12px 16px', fontSize: '0.82rem', lineHeight: '1.6', verticalAlign: 'top' }}>
+                    <div>
                       {entry.ru_text || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}
                     </div>
                   </td>
 
-                  <td style={{ padding: '12px 16px', fontSize: '0.85rem', lineHeight: '1.5', maxWidth: '200px' }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                  <td style={{ padding: '12px 16px', fontSize: '0.82rem', lineHeight: '1.6', verticalAlign: 'top' }}>
+                    <div>
                       {entry.uz_text || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}
                     </div>
                   </td>
