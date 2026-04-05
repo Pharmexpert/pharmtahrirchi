@@ -1,69 +1,102 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
-echo ══════════════════════════════════════════════
-echo   PHARMA PLATFORM - GitHub + Cloud Sync
-echo ══════════════════════════════════════════════
-
-:: Data Protection Warning
 echo.
-echo [ SAFETY CHECK ]
-echo - Local DB (*.db) is EXCLUDED from Git.
-echo - Your local changes will NOT overwrite production data.
-echo - Global rules/synonyms must be managed via Admin Dashboard.
-echo ══════════════════════════════════════════════
-
-:: Step 1: Database Export (for sync JSON)
+echo ================================================
+echo   PHARMA EXPERT AI - GIT SYNC
+echo   Syncs monorepo + Railway backend repo
+echo ================================================
 echo.
-echo [1/5] Exporting local database metadata...
-if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe backend\sync_db.py export
-) else (
-    echo [WARN] Virtual environment not found, skipping DB export
+
+set "ROOT=%~dp0"
+set "BACKEND_SRC=%ROOT%backend"
+set "BACKEND_DST=%ROOT%pharma-backend-deploy"
+
+:: ------------------------------------------------
+:: STEP 1: Sync backend files to Railway deploy repo
+:: ------------------------------------------------
+echo [1/4] Syncing backend to Railway repo...
+
+:: Root-level .py files
+for %%f in ("%BACKEND_SRC%\*.py") do (
+    xcopy /Y /Q "%%f" "%BACKEND_DST%\" >nul 2>&1
 )
 
-:: Step 2: Git Add
-echo.
-echo [2/5] Adding code changes...
-git add .
+:: Routes directory (CRITICAL for modular architecture)
+if not exist "%BACKEND_DST%\routes" mkdir "%BACKEND_DST%\routes"
+xcopy /Y /Q "%BACKEND_SRC%\routes\*.py" "%BACKEND_DST%\routes\" >nul 2>&1
 
-:: Step 3: Git Commit
-echo.
-echo [3/5] Committing changes...
-set /p commit_msg="Enter commit message (or press Enter for 'Auto-sync'): "
-if "%commit_msg%"=="" set commit_msg=Auto-sync %date% %time%
-git commit -m "%commit_msg%"
+:: Config files
+xcopy /Y /Q "%BACKEND_SRC%\requirements.txt" "%BACKEND_DST%\" >nul 2>&1
+xcopy /Y /Q "%BACKEND_SRC%\Procfile" "%BACKEND_DST%\" >nul 2>&1
+xcopy /Y /Q "%BACKEND_SRC%\.env.example" "%BACKEND_DST%\" >nul 2>&1
 
-:: Step 4: Git Push (Triggers Railway Backend + Vercel if connected)
-echo.
-echo [4/5] Pushing to GitHub (Origin: pharmtahrirchi)...
-git push origin main
-if %errorlevel% neq 0 (
-    echo [WARN] Push failed. Trying to pull first...
+echo    [OK] Backend files synced (including routes/).
+
+:: ------------------------------------------------
+:: STEP 2: Commit Railway deploy repo
+:: ------------------------------------------------
+echo [2/4] Committing Railway repo...
+cd /d "%BACKEND_DST%"
+git add -A
+git diff --cached --quiet
+if errorlevel 1 (
+    set MSG=
+    set /p MSG="  Railway commit message (Enter=Auto): "
+    if "!MSG!"=="" set "MSG=Sync: Backend %DATE% %TIME:~0,5%"
+    git commit -m "!MSG!"
+    echo    [OK] Railway repo committed.
+) else (
+    echo    [INFO] No Railway changes.
+)
+
+:: ------------------------------------------------
+:: STEP 3: Commit monorepo
+:: ------------------------------------------------
+echo [3/4] Committing monorepo...
+cd /d "%ROOT%"
+git add -A -- ":(exclude)pharma-backend-deploy" ":(exclude)*.db" ":(exclude).venv" ":(exclude)temp_files" ":(exclude).claude"
+
+git diff --cached --quiet
+if errorlevel 1 (
+    set MSG=
+    set /p MSG="  Monorepo commit message (Enter=Auto): "
+    if "!MSG!"=="" set "MSG=Sync: Auto-sync %DATE% %TIME:~0,5%"
+    git commit -m "!MSG!"
+    echo    [OK] Monorepo committed.
+) else (
+    echo    [INFO] No monorepo changes.
+)
+
+:: ------------------------------------------------
+:: STEP 4: Push both repos
+:: ------------------------------------------------
+echo [4/4] Pushing to remotes...
+
+echo    Pushing Railway backend...
+cd /d "%BACKEND_DST%"
+git push origin main 2>nul
+if errorlevel 1 (
+    echo    [WARN] Railway push failed. Trying rebase...
     git pull --rebase origin main
     git push origin main
 )
 
-:: Step 5: Vercel Deploy — FRONTEND FOLDER
-echo.
-echo [5/5] Triggering Vercel Frontend deployment...
-where vercel >nul 2>nul
-if %errorlevel% equ 0 (
-    echo.
-    echo --- Deploying frontend (frontend-dun-nine-30.vercel.app) ---
-    cd /d "%~dp0frontend"
-    vercel --prod --yes
-    cd /d "%~dp0"
-) else (
-    echo [INFO] Vercel CLI not installed. Deploying via GitHub Hook...
+echo    Pushing monorepo...
+cd /d "%ROOT%"
+git push origin main 2>nul
+if errorlevel 1 (
+    echo    [WARN] Monorepo push failed. Trying rebase...
+    git pull --rebase origin main
+    git push origin main
 )
 
 echo.
-echo ══════════════════════════════════════════════
-echo   GitHub:   SYNCED [OK]
-echo   Railway:  BACKEND DEPLOYING... (Check Railway Dash)
-echo   Vercel:   FRONTEND DEPLOYING...
-echo   URL:      https://frontend-dun-nine-30.vercel.app
-echo ══════════════════════════════════════════════
+echo ================================================
+echo   GIT SYNC COMPLETE!
+echo   Monorepo:  pushed to origin/main
+echo   Railway:   pushed to pharma-backend/main
+echo ================================================
+echo.
 pause

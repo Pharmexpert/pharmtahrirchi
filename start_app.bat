@@ -1,81 +1,91 @@
 @echo off
 setlocal EnableDelayedExpansion
+cd /d "%~dp0"
+
+echo.
+echo ================================================
+echo   PHARMA EXPERT AI - LOCAL STARTUP
+echo   Backend:  http://localhost:8000
+echo   Frontend: http://localhost:3000
+echo ================================================
+echo.
+
 set "ROOT=%~dp0"
-cd /d "%ROOT%"
+set "BACKEND=%ROOT%backend"
+set "FRONTEND=%ROOT%frontend"
 
-echo.
-echo ================================================
-echo   PHARMA EXPERT AI - LOCAL DEVELOPMENT START
-echo   Frontend:  http://localhost:3001
-echo   Backend:   http://localhost:8000/docs
-echo ================================================
-echo.
-
-:: Check Python
-python --version >nul 2>&1
+:: ------------------------------------------------
+:: Check prerequisites
+:: ------------------------------------------------
+where python >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found! Install Python 3.10+
+    echo [ERROR] Python not found. Install Python 3.11+
     pause
     exit /b 1
 )
-echo [OK] Python found.
-
-:: Check Node.js
-node --version >nul 2>&1
+where node >nul 2>&1
 if errorlevel 1 (
-    echo [WARN] Node.js not found. Frontend will not start.
-) else (
-    echo [OK] Node.js found.
+    echo [ERROR] Node.js not found. Install Node.js 18+
+    pause
+    exit /b 1
 )
 
-:: Create backend .env if missing
-if not exist "%ROOT%backend\.env" (
-    echo [INFO] Creating backend .env...
-    echo GOOGLE_API_KEY=AIzaSyCfB5C5786gTxdt0nmgNHSvJBKLRPtDZ-g> "%ROOT%backend\.env"
-    echo ANTHROPIC_API_KEY=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>> "%ROOT%backend\.env"
+:: ------------------------------------------------
+:: Kill any existing processes on ports 8000/3000
+:: ------------------------------------------------
+echo [1/4] Cleaning up old processes...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 " ^| findstr "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>&1
 )
-
-:: Set frontend to use LOCAL backend for dev
-echo NEXT_PUBLIC_API_URL=http://localhost:8000> "%ROOT%frontend\.env.local"
-echo [OK] Frontend will connect to local backend.
-
-:: Install frontend packages if not present
-if not exist "%ROOT%frontend\node_modules" (
-    echo [!] Installing frontend packages (first time, please wait)...
-    cd /d "%ROOT%frontend"
-    call npm install --legacy-peer-deps
-    cd /d "%ROOT%"
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":3000 " ^| findstr "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>&1
 )
+echo    [OK] Ports 8000, 3000 cleared.
 
-:: Start Backend
+:: ------------------------------------------------
+:: Create required directories
+:: ------------------------------------------------
+echo [2/4] Preparing directories...
+if not exist "%BACKEND%\uploads" mkdir "%BACKEND%\uploads"
+if not exist "%BACKEND%\temp_files" mkdir "%BACKEND%\temp_files"
+if not exist "%BACKEND%\temp_files\imgs" mkdir "%BACKEND%\temp_files\imgs"
+echo    [OK] Directories ready.
+
+:: ------------------------------------------------
+:: Start Backend (in new window)
+:: ------------------------------------------------
+echo [3/4] Starting backend on http://localhost:8000 ...
+start "Pharma Backend" cmd /k "cd /d "%BACKEND%" && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+echo    [OK] Backend starting (new window).
+
+:: ------------------------------------------------
+:: Start Frontend (in new window)
+:: ------------------------------------------------
+echo [4/4] Starting frontend on http://localhost:3000 ...
+start "Pharma Frontend" cmd /k "cd /d "%FRONTEND%" && npm run dev"
+echo    [OK] Frontend starting (new window).
+
+:: ------------------------------------------------
+:: Wait and verify
+:: ------------------------------------------------
 echo.
-echo [1/2] Starting Backend on port 8000...
-start "Pharma Backend" /D "%ROOT%backend" cmd /k "python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
+echo Waiting 10 seconds for servers to start...
+timeout /t 10 /nobreak >nul
 
-:: Wait for backend to load
-timeout /t 4 /nobreak >nul
-
-:: Start Frontend
-echo [2/2] Starting Frontend on port 3001...
-start "Pharma Frontend" /D "%ROOT%frontend" cmd /k "npm run dev -- -p 3001"
-
-:: Open browser
 echo.
-echo Waiting 8 seconds for services...
-timeout /t 8 /nobreak >nul
-start http://localhost:3001
+echo Verifying...
+python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/specialists',timeout=5); print('  [OK] Backend: HTTP',r.status)" 2>nul
+if errorlevel 1 echo   [WAIT] Backend still loading (BERT model takes ~30s)...
+
+python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:3000',timeout=5); print('  [OK] Frontend: HTTP',r.status)" 2>nul
+if errorlevel 1 echo   [WAIT] Frontend still compiling...
 
 echo.
 echo ================================================
-echo   LOCAL:
-echo   Frontend:  http://localhost:3001
-echo   Backend:   http://localhost:8000/docs
-echo.
-echo   PRODUCTION:
-echo   Frontend:  https://frontend-dun-nine-30.vercel.app
-echo   Backend:   https://pharma-backend-production-38bb.up.railway.app/docs
-echo.
-echo   To deploy to production: run deploy.bat
+echo   SERVERS RUNNING:
+echo   Backend:  http://localhost:8000/docs
+echo   Frontend: http://localhost:3000
+echo   Close the terminal windows to stop.
 echo ================================================
 echo.
 pause
