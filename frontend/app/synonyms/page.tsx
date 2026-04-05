@@ -283,10 +283,14 @@ export default function SynonymsPage() {
                       >
                         {s.synonym}
                         {s.frequency > 0 && <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>{s.frequency}×</span>}
+                        <span onClick={e => { e.stopPropagation(); if (confirm(`"${s.synonym}" ни ўчирасизми?`)) handleDelete(s.id) }}
+                          style={{ marginLeft: '2px', opacity: 0.4, cursor: 'pointer', fontSize: '0.7rem' }}
+                          title="Ўчириш"
+                        >✕</span>
                       </span>
                     )
                   ))}
-                  <button onClick={() => { setShowAdd(true); setNewWord(g.word); setNewLang(g.lang) }}
+                  <button onClick={() => { setNewWord(g.word); setNewLang(g.lang); setNewSynonym(''); setShowAdd(true) }}
                     style={{ padding: '4px 8px', borderRadius: '8px', border: '1px dashed #BBF7D0', background: 'transparent', color: '#16A34A', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 700 }}
                     title="Янги синоним қўшиш"
                   >+ қўшиш</button>
@@ -352,8 +356,9 @@ export default function SynonymsPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <input placeholder="Сўз..." value={newWord} onChange={e => setNewWord(e.target.value)}
                 style={{ padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', fontSize: '0.9rem' }} />
-              <input placeholder="Синоним..." value={newSynonym} onChange={e => setNewSynonym(e.target.value)}
-                style={{ padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', fontSize: '0.9rem' }} />
+              <input placeholder="Синоним..." value={newSynonym} onChange={e => setNewSynonym(e.target.value)} autoFocus
+                style={{ padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', fontSize: '0.9rem' }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }} />
               <select value={newLang} onChange={e => setNewLang(e.target.value)}
                 style={{ padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', fontSize: '0.9rem' }}>
                 <option value="uz">🇺🇿 Ўзбекча</option>
