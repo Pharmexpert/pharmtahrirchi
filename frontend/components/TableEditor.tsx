@@ -721,7 +721,21 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                     </div>
                   </td>
 
-                  <td style={{ padding: '3px 6px', verticalAlign: 'top', borderRight: '1px solid #e9edf2', fontSize: '0.65rem', color: '#64748b', lineHeight: 1.25, fontWeight: row.type === 'marker' ? 800 : 400 }}>
+                  <td style={{ padding: '3px 6px', verticalAlign: 'top', borderRight: '1px solid #e9edf2', fontSize: '0.65rem', color: '#64748b', lineHeight: 1.25, fontWeight: row.type === 'marker' ? 800 : 400, cursor: row.type === 'content' ? 'text' : 'default' }}
+                    onClick={row.type === 'content' ? (e) => {
+                      const sel = window.getSelection()?.toString().trim()
+                      const word = sel && sel.length >= 2 ? sel.replace(/[.,;:!?()]/g, '').trim() : ''
+                      if (word && word.split(' ').length <= 5) {
+                        const px = Math.min(e.clientX, window.innerWidth - 310)
+                        const py = Math.min(e.clientY + 22, window.innerHeight - 240)
+                        setPopup({ visible: true, x: px, y: py, word, lang: 'en', rowIdx: idx, synonyms: [], loading: true })
+                        fetch(`${API_BASE}/api/linguistic/synonyms`, {
+                          method: 'POST', headers: authHeaders,
+                          body: JSON.stringify({ word, lang: 'en', context_en: row.en, source_lang: 'English' })
+                        }).then(r => r.json()).then(r => setPopup(p => ({ ...p, synonyms: r.synonyms || [], loading: false }))).catch(() => setPopup(p => ({ ...p, loading: false })))
+                      }
+                    } : undefined}
+                  >
                     <RichContent text={row.en} />
                   </td>
 
@@ -999,6 +1013,7 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
             </span>
           </div>
           <textarea value={v1 || ''} onChange={e => onV1Change(e.target.value)}
+            onClick={e => onWordClick(e as any, rowIdx, lang)}
             placeholder="V1 original..."
             style={{ width: '100%', minHeight: 40, fontSize: '0.78rem', color: '#475569', background: 'transparent', border: 'none', padding: '2px 4px', lineHeight: 1.45, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
           />
