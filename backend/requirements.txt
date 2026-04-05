@@ -16,3 +16,7 @@ transformers==5.4.0
 langdetect==1.0.9
 PyJWT==2.9.0
 torch --index-url https://download.pytorch.org/whl/cpu
+
+# Testing
+pytest>=8.0.0
+httpx>=0.27.0

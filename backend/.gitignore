@@ -15,8 +15,9 @@ __pycache__/
 *.pyo
 .env
 
-# Dev/test files
-test_*.py
+# Dev/test scripts (root-level only, not tests/ directory)
+/test_*.py
+!tests/
 list_models.py
 openapi.json
 tahrirchi_db_analysis.md
