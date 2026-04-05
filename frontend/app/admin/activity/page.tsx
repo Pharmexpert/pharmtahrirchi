@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Activity, Search, Filter, Calendar, User, FileText, CheckCircle, Database, AlertCircle, Loader2, ArrowRight } from 'lucide-react'
-import { useAuth } from '../../components/LoginGuard'
+import { useAuth } from '../../../components/LoginGuard'
 
 interface ActivityLog {
   id: number

@@ -4,21 +4,9 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen, MousePointer2, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from './LoginGuard'
+import type { RowData } from '../types/api'
 
-export interface RowData {
-  type: 'marker' | 'content'
-  en: string
-  ru_v1: string
-  ru_proposed: string
-  uz_v1: string
-  uz_proposed: string
-  status: 'aligned' | 'review'
-  sentence_no: number
-  display_no: string
-  text_id: string
-  notes: string
-  specialist_name?: string
-}
+export type { RowData }
 
 interface SynonymPopup {
   visible: boolean; x: number; y: number
