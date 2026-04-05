@@ -23,6 +23,29 @@ import admin_routes
 import linguistic_routes
 from auth import create_access_token, verify_token, get_current_user, get_admin_user
 
+# ═══════════════════════════════════════════════════
+# Rate Limiting (in-memory, per-IP)
+# ═══════════════════════════════════════════════════
+from collections import defaultdict
+import time as _time
+
+class RateLimiter:
+    def __init__(self, max_calls: int = 10, period: int = 60):
+        self.max_calls = max_calls
+        self.period = period
+        self._calls = defaultdict(list)
+
+    def is_allowed(self, key: str) -> bool:
+        now = _time.time()
+        self._calls[key] = [t for t in self._calls[key] if now - t < self.period]
+        if len(self._calls[key]) >= self.max_calls:
+            return False
+        self._calls[key].append(now)
+        return True
+
+ai_limiter = RateLimiter(max_calls=20, period=60)  # 20 AI calls/min per IP
+upload_limiter = RateLimiter(max_calls=5, period=60)  # 5 uploads/min per IP
+
 load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -37,17 +60,28 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 app = FastAPI()
 
 # ═══════════════════════════════════════════════════
-# Middleware: CORS & Initialization
+# Middleware: CORS, Security Headers & Initialization
 # ═══════════════════════════════════════════════════
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 @app.on_event("startup")
 async def startup_event():
@@ -160,7 +194,25 @@ async def generate_ai_content(prompt: str) -> str:
 @app.post("/api/upload")
 @app.post("/api/upload-docx")
 @app.post("/upload")  # backward compat
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), mode: str = "auto", text_id: str = "", current_user: Dict = Depends(get_current_user)):
+async def upload_file(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...), mode: str = "auto", text_id: str = "", current_user: Dict = Depends(get_current_user)):
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not upload_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Жуда кўп юклаш. 1 дақиқа кутинг.")
+
+    # Validate file type
+    allowed_extensions = {".docx", ".pdf"}
+    file_ext = os.path.splitext(file.filename or "")[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Фақат DOCX ва PDF файллар қабул қилинади. Юборилган: {file_ext}")
+
+    # Validate file size (max 50MB)
+    MAX_FILE_SIZE = 50 * 1024 * 1024
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Файл ҳажми 50MB дан ошмаслиги керак")
+    file.file.seek(0)
+
     # Save uploaded file to persistent uploads directory
     persistent_file_path = os.path.join(UPLOADS_DIR, f"{int(datetime.utcnow().timestamp())}_{file.filename}")
     with open(persistent_file_path, "wb") as buffer:
@@ -224,8 +276,13 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
 # ═══════════════════════════════════════════════════
 
 @app.post("/api/align-document")
-async def align_document(payload: Dict[str, Any]):
+async def align_document(request: Request, payload: Dict[str, Any]):
     """AI-based alignment for the entire document in a single batched call."""
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not ai_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Жуда кўп сўров. 1 дақиқа кутинг.")
+
     client = get_client()
     if not client:
         raise HTTPException(status_code=503, detail="AI client not configured")
@@ -555,7 +612,7 @@ def get_sayqallash_prompt(lang: str, rules_examples: str) -> str:
  {{"annotations": [{{"old_value": "хато", "new_value": "тўғри", "start_index": 0, "end_index": 4, "error_type": "S/Spelling"}}], "corrected_text": "тўлиқ тузатилган матн", "confidence": 95}}"""
 
 @app.post("/sayqallash")
-async def sayqallash(payload: Dict[str, Any]):
+async def sayqallash(request: Request, payload: Dict[str, Any]):
     """
     Grammatical Error Correction (GEC) with 3-tier priority:
     1. Rules DB (db.get_rules_for_text)
@@ -563,6 +620,11 @@ async def sayqallash(payload: Dict[str, Any]):
     3. BERT fallback (processed within rules engine)
     Optimized with AI Cache and Confidence Scores.
     """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not ai_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Жуда кўп сўров. 1 дақиқа кутинг.")
+
     text = payload.get("text", "").strip()
     lang = payload.get("lang", "uz")
     context_en = payload.get("context_en", "")
@@ -1091,9 +1153,8 @@ async def transliterate_batch(payload: Dict[str, Any]):
 @app.post("/api/auth/google")
 async def auth_google(payload: Dict[str, Any]):
     credential = payload.get("credential")
-    if credential == "dev-token" or payload.get("email") == "admin@pharma.local":
-        user = db.get_user_by_email("texnopharm@gmail.com")
-        return {"success": True, "token": "dev-token", "user": user}
+    if not credential:
+        raise HTTPException(status_code=400, detail="Google credential required")
     try:
         resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}")
         if not resp.ok: raise HTTPException(status_code=401, detail="Invalid token")
@@ -1183,10 +1244,39 @@ async def forgot_password(payload: Dict[str, Any]):
     code = ''.join(random.choices(string.digits, k=6))
     db.create_reset_code(email, code)
     
-    # MOCK EMAIL SENDING - Print to console for Railway logs
-    logger.info(f"🔑 PASSWORD RESET CODE for {email}: {code}")
-    
-    return {"success": True, "message": "Тиклаш коди Email манзилингизга юборилди (Логларни текширинг)."}
+    # Send reset code via email (SMTP) with console fallback
+    email_sent = False
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
+
+    if smtp_host and smtp_user and smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+
+            msg = MIMEText(
+                f"Сизнинг парол тиклаш кодингиз: {code}\n\nУшбу код 15 дақиқа ичида амал қилади.",
+                "plain", "utf-8"
+            )
+            msg["Subject"] = "Pharma Aligner — Парол тиклаш коди"
+            msg["From"] = smtp_user
+            msg["To"] = email
+
+            smtp_port = int(os.getenv("SMTP_PORT", "587"))
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [email], msg.as_string())
+            email_sent = True
+            logger.info(f"[*] Password reset code sent to {email}")
+        except Exception as e:
+            logger.error(f"[!] SMTP error: {e}")
+
+    if not email_sent:
+        logger.info(f"PASSWORD RESET CODE for {email}: {code} (SMTP not configured)")
+
+    return {"success": True, "message": "Тиклаш коди Email манзилингизга юборилди."}
 
 @app.post("/api/auth/reset-password")
 async def reset_password(payload: Dict[str, Any]):
