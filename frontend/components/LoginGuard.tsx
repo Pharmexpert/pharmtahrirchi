@@ -117,7 +117,9 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
         "Стандартлаштириш бўлими",
         "Илмий-тадқиқот бўлими",
         "Бошқа"
-      ]
+      ],
+      upsellMessage: "Scientific Pharma Editor тизимининг сифатини оширишга кўмаклашинг",
+      free: "Бепул"
     },
     en: {
       subtitle: "Sign in to the management system",
@@ -152,7 +154,9 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
         "Standardization Department",
         "Research and Development Department",
         "Other"
-      ]
+      ],
+      upsellMessage: "Help improve the Scientific Pharma Editor system",
+      free: "Free"
     },
     ru: {
       subtitle: "Войдите в систему управления",
@@ -187,7 +191,9 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
         "Отдел стандартизации",
         "Научно-исследовательский отдел",
         "Другое"
-      ]
+      ],
+      upsellMessage: "Помогите улучшить систему Scientific Pharma Editor",
+      free: "Бесплатно"
     }
   }[lang]
 

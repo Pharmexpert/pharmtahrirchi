@@ -160,6 +160,13 @@ async def get_db_stats(current_user: dict = Depends(get_admin_user)):
     except:
         stats['finished_projects'] = 0
         stats['active_projects'] = stats.get('projects', 0)
+    
+    # Detailed User Stats
+    try:
+        cursor.execute("SELECT COUNT(*) FROM users WHERE status IS NULL OR status = 'pending' OR status = ''")
+        stats['pending_users'] = cursor.fetchone()[0]
+    except:
+        stats['pending_users'] = 0
 
     # Synonyms count
     try:

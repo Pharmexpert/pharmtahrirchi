@@ -21,7 +21,9 @@ import {
   Plus,
   Save,
   Download,
-  CheckCircle2
+  CheckCircle2,
+  UserPlus,
+  Clock
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '../../components/LoginGuard'
@@ -185,13 +187,14 @@ export default function AdminPage() {
 
       {/* Stats Grid */}
       <div style={{ 
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
         gap: '20px', marginBottom: '40px' 
       }}>
-        <StatCard icon={<Users size={24} />} title="Foydalanuvchilar" value={stats?.projects || users.length} color="#3B82F6" />
+        <StatCard icon={<Users size={24} />} title="Jami Foydalanuvchilar" value={users.length} color="#3B82F6" />
+        <StatCard icon={<UserPlus size={24} />} title="Kutayotganlar" value={stats?.counts?.pending_users || stats?.pending_users || 0} color="#F59E0B" />
         <StatCard icon={<FileText size={24} />} title="Aktiv Loyihalar" value={stats?.active_projects || 0} color="#6366F1" />
         <StatCard icon={<CheckCircle2 size={24} />} title="Yakunlangan" value={stats?.finished_projects || 0} color="#10B981" />
-        <StatCard icon={<Database size={24} />} title="Linguistik Qoidalar" value={stats?.sayqallash_rules || 0} color="#F59E0B" />
+        <StatCard icon={<Database size={24} />} title="Linguistik Qoidalar" value={stats?.sayqallash_rules || 0} color="#8B5CF6" />
       </div>
 
       {/* Controls Area */}
@@ -204,7 +207,9 @@ export default function AdminPage() {
       }}>
         <div style={{ display: 'flex', background: 'var(--bg-card)', padding: '4px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
            <button onClick={() => setActiveTab('all')} style={tabStyle(activeTab === 'all')}>Hammasi</button>
-           <button onClick={() => setActiveTab('pending')} style={tabStyle(activeTab === 'pending')}>Kutayotganlar</button>
+           <button onClick={() => setActiveTab('pending')} style={tabStyle(activeTab === 'pending')}>
+             Kutayotganlar {(stats?.counts?.pending_users > 0 || stats?.pending_users > 0) && <span style={{ marginLeft: 6, padding: '2px 6px', background: '#EF4444', color: 'white', borderRadius: '10px', fontSize: '0.65rem' }}>{stats?.counts?.pending_users || stats?.pending_users}</span>}
+           </button>
            <button onClick={() => setActiveTab('active')} style={tabStyle(activeTab === 'active')}>Tasdiqlanganlar</button>
            <button onClick={() => setActiveTab('rules')} style={tabStyle(activeTab === 'rules')}>Linguistik Qoidalar</button>
         </div>
@@ -384,13 +389,13 @@ export default function AdminPage() {
                   </td>
                   <td style={{ padding: '20px 24px' }}>
                     <span style={{ 
-                      padding: '6px 14px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
+                      padding: '6px 14px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase',
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      background: u.status === 'approved' ? 'var(--success-bg)' : u.status === 'rejected' ? 'var(--danger-bg)' : 'var(--warning-bg)',
-                      color: u.status === 'approved' ? 'var(--success)' : u.status === 'rejected' ? 'var(--danger)' : 'var(--warning)'
+                      background: u.status === 'approved' ? 'var(--success-bg)' : u.status === 'rejected' ? 'var(--danger-bg)' : '#FEF3C7',
+                      color: u.status === 'approved' ? 'var(--success)' : u.status === 'rejected' ? 'var(--danger)' : '#B45309'
                     }}>
-                      {u.status === 'approved' ? <CheckCircle2 size={14} /> : u.status === 'rejected' ? <AlertCircle size={14} /> : <Loader2 size={14} className="animate-spin" />}
-                      {u.status}
+                      {u.status === 'approved' ? <CheckCircle2 size={13} /> : u.status === 'rejected' ? <AlertCircle size={13} /> : <Clock size={13} />}
+                      {u.status || 'pending'}
                     </span>
                   </td>
                   <td style={{ padding: '20px 24px' }}>
