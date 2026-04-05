@@ -1,6 +1,6 @@
 import os
 import re
-import json
+import json as _json_module
 import logging
 from datetime import datetime
 from typing import Dict, Any
@@ -9,6 +9,9 @@ import db
 import transliterate
 from routes.ai_helpers import get_client, generate_ai_content
 from routes.rate_limit import ai_limiter
+
+# Explicit binding to prevent 'name json is not defined' in async contexts
+json = _json_module
 
 logger = logging.getLogger("sayqallash")
 
