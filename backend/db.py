@@ -156,15 +156,16 @@ class RulesCache:
             conn = sqlite3.connect(DB_PATH)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT wrong_form, correct_form, error_type, lang, frequency FROM sayqallash_rules")
+            cursor.execute("SELECT id, wrong_form, correct_form, error_type, lang, frequency FROM sayqallash_rules")
             rows = cursor.fetchall()
             conn.close()
-            
+
             new_rules = {}
             for r in rows:
                 key = (r['wrong_form'].lower().strip(), r['lang'])
                 if key not in new_rules or r['frequency'] > new_rules[key]['frequency']:
                     new_rules[key] = {
+                        'id': r['id'],
                         'correct': r['correct_form'],
                         'type': r['error_type'],
                         'frequency': r['frequency']
@@ -179,7 +180,7 @@ class RulesCache:
         if time.time() - self.last_load > self.ttl:
             self.load()
         return [
-            {'wrong_form': k[0], 'correct_form': v['correct'], 'error_type': v['type'], 'frequency': v['frequency']}
+            {'id': v.get('id', 0), 'wrong_form': k[0], 'correct_form': v['correct'], 'error_type': v['type'], 'frequency': v['frequency']}
             for k, v in self.rules.items() if k[1] == lang
         ]
 
