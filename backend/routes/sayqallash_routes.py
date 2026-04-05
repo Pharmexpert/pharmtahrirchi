@@ -75,11 +75,19 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
 
     is_uz_cyrillic = False
     if lang == 'uz':
-        is_uz_cyrillic = transliterate.is_cyrillic(text)
+        try:
+            is_uz_cyrillic = transliterate.is_cyrillic(text)
+        except Exception:
+            pass
 
     # TIER 1: Rules DB
-    local_annotations = db.get_rules_for_text(text, lang)
-    rules_count = db.get_rules_count(lang)
+    try:
+        local_annotations = db.get_rules_for_text(text, lang)
+        rules_count = db.get_rules_count(lang)
+    except Exception as e:
+        logger.error(f"Rules DB error: {e}")
+        local_annotations = []
+        rules_count = 0
     covered_ranges = [(a["from_index"], a["to_index"]) for a in local_annotations]
 
     ai_annotations = []
@@ -163,7 +171,12 @@ async def sayqallash_endpoint(request: Request, payload: Dict[str, Any]):
     client_ip = request.client.host if request.client else "unknown"
     if not ai_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Жуда кўп сўров. 1 дақиқа кутинг.")
-    return await _sayqallash_logic(payload)
+    try:
+        return await _sayqallash_logic(payload)
+    except Exception as e:
+        logger.error(f"Sayqallash error: {e}")
+        text = payload.get("text", "")
+        return {"annotations": [], "corrected_text": text, "rules_count": 0, "confidence": 0, "error": str(e)}
 
 
 # Public function for internal use (no rate limiting)
