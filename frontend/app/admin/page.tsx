@@ -14,8 +14,13 @@ import {
   ShieldCheck,
   MoreVertical,
   Filter,
-  CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Activity,
+  FileText,
+  Database,
+  Plus,
+  Save,
+  Download
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '../../components/LoginGuard'
@@ -23,31 +28,47 @@ import { useAuth } from '../../components/LoginGuard'
 export default function AdminPage() {
   const { token, user: currentUser } = useAuth()
   const [users, setUsers] = useState<any[]>([])
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active'>('all')
+  const [rules, setRules] = useState<any[]>([])
+  const [rulesSearch, setRulesSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules'>('all')
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Admin access denied')
-      const data = await res.json()
-      setUsers(data.users || [])
+      const auth = { 'Authorization': `Bearer ${token}` }
+      const [uRes, sRes, rRes] = await Promise.all([
+        fetch(`${API_BASE}/api/admin/users`, { headers: auth }),
+        fetch(`${API_BASE}/api/admin/db-stats`, { headers: auth }),
+        fetch(`${API_BASE}/api/admin/rules`, { headers: auth })
+      ])
+      
+      if (uRes.ok) {
+        const uData = await uRes.json()
+        setUsers(uData.users || [])
+      }
+      if (sRes.ok) {
+        const sData = await sRes.json()
+        setStats(sData)
+      }
+      if (rRes.ok) {
+        const rData = await rRes.json()
+        setRules(rData.rules || [])
+      }
     } catch (err) {
-      setError('Users fetch error')
+      setError('Data fetch error')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    if (token) fetchUsers()
+    if (token) fetchData()
   }, [token])
 
   const handleApprove = async (userId: string, status: 'approved' | 'rejected') => {
@@ -82,6 +103,19 @@ export default function AdminPage() {
     } catch (_e) {}
   }
 
+  const handleDeleteRule = async (id: number) => {
+    if (!confirm('Qoidani o\'chirishni tasdiqlaysizmi?')) return
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/rules/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        setRules(prev => prev.filter(r => r.id !== id))
+      }
+    } catch (_e) {}
+  }
+
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.email?.toLowerCase().includes(search.toLowerCase()) || u.name?.toLowerCase().includes(search.toLowerCase());
     if (activeTab === 'pending') return matchesSearch && u.status === 'pending';
@@ -89,30 +123,51 @@ export default function AdminPage() {
     return matchesSearch;
   })
 
+  const filteredRules = rules.filter(r => 
+    r.wrong_form?.toLowerCase().includes(rulesSearch.toLowerCase()) || 
+    r.correct_form?.toLowerCase().includes(rulesSearch.toLowerCase())
+  )
+
   if (loading) return (
     <div style={{ padding: '100px', textAlign: 'center', color: 'var(--text-muted)' }}>
       <Loader2 className="animate-spin" size={48} style={{ margin: '0 auto 24px', opacity: 0.5 }} />
-      <p style={{ fontSize: '1.1rem', fontWeight: 600 }}>Foydalanuvchilar yuklanmoqda...</p>
+      <p style={{ fontSize: '1.1rem', fontWeight: 600 }}>Tizim ma'lumotlari yuklanmoqda...</p>
     </div>
   )
 
   return (
-    <div className="animate-fadeIn" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="animate-fadeIn" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '100px' }}>
       {/* Header */}
-      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '8px', letterSpacing: '-1px' }}>
+          <h1 style={{ fontSize: '2.4rem', fontWeight: 900, marginBottom: '8px', letterSpacing: '-1.5px', color: '#0F172A' }}>
             Admin Paneli 🛡️
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Foydalanuvchilar va ularning huquqlarini boshqarish.
+          <p style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: 500 }}>
+            Tizim holati va foydalanuvchilarni boshqarish.
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-card)', padding: '12px 20px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-          <Users size={20} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 800, fontSize: '1.1rem' }}>{users.length}</span>
-          <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Foydalanuvchi</span>
-        </div>
+        <Link href="/admin/activity" style={{ 
+          display: 'flex', alignItems: 'center', gap: '10px', 
+          background: 'linear-gradient(135deg, #0F172A, #1E293B)', 
+          color: 'white', padding: '12px 24px', borderRadius: '14px', 
+          fontSize: '0.9rem', fontWeight: 700, textDecoration: 'none',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+        }}>
+          <Activity size={18} />
+          Tizim Faoliyati
+        </Link>
+      </div>
+
+      {/* Stats Grid */}
+      <div style={{ 
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+        gap: '20px', marginBottom: '40px' 
+      }}>
+        <StatCard icon={<Users size={24} />} title="Foydalanuvchilar" value={stats?.projects || users.length} color="#3B82F6" />
+        <StatCard icon={<FileText size={24} />} title="Aktiv Loyihalar" value={stats?.active_projects || 0} color="#6366F1" />
+        <StatCard icon={<CheckCircle2 size={24} />} title="Yakunlangan" value={stats?.finished_projects || 0} color="#10B981" />
+        <StatCard icon={<Database size={24} />} title="Linguistik Qoidalar" value={stats?.sayqallash_rules || 0} color="#F59E0B" />
       </div>
 
       {/* Controls Area */}
@@ -127,15 +182,16 @@ export default function AdminPage() {
            <button onClick={() => setActiveTab('all')} style={tabStyle(activeTab === 'all')}>Hammasi</button>
            <button onClick={() => setActiveTab('pending')} style={tabStyle(activeTab === 'pending')}>Kutayotganlar</button>
            <button onClick={() => setActiveTab('active')} style={tabStyle(activeTab === 'active')}>Tasdiqlanganlar</button>
+           <button onClick={() => setActiveTab('rules')} style={tabStyle(activeTab === 'rules')}>Linguistik Qoidalar</button>
         </div>
 
         <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
           <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input 
             type="text" 
-            placeholder="Qidirish (Ism yoki Email)..." 
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            placeholder={activeTab === 'rules' ? "Qoidalar bo'yicha qidirish..." : "Foydalanuvchi qidirish..."} 
+            value={activeTab === 'rules' ? rulesSearch : search}
+            onChange={e => activeTab === 'rules' ? setRulesSearch(e.target.value) : setSearch(e.target.value)}
             style={{ 
               width: '100%',
               padding: '12px 12px 12px 48px',
@@ -147,20 +203,70 @@ export default function AdminPage() {
               outline: 'none',
               transition: 'border-color 0.2s'
             }}
-            onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
-            onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
           />
         </div>
       </div>
 
-      {/* Main Table */}
-      <div style={{ 
-        background: 'var(--bg-card)', 
-        borderRadius: 'var(--radius-xl)', 
-        border: '1px solid var(--border)', 
-        boxShadow: 'var(--shadow-md)',
-        overflow: 'hidden'
-      }}>
+      {activeTab === 'rules' ? (
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC' }}>
+            <h3 style={{ fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Database size={18} color="#F59E0B" />
+              Linguistik Qoidalar ({filteredRules.length})
+            </h3>
+            <div style={{ display: 'flex', gap: '10px' }}>
+               <a href={`${API_BASE}/api/admin/rules/export`} target="_blank" rel="noreferrer" style={{ 
+                 display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px',
+                 background: '#10B981', color: 'white', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none'
+               }}>
+                 <Download size={14} /> Export (XLSX)
+               </a>
+            </div>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+             <thead style={{ background: '#F1F5F9' }}>
+                <tr>
+                   <th style={{ padding: '15px 24px', textAlign: 'left', fontSize: '0.75rem', color: '#64748B' }}>XATO SHAKL</th>
+                   <th style={{ padding: '15px 24px', textAlign: 'left', fontSize: '0.75rem', color: '#64748B' }}>TO'G'RI SHAKL</th>
+                   <th style={{ padding: '15px 24px', textAlign: 'left', fontSize: '0.75rem', color: '#64748B' }}>TUR</th>
+                   <th style={{ padding: '15px 24px', textAlign: 'right', fontSize: '0.75rem', color: '#64748B' }}>AMALLAR</th>
+                </tr>
+             </thead>
+             <tbody>
+                {filteredRules.slice(0, 50).map(r => (
+                   <tr key={r.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '15px 24px', fontWeight: 700, color: '#DC2626', fontSize: '0.9rem' }}>{r.wrong_form}</td>
+                      <td style={{ padding: '15px 24px', fontWeight: 700, color: '#10B981', fontSize: '0.9rem' }}>{r.correct_form}</td>
+                      <td style={{ padding: '15px 24px' }}>
+                         <span style={{ fontSize: '0.7rem', fontWeight: 700, background: '#EFF6FF', color: '#3B82F6', padding: '2px 8px', borderRadius: '4px' }}>
+                            {r.error_type}
+                         </span>
+                      </td>
+                      <td style={{ padding: '15px 24px', textAlign: 'right' }}>
+                         <button onClick={() => handleDeleteRule(r.id)} style={{ padding: '6px', borderRadius: '6px', background: '#FEF2F2', color: '#EF4444', border: 'none', cursor: 'pointer' }}>
+                            <Trash2 size={14} />
+                         </button>
+                      </td>
+                   </tr>
+                ))}
+             </tbody>
+          </table>
+          {filteredRules.length > 50 && (
+             <div style={{ padding: '20px', textAlign: 'center', fontSize: '0.85rem', color: '#64748B', background: '#F8FAFC' }}>
+                Dastlabki 50 та қоида кўрсатилмоқда. Барчасини кўриш учун қидирувдан фойдаланинг.
+             </div>
+          )}
+        </div>
+      ) : (
+        /* Main Table - Users */
+        <div style={{ 
+          background: 'var(--bg-card)', 
+          borderRadius: 'var(--radius-xl)', 
+          border: '1px solid var(--border)', 
+          boxShadow: 'var(--shadow-md)',
+          overflow: 'hidden'
+        }}>
+
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
@@ -290,9 +396,29 @@ export default function AdminPage() {
         )}
       </div>
 
-      <style jsx global>{`
-        .hover-row:hover { background-color: var(--bg-secondary) !important; }
-      `}</style>
+      )}
+    </div>
+  )
+}
+
+function StatCard({ icon, title, value, color }: { icon: any, title: string, value: any, color: string }) {
+  return (
+    <div style={{ 
+      background: 'white', padding: '24px', borderRadius: '24px', 
+      border: '1px solid #E2E8F0', boxShadow: '0 4px 6px rgba(0,0,0,0.02)',
+      display: 'flex', alignItems: 'center', gap: '20px'
+    }}>
+      <div style={{ 
+        width: '56px', height: '56px', borderRadius: '16px', 
+        background: `${color}15`, color: color,
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{ color: '#64748B', fontSize: '0.9rem', fontWeight: 600, marginBottom: '4px' }}>{title}</div>
+        <div style={{ color: '#0F172A', fontSize: '1.5rem', fontWeight: 800 }}>{value}</div>
+      </div>
     </div>
   )
 }

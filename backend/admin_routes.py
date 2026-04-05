@@ -149,19 +149,32 @@ async def get_db_stats(current_user: dict = Depends(get_admin_user)):
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             stats[table] = cursor.fetchone()[0]
         except: stats[table] = 0
+    
+    # Detailed Project Counts
+    try:
+        cursor.execute("SELECT COUNT(*) FROM projects WHERE status = 'finished'")
+        stats['finished_projects'] = cursor.fetchone()[0]
+        stats['active_projects'] = stats.get('projects', 0) - stats['finished_projects']
+    except:
+        stats['finished_projects'] = 0
+        stats['active_projects'] = stats.get('projects', 0)
+
     # Synonyms count
     try:
         cursor.execute("SELECT COUNT(*) FROM synonyms")
         stats['synonyms'] = cursor.fetchone()[0]
     except: stats['synonyms'] = 0
+    
     import os
     pharma_db_size = os.path.getsize(db.DB_PATH) / (1024 * 1024)
     tahrirchi_db_size = os.path.getsize(db.TAHRIRCHI_DB_PATH) / (1024 * 1024) if os.path.exists(db.TAHRIRCHI_DB_PATH) else 0
     conn.close()
+    
     return {
         "counts": stats,
-        # Flat keys for backward compat with Dashboard
         "projects": stats.get('projects', 0),
+        "finished_projects": stats.get('finished_projects', 0),
+        "active_projects": stats.get('active_projects', 0),
         "sayqallash_rules": stats.get('sayqallash_rules', 0),
         "synonyms": stats.get('synonyms', 0),
         "db_sizes": {
