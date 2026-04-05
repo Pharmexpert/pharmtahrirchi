@@ -338,6 +338,50 @@ async def migrate_import(payload: Dict[str, Any], current_user: dict = Depends(g
         "abbreviations_imported": abbrev_count
     }
 
+@router.post("/bulk-import-synonyms")
+async def bulk_import_synonyms(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Bulk import synonyms from local DB."""
+    synonyms = payload.get("synonyms", [])
+    conn = db.connect_db()
+    cursor = conn.cursor()
+    count = 0
+    for s in synonyms:
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO synonyms (word, synonym, lang, frequency, source, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (s.get("word",""), s.get("synonym",""), s.get("lang","uz"),
+                  s.get("frequency",1), s.get("source","sync"), s.get("created_by","system")))
+            count += cursor.rowcount
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+    return {"success": True, "imported": count, "total_sent": len(synonyms)}
+
+
+@router.post("/bulk-import-paragraphs")
+async def bulk_import_paragraphs(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Bulk import paragraphs dashboard entries."""
+    entries = payload.get("entries", [])
+    conn = db.connect_db()
+    cursor = conn.cursor()
+    count = 0
+    for e in entries:
+        try:
+            cursor.execute("""
+                INSERT INTO paragraphs_dashboard (en_text, ru_text, uz_text, specialist_name, text_id, action_type, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (e.get("en_text",""), e.get("ru_text",""), e.get("uz_text",""),
+                  e.get("specialist_name",""), e.get("text_id",""), e.get("action_type","Synced")))
+            count += cursor.rowcount
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+    return {"success": True, "imported": count, "total_sent": len(entries)}
+
+
 @router.get("/activity")
 async def get_activity_logs(limit: int = 100, current_user: dict = Depends(get_admin_user)):
     """Fetch recent activity logs from the paragraphs dashboard."""
