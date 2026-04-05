@@ -843,22 +843,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         
-        {/* GLOBAL FOOTER FOR DASHBOARD */}
-        <footer style={{ 
-          padding: '40px 20px', 
-          textAlign: 'center', 
-          borderTop: '1px solid rgba(180, 140, 100, 0.1)',
-          background: 'rgba(255, 251, 245, 0.5)',
-          marginTop: 'auto'
-        }}>
-          <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
-            © 2026 Pharma Translation Platform
-          </p>
-          <div style={{ fontSize: '0.75rem', color: '#6B5744', lineHeight: '1.6' }}>
-             <p style={{ fontWeight: 600 }}>Давлат фармакопеясини ишлаб чиқиш тизими</p>
-             <p>Саволлар ва таклифлар билан Акмалходжа Зайнидинов номига, қуйидаги почта манзилига мурожаат қилишингиз мумкин: <a href="mailto:texnopharm@gmail.com" style={{ color: '#C07840', fontWeight: 700 }}>texnopharm@gmail.com</a></p>
-          </div>
-        </footer>
+        {/* Footer is rendered in DashboardLayout */}
       </div>
     </AuthContext.Provider>
   )
