@@ -13,7 +13,7 @@ from routes.rate_limit import upload_limiter
 
 logger = logging.getLogger("upload")
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = os.environ.get("BACKEND_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads")
 
 router = APIRouter(tags=["upload"])

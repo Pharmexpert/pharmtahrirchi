@@ -9,7 +9,7 @@ from processor import export_to_docx
 
 logger = logging.getLogger("projects")
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = os.environ.get("BACKEND_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 
 router = APIRouter(tags=["projects"])

@@ -9,18 +9,19 @@ from dotenv import load_dotenv
 import os
 import logging
 
-import db
-import bert_engine
-import admin_routes
-import linguistic_routes
-from routes import auth_routes, upload_routes, sayqallash_routes, editor_routes, projects_routes
-
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("main")
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ["BACKEND_DIR"] = BACKEND_DIR  # Share with route modules
+
+import db
+import bert_engine
+import admin_routes
+import linguistic_routes
+from routes import auth_routes, upload_routes, sayqallash_routes, editor_routes, projects_routes
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 UPLOADS_DIR = os.path.join(BACKEND_DIR, "uploads")
 os.makedirs(TEMP_DIR, exist_ok=True)
