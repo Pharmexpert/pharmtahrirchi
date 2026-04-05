@@ -13,10 +13,14 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("startup")
 
-# Paths — use environment variables for Railway, fallback for local dev
-DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-TAHRIRCHI_DB_PATH = os.path.join(DATA_DIR, "tahrirchi.db")
-PHARMA_DB_PATH = os.path.join(DATA_DIR, "pharma_editor.db")
+# Paths — use environment variables for Railway volume, fallback for local dev
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
+DATA_DIR = os.getenv("DATA_DIR", "/app/data" if IS_RAILWAY else BACKEND_DIR)
+os.makedirs(DATA_DIR, exist_ok=True)
+
+TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(DATA_DIR, "tahrirchi.db"))
+PHARMA_DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "pharma_editor.db"))
 DICT_COMPRESSED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictionary_data.csv.gz")
 
 def setup_tahrirchi_db():
