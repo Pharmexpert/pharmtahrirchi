@@ -146,13 +146,15 @@ export default function LinguisticCategoryPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/linguistic/all`)
+      const res = await fetch(`${API_BASE}/api/linguistic/all`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       if (res.ok) {
         const data = await res.json()
         setItems(data[category] || [])
       }
     } finally { setLoading(false) }
-  }, [category, API_BASE])
+  }, [category, API_BASE, token])
 
   useEffect(() => { fetchItems() }, [fetchItems])
 

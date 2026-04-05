@@ -17,6 +17,7 @@ export interface RowData {
   display_no: string
   text_id: string
   notes: string
+  specialist_name?: string
 }
 
 interface SynonymPopup {
@@ -43,6 +44,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const [improvingRow, setImprovingRow] = useState<{ idx: number, lang: string } | null>(null)
   const [savingAll, setSavingAll] = useState(false)
   const [isAiAligning, setIsAiAligning] = useState(false)
+  const [isFinishing, setIsFinishing] = useState(false)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [dropIdx, setDropIdx] = useState<number | null>(null)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
@@ -412,6 +414,25 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     } catch (_e) { notify('Сақлашда хатолик') }
   }
 
+  const finishWork = async () => {
+    if (!confirm('Лойиҳани якунлашни тасдиқлайсизми? Бундан кейин лойиҳа архивга ўтказилади.')) return
+    setIsFinishing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(textId)}/finish`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ data, specialist_name: initialData[0]?.specialist_name || '' })
+      })
+      if (res.ok) {
+        notify('Лойиҳа муваффақиятли якунланди! ✓')
+        setTimeout(() => { window.location.href = '/' }, 1500)
+      } else {
+        notify('Якунлашда хатолик юз берди')
+      }
+    } catch (_e) { notify('Сервер билан боғланишда хатолик') }
+    finally { setIsFinishing(false) }
+  }
+
   const searchLinguisticDatabase = async (category: string, query: string) => {
     setIsLinguisticLoading(true)
     try {
@@ -610,7 +631,10 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             {isAiAligning ? 'Moslashtirilmoqda...' : 'AI Moslash'}
           </button>
           <button onClick={handleSaveAll} disabled={savingAll} style={{ padding: '5px 10px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {savingAll ? 'Saqlanmoqda...' : 'Hammasi'}
+            {savingAll ? 'Saqlanmoqda...' : 'Saqlash'}
+          </button>
+          <button onClick={finishWork} disabled={isFinishing} style={{ padding: '5px 10px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(217,119,6,0.3)' }}>
+            {isFinishing ? 'Якунланмоқда...' : 'Ишни якунлаш ✓'}
           </button>
           <button onClick={handleExport} style={{ padding: '5px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Export DOCX

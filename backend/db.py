@@ -456,10 +456,17 @@ def init_db():
         probability_scale REAL DEFAULT 0.0,
         source TEXT DEFAULT 'ai',
         author TEXT,
+        created_by TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(word, synonym, lang)
     )
     ''')
+    try:
+        cursor.execute("ALTER TABLE synonyms ADD COLUMN created_by TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active'")
+    except Exception: pass
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_synonyms_word ON synonyms(word, lang)')
 
     # Migrate: add new columns to linguistic tables

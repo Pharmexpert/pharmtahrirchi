@@ -314,3 +314,23 @@ async def migrate_import(payload: Dict[str, Any], current_user: dict = Depends(g
         "disputed_imported": disputed_count,
         "abbreviations_imported": abbrev_count
     }
+
+@router.get("/activity")
+async def get_activity_logs(limit: int = 100, current_user: dict = Depends(get_admin_user)):
+    """Fetch recent activity logs from the paragraphs dashboard."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cursor = conn.cursor()
+        # Query paragraphs_dashboard which acts as the audit trail
+        cursor.execute("""
+            SELECT * FROM paragraphs_dashboard 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return {"logs": [dict(r) for r in rows]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -862,6 +862,38 @@ async def get_polishing_summary(project_id: str, current_user: Dict = Depends(ge
         return {"status": "none"}
     return {"status": "success", "summary": summary}
 
+@app.post("/api/projects/{project_id}/finish")
+async def finish_project(project_id: str, payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Mark project as finished and save final state."""
+    try:
+        data = payload.get("data", [])
+        specialist = payload.get("specialist_name", current_user.get("name", "Aniqlanmagan"))
+        
+        # 1. Save all data one last time
+        if data:
+            db.save_alignments(project_id, data, user_id=current_user["id"])
+            
+        # 2. Update status to 'finished'
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projects SET status = 'finished', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (project_id,))
+        conn.commit()
+        conn.close()
+        
+        # 3. Final Audit Log
+        db.record_dashboard_entry(
+            en="[PROJECT FINISHED]",
+            ru="Проект завершен",
+            uz="Лойиҳа якунланди",
+            specialist=specialist,
+            text_id=project_id,
+            action_type="Project Finished"
+        )
+        
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/projects/{project_id}/preview")
 async def preview_project(project_id: str, current_user: Dict = Depends(get_current_user)):
     """Simple preview of project content for the directory."""
