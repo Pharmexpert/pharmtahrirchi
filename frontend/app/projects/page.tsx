@@ -109,7 +109,7 @@ export default function ProjectsPage() {
                     borderRadius: '6px', fontWeight: 700
                   }}>{p.text_id || p.id || '—'}</span>
                 </td>
-                <td style={{ padding: '16px 20px', fontWeight: 600 }}>{p.specialist_name || p.specialist || '—'}</td>
+                <td style={{ padding: '16px 20px', fontWeight: 600 }}>{p.specialist_name || p.user_full_name || '—'}</td>
                 <td style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                   {p.updated_at ? new Date(p.updated_at).toLocaleDateString('uz-UZ') : '—'}
                 </td>

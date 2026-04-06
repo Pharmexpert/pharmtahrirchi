@@ -273,6 +273,7 @@ async def sayqallash_batch_rows(payload: Dict[str, Any]):
 async def learn_batch(payload: Dict[str, Any]):
     corrections = payload.get("corrections", [])
     lang = payload.get("lang", "uz")
+    modified_by = payload.get("modified_by", "")
     count = 0
     for c in corrections:
         old = c.get("old_value", "").strip()
@@ -282,6 +283,16 @@ async def learn_batch(payload: Dict[str, Any]):
             if "[Луғатда топилмади]" in new or "[Not Found]" in new:
                 continue
             db.add_sayqallash_rule(old, new, error_type, lang=lang, source="user_feedback")
+            # Track who modified
+            if modified_by:
+                try:
+                    conn = db.connect_db()
+                    conn.cursor().execute(
+                        "UPDATE sayqallash_rules SET modified_by = ? WHERE wrong_form = ? AND correct_form = ?",
+                        (modified_by, old, new))
+                    conn.commit()
+                    conn.close()
+                except: pass
             count += 1
 
     try:

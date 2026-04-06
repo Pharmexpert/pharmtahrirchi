@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function TableEditor({ initialData, filename, textId = '' }: Props) {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const authHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
 
@@ -370,7 +370,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         try {
           await fetch(`${API_BASE}/api/sayqallash/learn-batch`, {
             method: 'POST', headers: authHeaders,
-            body: JSON.stringify({ corrections: [{ old_value: row.uz_v1, new_value: row.uz_proposed }], lang: 'uz' })
+            body: JSON.stringify({ corrections: [{ old_value: row.uz_v1, new_value: row.uz_proposed }], lang: 'uz', modified_by: user?.name || '' })
           })
         } catch (_e) {}
       }

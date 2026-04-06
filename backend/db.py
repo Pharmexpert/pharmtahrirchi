@@ -1555,7 +1555,12 @@ def list_uploaded_files() -> List[Dict[str, Any]]:
     conn = connect_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, specialist_name, original_filename, file_path, created_at, updated_at FROM projects WHERE file_path IS NOT NULL")
+    cursor.execute("""
+        SELECT p.id, p.name, p.specialist_name, p.original_filename, p.file_path, p.created_at, p.updated_at,
+               u.name as user_full_name
+        FROM projects p LEFT JOIN users u ON p.user_id = u.id
+        WHERE p.file_path IS NOT NULL
+    """)
     projects = {dict(r)["file_path"]: dict(r) for r in cursor.fetchall()}
     conn.close()
     
@@ -1564,7 +1569,7 @@ def list_uploaded_files() -> List[Dict[str, Any]]:
         if proj:
             f["project_id"] = proj["id"]
             f["project_name"] = proj["name"]
-            f["specialist_name"] = proj["specialist_name"]
+            f["specialist_name"] = proj["specialist_name"] or proj.get("user_full_name", "")
             f["original_filename"] = proj.get("original_filename", f["filename"])
         else:
             f["original_filename"] = f["filename"]
