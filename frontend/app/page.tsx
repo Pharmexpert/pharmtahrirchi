@@ -52,6 +52,26 @@ export default function Home() {
     }
   }, [urlTextId, token, data])
 
+  // AUTO-OPEN from Files page (sessionStorage)
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('editor_data')
+      if (stored && !data) {
+        const result = JSON.parse(stored)
+        sessionStorage.removeItem('editor_data')
+        const rows = (result.data || []).map((row: any) => ({
+          ...row,
+          text_id: result.text_id || '',
+          specialist_name: user?.name || ''
+        }))
+        setData(rows)
+        setTextId(result.text_id || '')
+        setFilename(result.filename || '')
+        if (user?.name) setSpecialistName(user.name)
+      }
+    } catch {}
+  }, [data, user])
+
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadPhase, setUploadPhase] = useState('')
 
