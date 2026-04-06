@@ -692,6 +692,11 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
           <button onClick={handleExport} style={{ padding: '5px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Export DOCX
           </button>
+          {textId && (
+            <button onClick={() => window.open(`${API_BASE}/api/projects/${textId}/export-pdf`, '_blank')} style={{ padding: '5px 10px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Export PDF
+            </button>
+          )}
         </div>
       </header>
 
