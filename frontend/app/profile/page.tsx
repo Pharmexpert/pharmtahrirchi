@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { User, Mail, Lock, Save, CheckCircle2, AlertCircle, Eye, EyeOff, Shield } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 export default function ProfilePage() {
   const { token, user } = useAuth()
@@ -28,18 +29,9 @@ export default function ProfilePage() {
     if (!name.trim()) return
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/api/profile/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, email })
-      })
-      if (res.ok) {
-        showToast('Профиль янгиланди ✓')
-      } else {
-        const d = await res.json()
-        showToast(d.detail || 'Хатолик', 'error')
-      }
-    } catch { showToast('Хатолик', 'error') }
+      await api.profile.update({ name, email })
+      showToast('Профиль янгиланди ✓')
+    } catch (e: any) { showToast(e?.detail || 'Хатолик', 'error') }
     finally { setSaving(false) }
   }
 
@@ -54,19 +46,10 @@ export default function ProfilePage() {
     }
     setSavingPw(true)
     try {
-      const res = await fetch(`${API_BASE}/api/profile/password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
-      })
-      if (res.ok) {
-        showToast('Парол янгиланди ✓')
-        setOldPassword(''); setNewPassword(''); setConfirmPassword('')
-      } else {
-        const d = await res.json()
-        showToast(d.detail || 'Хатолик', 'error')
-      }
-    } catch { showToast('Хатолик', 'error') }
+      await api.profile.changePassword(oldPassword, newPassword)
+      showToast('Парол янгиланди ✓')
+      setOldPassword(''); setNewPassword(''); setConfirmPassword('')
+    } catch (e: any) { showToast(e?.detail || 'Хатолик', 'error') }
     finally { setSavingPw(false) }
   }
 

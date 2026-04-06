@@ -290,6 +290,7 @@ export const admin = {
     return get<{ rules: import('../types/api').SayqallashRule[] }>(`/api/admin/rules${qs}`)
   },
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
+  updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),
 }
 

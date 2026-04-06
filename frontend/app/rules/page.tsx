@@ -6,6 +6,7 @@ import {
   Languages, CheckCircle2, AlertCircle, Loader2, X
 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 interface Rule {
   id: number
@@ -39,11 +40,8 @@ export default function RulesPage() {
   const fetchRules = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules?lang=${lang}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await res.json()
-      setRules(data.rules || [])
+      const data = await api.admin.rules(lang)
+      setRules((data as any).rules || [])
     } catch (err) {
       console.error('Failed to fetch rules:', err)
     } finally {
@@ -59,33 +57,24 @@ export default function RulesPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Bu qoidani o'chirishni tasdiqlaysizmi?")) return
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-      if (res.ok) {
-        setRules(rules.filter(r => r.id !== id))
-        showMessage('Qoida muvaffaqiyatli o\'chirildi')
-      }
+      await api.admin.deleteRule(id)
+      setRules(rules.filter(r => r.id !== id))
+      showMessage('Qoida muvaffaqiyatli o\'chirildi')
     } catch (_e) { showMessage("O'chirishda xatolik", 'error') }
   }
 
   const handleSave = async () => {
     if (!editingRule?.wrong_form || !editingRule?.correct_form) return
     const isNew = !editingRule.id
-    const url = isNew ? `${API_BASE}/api/admin/rules` : `${API_BASE}/api/admin/rules/${editingRule.id}`
-    const method = isNew ? 'POST' : 'PUT'
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...editingRule, lang })
-      })
-      if (res.ok) {
-        fetchRules()
-        setEditingRule(null)
-        showMessage(isNew ? 'Yangi qoida qo\'shildi' : 'Qoida yangilandi')
+      if (isNew) {
+        await api.admin.addRule({ ...editingRule, lang })
+      } else {
+        await api.admin.updateRule(editingRule.id!, { ...editingRule, lang })
       }
+      fetchRules()
+      setEditingRule(null)
+      showMessage(isNew ? 'Yangi qoida qo\'shildi' : 'Qoida yangilandi')
     } catch (_e) { showMessage('Saqlashda xatolik', 'error') }
   }
 
