@@ -667,7 +667,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '30px', borderRadius: 20, width: '400px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
             <h3 style={{ margin: '0 0 15px 0', fontSize: '1.1rem', color: '#1e293b' }}>
-              {isBatchPolishing ? 'Ҳужжат сайқалланмоқда...' : 'AI Таҳлил қилинмоқда...'}
+              {isBatchPolishing ? 'Ҳужжат сайқалланмоқда...' : 'Мантиқий таҳлил олиб борилмоқда...'}
             </h3>
             <div style={{ height: '10px', background: '#e2e8f0', borderRadius: 10, overflow: 'hidden', marginBottom: '10px', position: 'relative' }}>
               <div style={{ height: '100%', width: `${linguisticProgress}%`, background: 'linear-gradient(90deg, #059669, #10b981)', transition: 'width 0.3s ease' }} />
