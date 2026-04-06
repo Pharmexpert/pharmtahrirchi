@@ -99,10 +99,14 @@ export default function RulesPage() {
   const pageRules = filteredRules.slice(page * perPage, (page + 1) * perPage)
 
   const errorTypeColors: Record<string, { bg: string; color: string }> = {
-    'S/Spelling': { bg: 'var(--warning-bg)', color: 'var(--warning)' },
-    'S/Context': { bg: 'var(--info-bg)', color: 'var(--info)' },
-    'G/Grammar': { bg: 'var(--danger-bg)', color: 'var(--danger)' },
-    'Terminology': { bg: 'var(--success-bg)', color: 'var(--success)' },
+    'S/Spelling': { bg: '#FEF3C7', color: '#D97706' },
+    'S/Context': { bg: '#DBEAFE', color: '#2563EB' },
+    'G/Grammar': { bg: '#FEE2E2', color: '#DC2626' },
+    'Terminology': { bg: '#DCFCE7', color: '#16A34A' },
+    'REP/Hunspell': { bg: '#FEF9C3', color: '#CA8A04' },
+    'H/Spelling': { bg: '#F3E8FF', color: '#9333EA' },
+    'F/Correction': { bg: '#FFE4E6', color: '#E11D48' },
+    'G/SPLIT': { bg: '#E0F2FE', color: '#0284C7' },
   }
 
   return (
