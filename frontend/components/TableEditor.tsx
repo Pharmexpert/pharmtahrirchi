@@ -222,18 +222,43 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     const px = Math.min(e.clientX, window.innerWidth - 310)
     const py = Math.min(e.clientY + 22, window.innerHeight - 240)
     setPopup({ visible: true, x: px, y: py, word: sel, lang: lang === 'en' ? 'en' : lang, rowIdx, synonyms: [], loading: true })
+
     try {
-      const res = await fetch(`${API_BASE}/api/linguistic/synonyms`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({
-          word: sel, lang,
-          context_en: data[rowIdx].en,
-          source_lang: (data[rowIdx] as any).source_lang || 'English'
-        })
+      // 1-босқич: Синонимлар базасидан қидириш
+      const dbRes = await fetch(`${API_BASE}/api/synonyms?word=${encodeURIComponent(sel)}&lang=${lang}`, {
+        headers: { Authorization: `Bearer ${token}` }
       })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      setPopup(p => ({ ...p, synonyms: r.synonyms || [], loading: false }))
+      let dbSynonyms: any[] = []
+      if (dbRes.ok) {
+        const dbData = await dbRes.json()
+        dbSynonyms = (dbData.synonyms || [])
+          .filter((s: any) => s.word.toLowerCase() === sel.toLowerCase())
+          .sort((a: any, b: any) => (b.frequency || 0) - (a.frequency || 0))
+          .map((s: any) => ({ word: s.synonym, frequency: s.frequency || 0, probability: Math.min(1, (s.frequency || 0) / 10) }))
+      }
+
+      // 2-босқич: 5 тадан кам бўлса — AI ишга тушади
+      if (dbSynonyms.length < 5) {
+        setPopup(p => ({ ...p, synonyms: dbSynonyms, loading: dbSynonyms.length < 5 }))
+        try {
+          const aiRes = await fetch(`${API_BASE}/api/linguistic/synonyms`, {
+            method: 'POST', headers: authHeaders,
+            body: JSON.stringify({ word: sel, lang, context_en: data[rowIdx].en, source_lang: 'English' })
+          })
+          if (aiRes.ok) {
+            const aiData = await aiRes.json()
+            const aiSyns = (aiData.synonyms || []).map((s: any) => typeof s === 'string' ? { word: s, frequency: 0, probability: 0.5 } : s)
+            // Мавжуд синонимлар билан бирлаштириш
+            const existing = new Set(dbSynonyms.map((s: any) => (s.word || '').toLowerCase()))
+            const merged = [...dbSynonyms, ...aiSyns.filter((s: any) => !existing.has((s.word || '').toLowerCase()))]
+            setPopup(p => ({ ...p, synonyms: merged, loading: false }))
+          } else {
+            setPopup(p => ({ ...p, loading: false }))
+          }
+        } catch { setPopup(p => ({ ...p, loading: false })) }
+      } else {
+        setPopup(p => ({ ...p, synonyms: dbSynonyms, loading: false }))
+      }
     } catch (_e) { setPopup(p => ({ ...p, loading: false, synonyms: [] })) }
   }
 
@@ -265,13 +290,21 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
 
   const applyVariant = (v: string) => {
     const { rowIdx, word, lang } = popup
-    // Track frequency
+    // 1. Частотани ошириш (мавжуд синоним учун)
     try {
       fetch(`${API_BASE}/api/synonyms/select`, {
         method: 'POST', headers: authHeaders,
         body: JSON.stringify({ word, synonym: v, lang })
       })
     } catch {}
+    // 2. Базага янги синоним сақлаш (AI синонимлар учун)
+    try {
+      fetch(`${API_BASE}/api/synonyms/save`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ word, synonym: v, lang })
+      })
+    } catch {}
+    // 3. Матнда алмаштириш
     const field = lang === 'ru' ? 'ru_proposed' : lang === 'en' ? 'en' : 'uz_proposed'
     const current = (data[rowIdx] as any)[field] || ''
     update(rowIdx, field as keyof RowData, current.replace(word, v))
