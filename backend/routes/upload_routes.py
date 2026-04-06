@@ -141,7 +141,7 @@ async def upload_file(request: Request, background_tasks: BackgroundTasks, file:
 async def list_files(current_user: Dict = Depends(get_current_user)):
     try:
         is_admin = current_user.get("role") == "admin"
-        files = db.list_uploaded_files(current_user_id=current_user.get("id"), is_admin=is_admin)
+        files = db.list_uploaded_files(current_user_id=current_user.get("id"), is_admin=is_admin, current_user_name=current_user.get("name", ""))
         return {"files": files, "is_admin": is_admin}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -172,26 +172,36 @@ async def preview_file(filename: str, current_user: Dict = Depends(get_current_u
 
 @router.post("/api/files/upload")
 async def upload_file_to_directory(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
-    user_dir = _user_upload_dir(current_user)
-    safe_name = f"{int(datetime.utcnow().timestamp())}_{file.filename}"
-    file_path = os.path.join(user_dir, safe_name)
-    with open(file_path, "wb") as buffer:
-        file.file.seek(0)
-        shutil.copyfileobj(file.file, buffer)
-    # Register ownership in projects table so ownership checks work
     try:
-        text_id = f"file_{int(datetime.utcnow().timestamp())}_{current_user.get('id','u')}"
-        db.update_project_metadata(text_id, current_user.get("name", ""), user_id=current_user.get("id"))
-        conn = db.connect_db()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE projects SET original_filename = ?, file_path = ? WHERE id = ?",
-                       (file.filename, file_path, text_id))
-        conn.commit()
-        conn.close()
+        user_dir = _user_upload_dir(current_user)
+        original_name = file.filename or "upload.bin"
+        # Sanitize filename for safe storage
+        safe_basename = re.sub(r"[^A-Za-z0-9._\-]+", "_", original_name).strip("_") or "upload.bin"
+        ts = int(datetime.utcnow().timestamp())
+        safe_name = f"{ts}_{safe_basename}"
+        file_path = os.path.join(user_dir, safe_name)
+        with open(file_path, "wb") as buffer:
+            file.file.seek(0)
+            shutil.copyfileobj(file.file, buffer)
+        # Register ownership in projects table so ownership checks work
+        try:
+            text_id = f"file_{ts}_{current_user.get('id','u')}"
+            db.update_project_metadata(text_id, current_user.get("name", ""), user_id=current_user.get("id"))
+            conn = db.connect_db()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE projects SET original_filename = ?, file_path = ? WHERE id = ?",
+                           (original_name, file_path, text_id))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Could not register upload ownership: {e}")
+        rel = os.path.relpath(file_path, UPLOADS_DIR).replace("\\", "/")
+        return {"success": True, "filename": rel, "original": original_name}
     except Exception as e:
-        logger.warning(f"Could not register upload ownership: {e}")
-    rel = os.path.relpath(file_path, UPLOADS_DIR).replace("\\", "/")
-    return {"success": True, "filename": rel, "original": file.filename}
+        import traceback
+        traceback.print_exc()
+        logger.error(f"upload_file_to_directory failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Юклашда хатолик: {str(e)}")
 
 
 @router.post("/api/folders/create")

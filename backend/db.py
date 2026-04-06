@@ -1528,14 +1528,23 @@ def get_dashboard_entries():
     return [dict(r) for r in rows]
 
 
-def list_uploaded_files(current_user_id: str = None, is_admin: bool = False) -> List[Dict[str, Any]]:
+def list_uploaded_files(current_user_id: str = None, is_admin: bool = False, current_user_name: str = "") -> List[Dict[str, Any]]:
     """List uploaded files. If is_admin, return all with owner info.
-    Otherwise only return files owned by current_user_id."""
-    import os
+    Otherwise only return files in the user's own folder uploads/users/<safe_name>/..."""
+    import os, re as _re
     _IS_RAILWAY = os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data")
     _DATA_DIR = os.getenv("DATA_DIR", "/app/data" if _IS_RAILWAY else os.path.dirname(os.path.abspath(__file__)))
     UPLOADS_DIR = os.path.join(_DATA_DIR, "uploads")
     os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+    # Compute user's safe folder name (must match _safe_user_folder in upload_routes)
+    def _safe_folder_name_local(name: str, fallback: str) -> str:
+        if not name:
+            return f"user_{fallback}" if fallback else "user_unknown"
+        cleaned = _re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_")
+        return cleaned or (f"user_{fallback}" if fallback else "user_unknown")
+
+    user_safe = _safe_folder_name_local(current_user_name, current_user_id or "unknown") if current_user_id else None
 
     files = []
     for root, dirs, fnames in os.walk(UPLOADS_DIR):
@@ -1623,9 +1632,11 @@ def list_uploaded_files(current_user_id: str = None, is_admin: bool = False) -> 
         else:
             f["folder_path"] = "users/legacy"
 
-        # Filter for non-admin
+        # Filter for non-admin: keep files only inside their own user folder OR matched by owner_id
         if not is_admin:
-            if owner_id is None or owner_id != current_user_id:
+            in_user_folder = bool(user_safe and inferred_user_folder == user_safe)
+            owns_via_db = owner_id and owner_id == current_user_id
+            if not (in_user_folder or owns_via_db):
                 continue
         enriched.append(f)
 

@@ -1,7 +1,7 @@
 'use client'
 
-import React from 'react'
-import { Save, Sparkles, Loader2, Plus, Trash2, Search } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Save, Sparkles, Loader2, Plus, Trash2, Search, Users } from 'lucide-react'
 import type { RowData } from '../types/api'
 import SynonymPopup from './editor/SynonymPopup'
 import TermHighlighter from './editor/TermHighlighter'
@@ -9,6 +9,8 @@ import RichContent from './editor/RichContent'
 import LangCell from './editor/LangCell'
 import TableToolbar from './editor/TableToolbar'
 import { useTableEditor } from './editor/useTableEditor'
+import { useAuth } from './LoginGuard'
+import useWebSocket from '../hooks/useWebSocket'
 
 export type { RowData }
 
@@ -39,8 +41,49 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
     onMagicSplit, startResizing,
   } = editor
 
+  // Real-time collaboration toggle (available to all users)
+  const { user } = useAuth()
+  const [collabOn, setCollabOn] = useState(false)
+  const ws = useWebSocket(
+    collabOn && textId ? textId : null,
+    user?.id || 'anonymous',
+    user?.name || 'Гость'
+  )
+
+  // Apply remote row updates from other users
+  useEffect(() => {
+    if (!collabOn) return
+    const last = ws.remoteUpdates[ws.remoteUpdates.length - 1] as any
+    if (last && last.type === 'row_update' && typeof last.row_idx === 'number' && last.field && typeof last.value === 'string') {
+      setData(prev => prev.map((r, i) => i === last.row_idx ? { ...r, [last.field]: last.value } : r))
+    }
+  }, [ws.remoteUpdates, collabOn, setData])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: "'Inter','Segoe UI',sans-serif", background: '#f1f5f9' }}>
+
+      {/* Collab toolbar */}
+      {textId && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 16px', background: collabOn ? '#ecfdf5' : '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '0.78rem' }}>
+          <button
+            onClick={() => setCollabOn(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 6, border: '1.5px solid', borderColor: collabOn ? '#10b981' : '#cbd5e1', background: collabOn ? '#10b981' : 'white', color: collabOn ? 'white' : '#475569', fontWeight: 700, cursor: 'pointer' }}
+          >
+            <Users size={13} />
+            {collabOn ? 'Бирга ишлаш ёқилган' : 'Бирга ишлаш режими'}
+          </button>
+          {collabOn && (
+            <span style={{ color: ws.isConnected ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+              {ws.isConnected ? `● Уланди (${ws.connectedUsers.length} фойдаланувчи)` : '○ Уланмоқда...'}
+            </span>
+          )}
+          {collabOn && ws.connectedUsers.length > 0 && (
+            <span style={{ color: '#475569' }}>
+              {ws.connectedUsers.map(u => u.user_name).join(', ')}
+            </span>
+          )}
+        </div>
+      )}
 
       <TableToolbar
         textId={textId}
