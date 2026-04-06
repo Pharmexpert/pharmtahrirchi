@@ -62,7 +62,7 @@ export default function AffixFlagsPage() {
             <Layers size={24} color="white" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Affix Flags — Hunspell</h1>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Грамматика қоидалари</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
               Suffix/Prefix қоидалари • <strong>{total}</strong> гуруҳ
             </p>

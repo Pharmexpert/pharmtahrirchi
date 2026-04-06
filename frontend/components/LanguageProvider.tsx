@@ -40,7 +40,7 @@ const translations: Record<string, Record<LangCode, string>> = {
   'nav.abbreviations': { en: 'Abbreviations', ru: 'Сокращения', 'uz-lat': 'Qisqartmalar', 'uz-cyr': 'Қисқартмалар' },
   'nav.synonyms': { en: 'Synonyms', ru: 'Синонимы', 'uz-lat': 'Sinonimlar', 'uz-cyr': 'Синонимлар' },
   'nav.dictionary': { en: 'Dictionary', ru: 'Словарь', 'uz-lat': 'Lug\'at', 'uz-cyr': 'Луғат' },
-  'nav.affixFlags': { en: 'Affix Flags', ru: 'Аффикс флаги', 'uz-lat': 'Affix Flags', 'uz-cyr': 'Affix Flags' },
+  'nav.affixFlags': { en: 'Native Language Rules', ru: 'Правила родного языка', 'uz-lat': 'Ona tili qoidalari', 'uz-cyr': 'Она тили қоидалари' },
   'nav.admin': { en: 'Admin', ru: 'Админ', 'uz-lat': 'Admin', 'uz-cyr': 'Админ' },
 
   // Умумий
@@ -124,7 +124,7 @@ const translations: Record<string, Record<LangCode, string>> = {
   'dict.aiTranslate': { en: '🤖 AI Translate', ru: '🤖 AI Перевод', 'uz-lat': '🤖 AI Tarjima', 'uz-cyr': '🤖 AI Таржима' },
 
   // Affix Flags
-  'affix.title': { en: 'Affix Flags — Hunspell', ru: 'Аффикс флаги — Hunspell', 'uz-lat': 'Affix Flags — Hunspell', 'uz-cyr': 'Affix Flags — Hunspell' },
+  'affix.title': { en: 'Grammar Rules', ru: 'Правила грамматики', 'uz-lat': 'Grammatika qoidalari', 'uz-cyr': 'Грамматика қоидалари' },
   'affix.subtitle': { en: 'Suffix/Prefix rules', ru: 'Правила суффиксов и префиксов', 'uz-lat': 'Suffix/Prefix qoidalari', 'uz-cyr': 'Suffix/Prefix қоидалари' },
   'affix.flag': { en: 'Flag', ru: 'Флаг', 'uz-lat': 'Flag', 'uz-cyr': 'Flag' },
   'affix.count': { en: 'Count', ru: 'Кол-во', 'uz-lat': 'Soni', 'uz-cyr': 'Сони' },
