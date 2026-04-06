@@ -367,16 +367,54 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
 
                   <td style={{ padding: '3px 6px', verticalAlign: 'top', borderRight: '1px solid #e9edf2', fontSize: '0.65rem', color: '#64748b', lineHeight: 1.25, fontWeight: row.type === 'marker' ? 800 : 400, cursor: row.type === 'content' ? 'text' : 'default' }}
                     onClick={row.type === 'content' ? (e) => {
-                      const sel = window.getSelection()?.toString().trim()
-                      const word = sel && sel.length >= 2 ? sel.replace(/[.,;:!?()]/g, '').trim() : ''
-                      if (word && word.split(' ').length <= 5) {
+                      // First try selection (drag-highlighted text)
+                      let word = window.getSelection()?.toString().trim() || ''
+                      // If nothing selected, detect word at click position via caret API
+                      if (!word) {
+                        try {
+                          const range = (document as any).caretRangeFromPoint
+                            ? (document as any).caretRangeFromPoint(e.clientX, e.clientY)
+                            : (document as any).caretPositionFromPoint
+                              ? (() => { const cp = (document as any).caretPositionFromPoint(e.clientX, e.clientY); const r = document.createRange(); r.setStart(cp.offsetNode, cp.offset); r.setEnd(cp.offsetNode, cp.offset); return r })()
+                              : null
+                          if (range) {
+                            const node = range.startContainer
+                            if (node && node.nodeType === 3) {
+                              const text = node.textContent || ''
+                              let i = range.startOffset
+                              let a = i, b = i
+                              while (a > 0 && !/\s/.test(text[a - 1])) a--
+                              while (b < text.length && !/\s/.test(text[b])) b++
+                              word = text.slice(a, b)
+                            }
+                          }
+                        } catch {}
+                      }
+                      word = word.replace(/[.,;:!?()"'`]/g, '').trim()
+                      if (word && word.length >= 2 && word.split(' ').length <= 5) {
                         const px = Math.min(e.clientX, window.innerWidth - 310)
                         const py = Math.min(e.clientY + 22, window.innerHeight - 240)
                         setPopup({ visible: true, x: px, y: py, word, lang: 'en', rowIdx: idx, synonyms: [], loading: true })
-                        fetch(`${API_BASE}/api/linguistic/synonyms`, {
-                          method: 'POST', headers: authHeaders,
-                          body: JSON.stringify({ word, lang: 'en', context_en: row.en, source_lang: 'English' })
-                        }).then(r => r.json()).then(r => setPopup(p => ({ ...p, synonyms: r.synonyms || [], loading: false }))).catch(() => setPopup(p => ({ ...p, loading: false })))
+                        // Fetch DB synonyms first
+                        fetch(`${API_BASE}/api/synonyms?word=${encodeURIComponent(word)}&lang=en`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        }).then(r => r.ok ? r.json() : { synonyms: [] }).then(dbData => {
+                          const dbSyns = (dbData.synonyms || [])
+                            .filter((s: any) => s.word.toLowerCase() === word.toLowerCase())
+                            .map((s: any) => ({ word: s.synonym, frequency: s.frequency || 0, probability: Math.min(1, (s.frequency || 0) / 10) }))
+                          setPopup(p => ({ ...p, synonyms: dbSyns, loading: dbSyns.length < 5 }))
+                          if (dbSyns.length < 5) {
+                            fetch(`${API_BASE}/api/linguistic/synonyms`, {
+                              method: 'POST', headers: authHeaders,
+                              body: JSON.stringify({ word, lang: 'en', context_en: row.en, source_lang: 'English' })
+                            }).then(r => r.ok ? r.json() : { synonyms: [] }).then(aiData => {
+                              const aiSyns = (aiData.synonyms || []).map((s: any) => typeof s === 'string' ? { word: s, frequency: 0, probability: 0.5 } : s)
+                              const existing = new Set(dbSyns.map((s: any) => (s.word || '').toLowerCase()))
+                              const merged = [...dbSyns, ...aiSyns.filter((s: any) => !existing.has((s.word || '').toLowerCase()))]
+                              setPopup(p => ({ ...p, synonyms: merged, loading: false }))
+                            }).catch(() => setPopup(p => ({ ...p, loading: false })))
+                          }
+                        }).catch(() => setPopup(p => ({ ...p, loading: false })))
                       }
                     } : undefined}
                   >
