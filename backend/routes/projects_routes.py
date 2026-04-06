@@ -156,6 +156,17 @@ async def record_dashboard_manual(payload: Dict[str, Any], current_user: Dict = 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/api/dashboard/{entry_id}")
+async def delete_dashboard_entry(entry_id: int, current_user: Dict = Depends(get_current_user)):
+    """Delete a dashboard entry by ID."""
+    conn = db.connect_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM paragraphs_dashboard WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
 @router.get("/api/user/me")
 async def get_my_profile(current_user: Dict = Depends(get_current_user)):
     return current_user

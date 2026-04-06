@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Download, Loader2, CheckCircle2, AlertCircle, Edit2, Save, X, ArrowLeft, Clock, Users, BookText, Filter } from 'lucide-react'
+import { Search, Download, Loader2, CheckCircle2, AlertCircle, Edit2, Save, X, ArrowLeft, Clock, Users, BookText, Filter, Trash2 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
@@ -368,7 +368,21 @@ export default function ParagraphsPage() {
                     {formatDate(entry.created_at)}
                   </td>
 
-                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                    <button onClick={async () => {
+                      if (!confirm('Ушбу ёзувни ўчиришни тасдиқлайсизми?')) return
+                      try {
+                        const res = await fetch(`${API_BASE}/api/dashboard/${entry.id}`, {
+                          method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+                        })
+                        if (res.ok) { showToast('Ўчирилди ✓'); fetchEntries() }
+                      } catch { showToast('Хатолик', 'error') }
+                    }} style={{
+                      padding: '6px', borderRadius: '8px', border: '1px solid #FECACA',
+                      background: '#FEF2F2', color: '#DC2626', cursor: 'pointer'
+                    }}>
+                      <Trash2 size={14} />
+                    </button>
                     <button onClick={() => setEditEntry({ ...entry })} style={{
                       padding: '6px', borderRadius: '8px', border: 'none',
                       background: '#FFF7ED', color: '#D97706', cursor: 'pointer'
