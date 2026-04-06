@@ -5,6 +5,7 @@ import { BarChart3, FileText, Database, Users, TrendingUp, BookOpen, MessageSqua
 import { useAuth } from '../../components/LoginGuard'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import api from '../../services/api'
 
 export default function DashboardPage() {
   const { token, user } = useAuth()
@@ -28,15 +29,15 @@ export default function DashboardPage() {
       try {
         const headers = { Authorization: `Bearer ${token}` }
         const [statsRes, lingRes, projRes, filesRes] = await Promise.allSettled([
-          fetch(`${API_BASE}/api/admin/db-stats`, { headers }),
+          api.admin.dbStats(),
           fetch(`${API_BASE}/api/linguistic/all`, { headers }),
-          fetch(`${API_BASE}/api/projects`, { headers }),
-          fetch(`${API_BASE}/api/files`, { headers }),
+          api.projects.list(),
+          api.files.list(),
         ])
-        if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
-          const d = await statsRes.value.json()
-          setStats(prev => ({ 
-            ...prev, 
+        if (statsRes.status === 'fulfilled') {
+          const d: any = statsRes.value
+          setStats(prev => ({
+            ...prev,
             projects: d.projects || d.counts?.projects || 0,
             rules: d.sayqallash_rules || d.counts?.sayqallash_rules || 0,
             alignments: d.counts?.alignments || 0,
@@ -52,13 +53,13 @@ export default function DashboardPage() {
             abbreviations: (d.abbreviations || []).length,
           }))
         }
-        if (projRes.status === 'fulfilled' && projRes.value.ok) {
-          const d = await projRes.value.json()
+        if (projRes.status === 'fulfilled') {
+          const d: any = projRes.value
           setProjects((d.projects || []).slice(0, 5))
           setStats(prev => ({ ...prev, projects: (d.projects || []).length }))
         }
-        if (filesRes.status === 'fulfilled' && filesRes.value.ok) {
-          const d = await filesRes.value.json()
+        if (filesRes.status === 'fulfilled') {
+          const d: any = filesRes.value
           setStats(prev => ({ ...prev, files: (d.files || []).length }))
         }
       } finally { setLoading(false) }
@@ -79,28 +80,8 @@ export default function DashboardPage() {
     formData.append('file', file)
 
     try {
-      const xhr = new XMLHttpRequest()
-      const result: any = await new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            setUploadProgress(Math.round((event.loaded / event.total) * 90))
-          }
-        })
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setUploadProgress(100)
-            resolve(JSON.parse(xhr.responseText))
-          } else {
-            reject(new Error('Upload error'))
-          }
-        })
-        xhr.addEventListener('error', () => reject(new Error('Network error')))
-        xhr.open('POST', `${API_BASE}/api/upload?mode=auto`)
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-        xhr.send(formData)
-      })
-
-      // Store result for editor page
+      const result = await api.upload.process(file, 'auto', '', (pct) => setUploadProgress(Math.round(pct * 0.9)))
+      setUploadProgress(100)
       if (result.data) {
         sessionStorage.setItem('editor_data', JSON.stringify(result))
         router.push('/')
