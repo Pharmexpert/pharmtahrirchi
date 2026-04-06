@@ -1154,11 +1154,29 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
             transition: 'border .15s, background .15s'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-            <span draggable onDragStart={e => handleBlockDragStart(e, 'v1')} style={dragHandleStyle} title="Ушлаб суринг">⠿</span>
-            <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              V1: Original
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span draggable onDragStart={e => handleBlockDragStart(e, 'v1')} style={dragHandleStyle} title="Ушлаб суринг">⠿</span>
+              <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                V1: Original
+              </span>
+            </div>
+            {lang === 'uz' && !isMarker && v1 && (
+              <div style={{ display: 'flex', gap: 2 }}>
+                <button onClick={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: v1, target: 'cyrillic' }) })
+                    if (res.ok) { const r = await res.json(); onV1Change(r.text) }
+                  } catch {}
+                }} style={{ padding: '1px 5px', borderRadius: 3, border: '1px solid #FB923C', background: '#FFF7ED', color: '#EA580C', fontSize: '0.55rem', fontWeight: 700, cursor: 'pointer' }}>Кирил</button>
+                <button onClick={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: v1, target: 'latin' }) })
+                    if (res.ok) { const r = await res.json(); onV1Change(r.text) }
+                  } catch {}
+                }} style={{ padding: '1px 5px', borderRadius: 3, border: '1px solid #22C55E', background: '#F0FDF4', color: '#16A34A', fontSize: '0.55rem', fontWeight: 700, cursor: 'pointer' }}>Лотин</button>
+              </div>
+            )}
           </div>
           <textarea value={v1 || ''} onChange={e => onV1Change(e.target.value)}
             onClick={e => onWordClick(e as any, rowIdx, lang)}
@@ -1195,12 +1213,32 @@ function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Chang
                 </button>
               )}
               {lang === 'uz' && !isMarker && (
-                <button onClick={runSayqallash} disabled={isSayqallash}
-                  style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: '0.65rem', fontWeight: 700, cursor: isSayqallash ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                  {isSayqallash
-                    ? <><Loader2 size={10} style={{ animation: 'spin .8s linear infinite' }} /> Tekshirilmoqda...</>
-                    : <>✦ Sayqallash</>}
-                </button>
+                <>
+                  <button onClick={runSayqallash} disabled={isSayqallash}
+                    style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: '0.65rem', fontWeight: 700, cursor: isSayqallash ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                    {isSayqallash
+                      ? <><Loader2 size={10} style={{ animation: 'spin .8s linear infinite' }} /> Tekshirilmoqda...</>
+                      : <>✦ Sayqallash</>}
+                  </button>
+                  {(proposed || v1) && (
+                    <>
+                      <button onClick={async () => {
+                        try {
+                          const text = proposed || v1 || ''
+                          const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, target: 'cyrillic' }) })
+                          if (res.ok) { const r = await res.json(); onProposedChange(r.text) }
+                        } catch {}
+                      }} style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #FB923C', background: '#FFF7ED', color: '#EA580C', fontSize: '0.6rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Кирил</button>
+                      <button onClick={async () => {
+                        try {
+                          const text = proposed || v1 || ''
+                          const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, target: 'latin' }) })
+                          if (res.ok) { const r = await res.json(); onProposedChange(r.text) }
+                        } catch {}
+                      }} style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #22C55E', background: '#F0FDF4', color: '#16A34A', fontSize: '0.6rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Лотин</button>
+                    </>
+                  )}
+                </>
               )}
             </div>
           </div>
