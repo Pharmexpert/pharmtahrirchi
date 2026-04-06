@@ -9,6 +9,7 @@ import {
 import { useAuth } from './LoginGuard'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import LanguageSwitcher from './LanguageSwitcher'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAdmin } = useAuth()
@@ -246,6 +247,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Bell size={22} />
               <div style={{ position: 'absolute', top: '0', right: '0', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%', border: '2px solid white' }}></div>
             </button>
+            <LanguageSwitcher />
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--bg-glass-hover)', border: '1px solid var(--border)' }}></div>
           </div>
         </header>
