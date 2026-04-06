@@ -40,11 +40,19 @@ app = FastAPI()
 
 _DEFAULT_ORIGINS = "http://localhost:3000,https://pharmtech.info,https://www.pharmtech.info,https://frontend-dun-nine-30.vercel.app"
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()]
+# Defensive: always include pharmtech.info domains even if env var was set to something else
+for _required in ["https://pharmtech.info", "https://www.pharmtech.info"]:
+    if _required not in ALLOWED_ORIGINS:
+        ALLOWED_ORIGINS.append(_required)
+# Regex fallback: any pharmtech.info / *.pharmtech.info / vercel.app preview deploys
+_ALLOWED_REGEX = r"^https://([a-z0-9-]+\.)*(pharmtech\.info|vercel\.app)$"
 logger.info(f"[CORS] Allowed origins: {ALLOWED_ORIGINS}")
+logger.info(f"[CORS] Allowed regex: {_ALLOWED_REGEX}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_ALLOWED_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
