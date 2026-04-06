@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from typing import List, Dict, Any
 import db
-from auth import get_admin_user
+from auth import get_admin_user, get_current_user, can_edit_db
 import pandas as pd
 import io
 
@@ -59,8 +59,8 @@ async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_a
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/rules")
-async def get_all_rules(lang: str = None, q: str = None, current_user: dict = Depends(get_admin_user)):
-    """Retrieve all rules for administration with filtering."""
+async def get_all_rules(lang: str = None, q: str = None, current_user: dict = Depends(get_current_user)):
+    """Retrieve all rules for administration with filtering (read-only for all users)."""
     rules = db.get_all_rules(lang or 'uz', limit=100000)
     if q:
         q = q.lower()
@@ -68,7 +68,7 @@ async def get_all_rules(lang: str = None, q: str = None, current_user: dict = De
     return {"rules": rules, "total": len(rules)}
 
 @router.post("/rules")
-async def upsert_rule(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+async def upsert_rule(payload: Dict[str, Any], current_user: dict = Depends(can_edit_db)):
     """Add or update a correction rule."""
     rule_id = payload.get("id")
     modifier = payload.get("modified_by", current_user.get("name", ""))
@@ -135,22 +135,24 @@ async def batch_seed_rules(payload: List[Dict[str, Any]], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/rules/{rule_id}")
-async def delete_rule(rule_id: int, current_user: dict = Depends(get_admin_user)):
+async def delete_rule(rule_id: int, current_user: dict = Depends(can_edit_db)):
     """Delete a correction rule."""
     db.delete_sayqallash_rule(rule_id)
     return {"status": "deleted"}
 
 @router.get("/db-stats")
-async def get_db_stats(current_user: dict = Depends(get_admin_user)):
+async def get_db_stats(current_user: dict = Depends(get_current_user)):
     """Detailed database statistics for admin reporting."""
     conn = db.connect_db()
     cursor = conn.cursor()
     stats = {}
-    for table in ['projects', 'alignments', 'sayqallash_rules', 'users']:
+    for table in ['projects', 'alignments', 'sayqallash_rules', 'users', 'paragraphs_dashboard']:
         try:
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             stats[table] = cursor.fetchone()[0]
         except: stats[table] = 0
+    # "paragraphs" stat = paragraphs_dashboard count (matches /paragraphs page)
+    stats['paragraphs'] = stats.get('paragraphs_dashboard', 0)
     
     # Detailed Project Counts
     try:
@@ -186,6 +188,7 @@ async def get_db_stats(current_user: dict = Depends(get_admin_user)):
         "active_projects": stats.get('active_projects', 0),
         "sayqallash_rules": stats.get('sayqallash_rules', 0),
         "synonyms": stats.get('synonyms', 0),
+        "paragraphs": stats.get('paragraphs', 0),
         "db_sizes": {
             "pharma_editor.db": f"{pharma_db_size:.2f} MB",
             "tahrirchi.db": f"{tahrirchi_db_size:.2f} MB"
@@ -232,6 +235,17 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     role = payload.get("role")
     db.update_user_role(user_id, role)
     return {"success": True}
+
+@router.post("/can-edit-db")
+async def toggle_can_edit_db(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Grant or revoke DB edit permission for a user (Admin only)."""
+    user_id = payload.get("userId")
+    can_edit = 1 if payload.get("can_edit") else 0
+    conn = db.connect_db()
+    conn.cursor().execute("UPDATE users SET can_edit_db = ? WHERE id = ?", (can_edit, user_id))
+    conn.commit()
+    conn.close()
+    return {"success": True, "can_edit_db": can_edit}
 
 @router.post("/users/reject")
 async def reject_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):

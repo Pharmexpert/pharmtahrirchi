@@ -55,3 +55,12 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
+
+
+async def can_edit_db(current_user: dict = Depends(get_current_user)):
+    """Admin OR users with can_edit_db=1 flag granted by admin."""
+    if current_user.get("role") == "admin":
+        return current_user
+    if current_user.get("can_edit_db") == 1 or current_user.get("can_edit_db") is True:
+        return current_user
+    raise HTTPException(status_code=403, detail="DB edit permission required")

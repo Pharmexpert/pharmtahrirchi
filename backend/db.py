@@ -329,6 +329,9 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN department TEXT")
     except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN can_edit_db INTEGER DEFAULT 0")
+    except Exception: pass
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:

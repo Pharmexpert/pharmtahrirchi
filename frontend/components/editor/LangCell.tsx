@@ -160,20 +160,20 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
                 V1: Original
               </span>
             </div>
-            {lang === 'uz' && !isMarker && v1 && (
+            {lang === 'uz' && !isMarker && (
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={async () => {
+                <button disabled={!v1} onClick={async () => {
                   try {
                     const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: v1, target: 'cyrillic' }) })
                     if (res.ok) { const r = await res.json(); onV1Change(r.text) }
                   } catch {}
-                }} style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #FB923C', background: '#FFF7ED', color: '#EA580C', fontSize: '0.6rem', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.02em' }}>Кирил</button>
-                <button onClick={async () => {
+                }} style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #FB923C', background: '#FFF7ED', color: '#EA580C', fontSize: '0.6rem', fontWeight: 800, cursor: v1 ? 'pointer' : 'not-allowed', opacity: v1 ? 1 : 0.5, letterSpacing: '0.02em' }}>Кирил</button>
+                <button disabled={!v1} onClick={async () => {
                   try {
                     const res = await fetch(`${API_BASE}/api/transliterate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: v1, target: 'latin' }) })
                     if (res.ok) { const r = await res.json(); onV1Change(r.text) }
                   } catch {}
-                }} style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #22C55E', background: '#F0FDF4', color: '#16A34A', fontSize: '0.6rem', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.02em' }}>Лотин</button>
+                }} style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #22C55E', background: '#F0FDF4', color: '#16A34A', fontSize: '0.6rem', fontWeight: 800, cursor: v1 ? 'pointer' : 'not-allowed', opacity: v1 ? 1 : 0.5, letterSpacing: '0.02em' }}>Лотин</button>
               </div>
             )}
           </div>

@@ -81,6 +81,14 @@ export default function AdminPage() {
     } catch (_e) {}
   }
 
+  const handleToggleEditDb = async (userId: string, current: number) => {
+    try {
+      const can_edit = !current
+      await api.admin.canEditDb(userId, can_edit)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, can_edit_db: can_edit ? 1 : 0 } : u))
+    } catch (_e) {}
+  }
+
   const [newRule, setNewRule] = useState({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
 
   const handleDeleteRule = async (id: number) => {
@@ -367,6 +375,30 @@ export default function AdminPage() {
                         <option value="rahbar">Department Head</option>
                         <option value="admin">System Admin</option>
                       </select>
+                      <button
+                        onClick={() => handleToggleEditDb(u.id, u.can_edit_db || 0)}
+                        disabled={u.role === 'admin'}
+                        title={u.can_edit_db ? 'DB ўзгартириш рухсатини олиб ташлаш' : 'DB ўзгартириш рухсатини бериш'}
+                        style={{
+                          marginTop: 6,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          border: '1px solid',
+                          borderColor: u.can_edit_db ? '#16A34A' : 'var(--border)',
+                          background: u.can_edit_db ? '#F0FDF4' : 'white',
+                          color: u.can_edit_db ? '#16A34A' : 'var(--text-muted)',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          cursor: u.role === 'admin' ? 'not-allowed' : 'pointer',
+                          width: '160px',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {u.can_edit_db ? '✓ DB edit' : '✕ DB edit'}
+                      </button>
                     </div>
                   </td>
                   <td style={{ padding: '20px 24px', textAlign: 'right' }}>

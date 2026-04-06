@@ -336,6 +336,8 @@ export const admin = {
     post<{ success: boolean }>('/api/admin/approve', { user_id, status }),
   role: (user_id: string, role: string) =>
     post<{ success: boolean }>('/api/admin/role', { user_id, role }),
+  canEditDb: (userId: string, can_edit: boolean) =>
+    post<{ success: boolean; can_edit_db: number }>('/api/admin/can-edit-db', { userId, can_edit }),
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
   updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),

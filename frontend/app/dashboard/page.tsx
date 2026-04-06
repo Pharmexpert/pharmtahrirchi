@@ -40,7 +40,7 @@ export default function DashboardPage() {
             ...prev,
             projects: d.projects || d.counts?.projects || 0,
             rules: d.sayqallash_rules || d.counts?.sayqallash_rules || 0,
-            alignments: d.counts?.alignments || 0,
+            alignments: d.paragraphs || d.counts?.paragraphs_dashboard || d.counts?.alignments || 0,
             synonyms: d.synonyms || d.counts?.synonyms || 0
           }))
         }
