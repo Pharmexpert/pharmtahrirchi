@@ -10,26 +10,28 @@ import { useAuth } from './LoginGuard'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import LanguageSwitcher from './LanguageSwitcher'
+import { useLang } from './LanguageProvider'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAdmin } = useAuth()
+  const { t } = useLang()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const pathname = usePathname()
 
   const navItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { name: 'Хатбошилар', icon: FileText, path: '/paragraphs' },
-    { name: 'Лойиҳалар', icon: History, path: '/projects' },
-    { name: 'Файллар', icon: FolderOpen, path: '/files' },
-    { name: 'Sayqallash DB', icon: Database, path: '/rules' },
-    { name: 'Изоҳли луғат', icon: BookOpen, path: '/linguistic/annotated' },
-    { name: 'Мунозарали', icon: MessageSquare, path: '/linguistic/disputed' },
-    { name: 'Қисқартмалар', icon: Info, path: '/linguistic/abbreviations' },
-    { name: 'Синонимлар', icon: Repeat2, path: '/synonyms' },
+    { name: t('nav.dashboard'), icon: LayoutDashboard, path: '/dashboard' },
+    { name: t('nav.paragraphs'), icon: FileText, path: '/paragraphs' },
+    { name: t('nav.projects'), icon: History, path: '/projects' },
+    { name: t('nav.files'), icon: FolderOpen, path: '/files' },
+    { name: t('nav.rules'), icon: Database, path: '/rules' },
+    { name: t('nav.annotated'), icon: BookOpen, path: '/linguistic/annotated' },
+    { name: t('nav.disputed'), icon: MessageSquare, path: '/linguistic/disputed' },
+    { name: t('nav.abbreviations'), icon: Info, path: '/linguistic/abbreviations' },
+    { name: t('nav.synonyms'), icon: Repeat2, path: '/synonyms' },
   ]
 
   if (isAdmin) {
-    navItems.push({ name: 'Admin', icon: ShieldCheck, path: '/admin' })
+    navItems.push({ name: t('nav.admin'), icon: ShieldCheck, path: '/admin' })
   }
 
   return (
@@ -164,7 +166,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             className="logout-btn"
           >
             <LogOut size={20} />
-            {isSidebarOpen && <span>Logout</span>}
+            {isSidebarOpen && <span>{t('common.logout')}</span>}
           </button>
         </div>
 
@@ -265,10 +267,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           textAlign: 'center'
         }}>
            <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
-            © 2026 Pharma Translation Platform
+            {t('footer.copyright')}
           </p>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-             <p style={{ fontWeight: 600 }}>Давлат фармакопеясини ишлаб чиқиш тизими</p>
+             <p style={{ fontWeight: 600 }}>{t('footer.description')}</p>
              <p>Саволлар ва таклифлар билан Акмалходжа Зайнидинов номига, қуйидаги почта манзилига мурожаат қилишингиз мумкин: <a href="mailto:texnopharm@gmail.com" style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>texnopharm@gmail.com</a></p>
           </div>
         </footer>
