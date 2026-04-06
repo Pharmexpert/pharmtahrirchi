@@ -5,13 +5,22 @@ import { Upload, FileText, Loader2, Sparkles, AlertCircle, Hash, BookOpen, User,
 import Link from 'next/link'
 import TableEditor, { RowData } from '../components/TableEditor'
 import { useAuth } from '../components/LoginGuard'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import api from '../services/api'
 
 export default function Home() {
   const { user, token } = useAuth()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const urlTextId = searchParams.get('text_id')
+
+  // Redirect to dashboard as the landing page (unless opening a specific project)
+  useEffect(() => {
+    if (token && !urlTextId && typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('editor_data')
+      if (!stored) router.replace('/dashboard')
+    }
+  }, [token, urlTextId, router])
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
