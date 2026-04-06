@@ -7,6 +7,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Request
 import db
 import transliterate
+import spellcheck
 from routes.ai_helpers import get_client, generate_ai_content
 from routes.rate_limit import ai_limiter
 
@@ -84,6 +85,24 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
         except Exception:
             pass
 
+    # TIER 0: Hunspell имло текшириш (uz-hunspell)
+    spell_annotations = []
+    if lang == 'uz':
+        try:
+            spell_errors = spellcheck.check_text(text, is_cyrillic=is_uz_cyrillic)
+            for err in spell_errors:
+                if err['suggestions']:
+                    spell_annotations.append({
+                        'from_index': err['position'],
+                        'to_index': err['end_position'],
+                        'old_value': err['word'],
+                        'new_value': err['suggestions'][0],
+                        'error_type': 'H/Spelling',
+                        'source': 'hunspell'
+                    })
+        except Exception as e:
+            logger.warning(f"Hunspell error: {e}")
+
     # TIER 1: Rules DB
     try:
         local_annotations = db.get_rules_for_text(text, lang) or []
@@ -92,7 +111,21 @@ async def _sayqallash_logic(payload: Dict[str, Any]) -> dict:
         logger.error(f"Rules DB error: {e}")
         local_annotations = []
         rules_count = 0
+
+    # Merge hunspell + rules (hunspell first, rules override)
+    all_local = spell_annotations + local_annotations
+    # Remove overlaps — rules DB takes priority
     covered_ranges = [(a["from_index"], a["to_index"]) for a in local_annotations]
+    final_local = list(local_annotations)
+    for sa in spell_annotations:
+        overlap = False
+        for cs, ce in covered_ranges:
+            if max(sa["from_index"], cs) < min(sa["to_index"], ce):
+                overlap = True; break
+        if not overlap:
+            final_local.append(sa)
+            covered_ranges.append((sa["from_index"], sa["to_index"]))
+    local_annotations = final_local
 
     ai_annotations = []
     confidence = 100

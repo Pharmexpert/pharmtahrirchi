@@ -6,10 +6,22 @@ from fastapi import APIRouter, HTTPException, Request
 import db
 import bert_engine
 import transliterate
+import spellcheck
 from routes.ai_helpers import get_client, generate_ai_content
 from routes.rate_limit import ai_limiter
 
 router = APIRouter(tags=["editor"])
+
+
+@router.post("/api/spellcheck")
+async def spellcheck_endpoint(payload: Dict[str, Any]):
+    """Check text spelling using uz-hunspell dictionaries."""
+    text = payload.get("text", "")
+    is_cyrillic = payload.get("is_cyrillic", True)
+    if not text.strip():
+        return {"errors": [], "stats": spellcheck.get_stats()}
+    errors = spellcheck.check_text(text, is_cyrillic=is_cyrillic)
+    return {"errors": errors, "total": len(errors), "stats": spellcheck.get_stats()}
 
 
 @router.post("/api/align-document")
