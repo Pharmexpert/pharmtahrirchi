@@ -177,6 +177,15 @@ export const synonyms = {
   select: (word: string, synonym: string, lang: string) =>
     post<{ status: string }>('/api/synonyms/select', { word, synonym, lang }),
   delete: (id: number) => del<{ status: string }>(`/api/synonyms/${id}`),
+  update: (id: number, data: { word?: string; synonym?: string }) =>
+    put<{ status: string }>(`/api/synonyms/${id}`, data),
+  listGrouped: (word?: string, lang?: string) => {
+    const params = new URLSearchParams()
+    if (word) params.set('word', word)
+    if (lang) params.set('lang', lang)
+    params.set('grouped', 'true')
+    return get<{ groups: any[]; total_words: number; total_synonyms: number }>(`/api/synonyms?${params}`)
+  },
   suggestEdits: (payload: Record<string, string>) =>
     post<import('../types/api').SynonymSuggestion>('/suggest-edits', payload),
 }

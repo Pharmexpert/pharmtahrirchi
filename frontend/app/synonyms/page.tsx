@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Repeat2, Search, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Languages, Download } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import * as XLSX from 'xlsx'
+import api from '../../services/api'
 
 interface SynEntry { id: number; synonym: string; frequency: number; source: string }
 interface SynGroup { word: string; lang: string; synonyms: SynEntry[]; total_freq: number; ids: number[] }
@@ -36,61 +37,38 @@ export default function SynonymsPage() {
   const fetchSynonyms = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('word', search)
-      if (lang) params.set('lang', lang)
-      params.set('grouped', 'true')
-      const res = await fetch(`${API_BASE}/api/synonyms?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const d = await res.json()
-        setGroups(d.groups || [])
-        setTotalSynonyms(d.total_synonyms || 0)
-      }
+      const d = await api.synonyms.listGrouped(search || undefined, lang || undefined)
+      setGroups((d as any).groups || [])
+      setTotalSynonyms((d as any).total_synonyms || 0)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [API_BASE, token, search, lang])
+  }, [search, lang])
 
   useEffect(() => { fetchSynonyms() }, [fetchSynonyms])
 
   const handleAdd = async () => {
     if (!newWord.trim() || !newSynonym.trim()) return
     try {
-      const res = await fetch(`${API_BASE}/api/synonyms/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ word: newWord, synonym: newSynonym, lang: newLang })
-      })
-      if (res.ok) {
-        showToast('Синоним қўшилди ✓')
-        setNewWord(''); setNewSynonym(''); setShowAdd(false)
-        fetchSynonyms()
-      }
+      await api.synonyms.save(newWord, newSynonym, newLang)
+      showToast('Синоним қўшилди ✓')
+      setNewWord(''); setNewSynonym(''); setShowAdd(false)
+      fetchSynonyms()
     } catch { showToast('Хатолик', 'error') }
   }
 
   const handleDelete = async (id: number) => {
     if (!confirm('Синонимни ўчиришни тасдиқлайсизми?')) return
     try {
-      const res = await fetch(`${API_BASE}/api/synonyms/${id}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        showToast('Ўчирилди ✓')
-        fetchSynonyms()
-      }
+      await api.synonyms.delete(id)
+      showToast('Ўчирилди ✓')
+      fetchSynonyms()
     } catch { showToast('Хатолик', 'error') }
   }
 
   const handleEdit = async (id: number, newSyn: string) => {
     if (!newSyn.trim()) return
     try {
-      await fetch(`${API_BASE}/api/synonyms/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ synonym: newSyn.trim() })
-      })
+      await api.synonyms.update(id, { synonym: newSyn.trim() })
       showToast('Таҳрирланди ✓')
       setEditingId(null)
       fetchSynonyms()
@@ -100,15 +78,10 @@ export default function SynonymsPage() {
   const handleEditWord = async (oldWord: string, newWord: string, lang: string) => {
     if (!newWord.trim()) return
     try {
-      // Update all synonyms of this word
       const group = groups.find(g => g.word === oldWord && g.lang === lang)
       if (group) {
         for (const id of group.ids) {
-          await fetch(`${API_BASE}/api/synonyms/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ word: newWord.trim() })
-          })
+          await api.synonyms.update(id, { word: newWord.trim() })
         }
       }
       showToast('Сўз таҳрирланди ✓')
