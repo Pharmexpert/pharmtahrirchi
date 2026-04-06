@@ -49,12 +49,25 @@ export default function DictionaryPage() {
 
   useEffect(() => { fetchWords() }, [fetchWords])
 
-  // Fetch cached translations whenever words change
+  // Fetch cached translations whenever words change, then auto-translate missing ones
   useEffect(() => {
     if (words.length === 0) return
     const wordList = words.map(w => w.word).join(',')
     api.dictionary.translations(wordList)
-      .then((d: any) => { if (d?.translations) setTranslations(prev => ({ ...prev, ...d.translations })) })
+      .then(async (d: any) => {
+        const cached = d?.translations || {}
+        setTranslations(prev => ({ ...prev, ...cached }))
+        // Auto-translate words that have no cache (background, sequential to avoid quota burst)
+        const missing = words.filter(w => !cached[w.word]).slice(0, 25)
+        for (const w of missing) {
+          try {
+            const r: any = await api.dictionary.translate(w.word)
+            if (r && (r.ru || r.en)) {
+              setTranslations(prev => ({ ...prev, [w.word]: { ru: r.ru, en: r.en, definition: r.definition } }))
+            }
+          } catch {}
+        }
+      })
       .catch(() => {})
   }, [words])
 
@@ -91,7 +104,7 @@ export default function DictionaryPage() {
             <BookOpen size={24} color="white" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Луғат — Hunspell</h1>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Изоҳли луғат</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
               Ўзбек тили имло луғати • <strong>{total}</strong> сўз • {language === 'cyrl' ? 'Кирилл' : 'Лотин'}
             </p>
