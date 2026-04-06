@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { useAuth } from './LoginGuard'
 import type { RowData } from '../types/api'
 import SynonymPopup from './editor/SynonymPopup'
+import TermHighlighter from './editor/TermHighlighter'
+import type { Term } from './editor/TermHighlighter'
 
 export type { RowData }
 
@@ -51,8 +53,37 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const popupRef = useRef<HTMLDivElement>(null)
   
+  // Linguistic terms for highlighting
+  const [terms, setTerms] = useState<Term[]>([])
+
+  // Load terms dictionary on mount
+  useEffect(() => {
+    if (!token) return
+    fetch(`${API_BASE}/api/linguistic/terms-dictionary`, { headers: authHeaders })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        const allTerms: Term[] = []
+        for (const a of (d.annotated || [])) {
+          for (const field of ['en', 'ru', 'uz']) {
+            if (a[field]) allTerms.push({ id: a.id * 100 + (field === 'en' ? 1 : field === 'ru' ? 2 : 3), type: 'annotated', match: a[field], en: a.en || '', ru: a.ru || '', uz: a.uz || '', detail_en: a.description_en, detail_ru: a.description_ru, detail_uz: a.description_uz })
+          }
+        }
+        for (const d2 of (d.disputed || [])) {
+          for (const field of ['en', 'ru', 'uz']) {
+            if (d2[field]) allTerms.push({ id: d2.id * 100 + 10 + (field === 'en' ? 1 : field === 'ru' ? 2 : 3), type: 'disputed', match: d2[field], en: d2.en || '', ru: d2.ru || '', uz: d2.uz || '', detail_en: d2.context_en, detail_ru: d2.context_ru, detail_uz: d2.context_uz })
+          }
+        }
+        for (const ab of (d.abbreviations || [])) {
+          if (ab.short_form) allTerms.push({ id: ab.id * 100 + 20, type: 'abbreviation', match: ab.short_form, en: ab.long_en || '', ru: ab.long_ru || '', uz: ab.long_uz || '', detail_en: `${ab.short_form} = ${ab.long_en}` })
+        }
+        setTerms(allTerms)
+      })
+      .catch(() => {})
+  }, [API_BASE, token])
+
   // Column width state (percentages)
-  const [colWidths, setColWidths] = useState([15, 37.5, 37.5, 10]) 
+  const [colWidths, setColWidths] = useState([15, 37.5, 37.5, 10])
   const resizingRef = useRef<{ idx: number; startX: number; startWidths: number[] } | null>(null)
 
   useEffect(() => {
@@ -907,7 +938,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                       }
                     } : undefined}
                   >
-                    <RichContent text={row.en} />
+                    {terms.length > 0 ? <TermHighlighter text={row.en} terms={terms} /> : <RichContent text={row.en} />}
                   </td>
 
                   <LangCell v1={row.ru_v1} proposed={row.ru_proposed} rowIdx={idx} lang="ru"

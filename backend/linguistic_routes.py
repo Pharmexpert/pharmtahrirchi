@@ -459,6 +459,26 @@ async def set_project_source_lang(payload: Dict[str, Any], current_user: Dict = 
     return {"success": False, "error": "Missing params"}
 
 
+@router.get("/terms-dictionary")
+async def get_terms_dictionary(current_user: Dict = Depends(get_current_user)):
+    """Get all annotated words, disputed words, and abbreviations for text highlighting."""
+    conn = db.connect_db()
+    conn.row_factory = db.sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, en, ru, uz, description_en, description_ru, description_uz FROM annotated_words WHERE status = 'active'")
+    annotated = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT id, en, ru, uz, context_en, context_ru, context_uz FROM disputed_words WHERE status = 'active'")
+    disputed = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT id, short_form, long_en, long_ru, long_uz FROM abbreviations WHERE status = 'active'")
+    abbreviations = [dict(r) for r in cursor.fetchall()]
+
+    conn.close()
+    return {"annotated": annotated, "disputed": disputed, "abbreviations": abbreviations}
+
+
 from fastapi import Request as FastAPIRequest
 
 @router.post("/sync-all-rules")
