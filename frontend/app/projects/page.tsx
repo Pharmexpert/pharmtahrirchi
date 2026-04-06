@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { History, Search, Eye, Trash2, Download, FileText } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import Link from 'next/link'
+import api from '../../services/api'
 
 export default function ProjectsPage() {
   const { token, isAdmin } = useAuth()
@@ -19,26 +20,17 @@ export default function ProjectsPage() {
     if (!token) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setProjects(data.projects || data || [])
-      }
-    } finally { setLoading(false) }
+      const data = await api.projects.list()
+      setProjects((data as any).projects || [])
+    } catch {} finally { setLoading(false) }
   }
 
   const handleDelete = async (textId: string) => {
     if (!token) return
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${textId}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setProjects(prev => prev.filter(p => p.text_id !== textId))
-        setDeleteConfirm(null)
-      }
+      await api.projects.delete(textId)
+      setProjects(prev => prev.filter(p => p.text_id !== textId))
+      setDeleteConfirm(null)
     } catch (e) { console.error(e) }
   }
 
