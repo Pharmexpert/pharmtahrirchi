@@ -6,6 +6,7 @@ import Link from 'next/link'
 import TableEditor, { RowData } from '../components/TableEditor'
 import { useAuth } from '../components/LoginGuard'
 import { useSearchParams } from 'next/navigation'
+import api from '../services/api'
 
 export default function Home() {
   const { user, token } = useAuth()
@@ -29,21 +30,19 @@ export default function Home() {
 
   // Fetch specialist list
   useEffect(() => {
-    fetch(`${API_BASE}/api/specialists`, { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => setSpecialistList(d.specialists || []))
+    api.specialists.list()
+      .then((d: any) => setSpecialistList(d.specialists || []))
       .catch(() => {})
-  }, [API_BASE, token])
+  }, [token])
 
   // Fetch projects
   useEffect(() => {
     setLoadingProjects(true)
-    fetch(`${API_BASE}/api/projects`, { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => setProjects(d.projects || []))
+    api.projects.list()
+      .then((d: any) => setProjects(d.projects || []))
       .catch(() => {})
       .finally(() => setLoadingProjects(false))
-  }, [API_BASE, token])
+  }, [token])
 
   // AUTO-OPEN project if text_id param exists in URL
   useEffect(() => {
@@ -186,20 +185,14 @@ export default function Home() {
     if (!projectId) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/history/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const result = await res.json()
-        const rows = Array.isArray(result) ? result : (result.alignments || [])
-        
-        if (rows.length > 0) {
-          setData(rows)
-          setTextId(projectId)
-          setFilename(projectId + '.docx')
-        } else {
-          setError('Лойиҳа бўш ёки топилмади')
-        }
+      const result: any = await api.editor.history(projectId)
+      const rows = Array.isArray(result) ? result : (result.alignments || [])
+      if (rows.length > 0) {
+        setData(rows)
+        setTextId(projectId)
+        setFilename(projectId + '.docx')
+      } else {
+        setError('Лойиҳа бўш ёки топилмади')
       }
     } catch (err) {
       console.error(err)
@@ -213,9 +206,7 @@ export default function Home() {
     e.stopPropagation()
     if (!confirm('Ushbu loyihani o\'chirishni tasdiqlaysizmi?')) return
     try {
-      await fetch(`${API_BASE}/api/projects/${id}`, {
-        method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
-      })
+      await api.projects.delete(id)
       setProjects(projects.filter(p => p.id !== id))
     } catch (_e) {}
   }
