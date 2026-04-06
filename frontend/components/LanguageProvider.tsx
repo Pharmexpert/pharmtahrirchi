@@ -39,6 +39,8 @@ const translations: Record<string, Record<LangCode, string>> = {
   'nav.disputed': { en: 'Disputed', ru: 'Мунозарали', 'uz-lat': 'Munozarali', 'uz-cyr': 'Мунозарали' },
   'nav.abbreviations': { en: 'Abbreviations', ru: 'Сокращения', 'uz-lat': 'Qisqartmalar', 'uz-cyr': 'Қисқартмалар' },
   'nav.synonyms': { en: 'Synonyms', ru: 'Синонимы', 'uz-lat': 'Sinonimlar', 'uz-cyr': 'Синонимлар' },
+  'nav.dictionary': { en: 'Dictionary', ru: 'Словарь', 'uz-lat': 'Lug\'at', 'uz-cyr': 'Луғат' },
+  'nav.affixFlags': { en: 'Affix Flags', ru: 'Аффикс флаги', 'uz-lat': 'Affix Flags', 'uz-cyr': 'Affix Flags' },
   'nav.admin': { en: 'Admin', ru: 'Админ', 'uz-lat': 'Admin', 'uz-cyr': 'Админ' },
 
   // Умумий
@@ -100,6 +102,60 @@ const translations: Record<string, Record<LangCode, string>> = {
   // Footer
   'footer.copyright': { en: '© 2026 Pharma Translation Platform', ru: '© 2026 Pharma Translation Platform', 'uz-lat': '© 2026 Pharma Translation Platform', 'uz-cyr': '© 2026 Pharma Translation Platform' },
   'footer.description': { en: 'State Pharmacopoeia Development System', ru: 'Система разработки государственной фармакопеи', 'uz-lat': 'Davlat farmakopeyasini ishlab chiqish tizimi', 'uz-cyr': 'Давлат фармакопеясини ишлаб чиқиш тизими' },
+
+  // Sayqallash Rules page
+  'rules.title': { en: 'Sayqallash Rules', ru: 'Правила Sayqallash', 'uz-lat': 'Sayqallash Qoidalari', 'uz-cyr': 'Sayqallash Қоидалари' },
+  'rules.subtitle': { en: 'Spelling and correction rules database', ru: 'База правил орфографии и исправлений', 'uz-lat': 'Imlo xatoliklari va tuzatish qoidalari bazasi', 'uz-cyr': 'Имло хатоликлари ва тузатиш қоидалари базаси' },
+  'rules.wrongForm': { en: 'Wrong form', ru: 'Неправильная форма', 'uz-lat': 'Xato shakl', 'uz-cyr': 'Хато шакл' },
+  'rules.correctForm': { en: 'Correct form', ru: 'Правильная форма', 'uz-lat': 'To\'g\'ri shakl', 'uz-cyr': 'Тўғри шакл' },
+  'rules.type': { en: 'Type', ru: 'Тип', 'uz-lat': 'Turi', 'uz-cyr': 'Тури' },
+  'rules.frequency': { en: 'Frequency', ru: 'Частота', 'uz-lat': 'Chastota', 'uz-cyr': 'Частота' },
+  'rules.modifiedBy': { en: 'Modified by', ru: 'Изменено', 'uz-lat': 'O\'zgartirgan', 'uz-cyr': 'Ўзгартирган' },
+  'rules.actions': { en: 'Actions', ru: 'Действия', 'uz-lat': 'Amallar', 'uz-cyr': 'Амаллар' },
+  'rules.add': { en: 'Add Rule', ru: 'Добавить правило', 'uz-lat': 'Yangi qoida', 'uz-cyr': 'Янги қоида' },
+
+  // Dictionary
+  'dict.title': { en: 'Dictionary — Hunspell', ru: 'Словарь — Hunspell', 'uz-lat': 'Lug\'at — Hunspell', 'uz-cyr': 'Луғат — Hunspell' },
+  'dict.subtitle': { en: 'Uzbek spelling dictionary', ru: 'Узбекский орфографический словарь', 'uz-lat': 'O\'zbek tili imlo lug\'ati', 'uz-cyr': 'Ўзбек тили имло луғати' },
+  'dict.word': { en: 'Word', ru: 'Слово', 'uz-lat': 'So\'z', 'uz-cyr': 'Сўз' },
+  'dict.pos': { en: 'POS', ru: 'Тип', 'uz-lat': 'Turkum', 'uz-cyr': 'Туркум' },
+  'dict.translation': { en: 'Translation', ru: 'Перевод', 'uz-lat': 'Tarjima', 'uz-cyr': 'Таржима' },
+  'dict.definition': { en: 'Definition', ru: 'Определение', 'uz-lat': 'Izoh', 'uz-cyr': 'Изоҳ' },
+  'dict.aiTranslate': { en: '🤖 AI Translate', ru: '🤖 AI Перевод', 'uz-lat': '🤖 AI Tarjima', 'uz-cyr': '🤖 AI Таржима' },
+
+  // Affix Flags
+  'affix.title': { en: 'Affix Flags — Hunspell', ru: 'Аффикс флаги — Hunspell', 'uz-lat': 'Affix Flags — Hunspell', 'uz-cyr': 'Affix Flags — Hunspell' },
+  'affix.subtitle': { en: 'Suffix/Prefix rules', ru: 'Правила суффиксов и префиксов', 'uz-lat': 'Suffix/Prefix qoidalari', 'uz-cyr': 'Suffix/Prefix қоидалари' },
+  'affix.flag': { en: 'Flag', ru: 'Флаг', 'uz-lat': 'Flag', 'uz-cyr': 'Flag' },
+  'affix.count': { en: 'Count', ru: 'Кол-во', 'uz-lat': 'Soni', 'uz-cyr': 'Сони' },
+  'affix.description': { en: 'Description', ru: 'Описание', 'uz-lat': 'Vazifa', 'uz-cyr': 'Вазифа' },
+  'affix.examples': { en: 'Examples', ru: 'Примеры', 'uz-lat': 'Misol', 'uz-cyr': 'Мисол' },
+
+  // Synonyms
+  'syn.title': { en: 'Synonyms Database', ru: 'База синонимов', 'uz-lat': 'Sinonimlar bazasi', 'uz-cyr': 'Синонимлар базаси' },
+  'syn.word': { en: 'Word', ru: 'Слово', 'uz-lat': 'So\'z', 'uz-cyr': 'Сўз' },
+  'syn.synonyms': { en: 'Synonyms', ru: 'Синонимы', 'uz-lat': 'Sinonimlar', 'uz-cyr': 'Синонимлар' },
+  'syn.lang': { en: 'Lang', ru: 'Язык', 'uz-lat': 'Til', 'uz-cyr': 'Тил' },
+  'syn.add': { en: '+ Add Synonym', ru: '+ Добавить синоним', 'uz-lat': '+ Sinonim qo\'shish', 'uz-cyr': '+ СИНОНИМ ҚЎШИШ' },
+
+  // Files
+  'files.directory': { en: 'Files Directory', ru: 'Директория файлов', 'uz-lat': 'Fayllar direktoriyasi', 'uz-cyr': 'Файллар директорияси' },
+  'files.archive': { en: 'Uploaded documents archive', ru: 'Архив загруженных документов', 'uz-lat': 'Yuklangan hujjatlar arxivi', 'uz-cyr': 'Юкланган ҳужжатлар архиви' },
+  'files.uploadBtn': { en: 'UPLOAD FILE', ru: 'ЗАГРУЗИТЬ ФАЙЛ', 'uz-lat': 'FAYL YUKLASH', 'uz-cyr': 'ФАЙЛ ЮКЛАШ' },
+  'files.dragHere': { en: 'Or drag file here', ru: 'Или перетащите файл сюда', 'uz-lat': 'Yoki faylni bu yerga torting', 'uz-cyr': 'Ёки файлни бу ерга тортинг' },
+
+  // Paragraphs
+  'para.title': { en: 'Paragraphs', ru: 'Параграфы', 'uz-lat': 'Xatboshilar', 'uz-cyr': 'Хатбошилар' },
+  'para.subtitle': { en: 'Audit trail — all edits and AI processing history', ru: 'История всех правок и обработки AI', 'uz-lat': 'Audit trail — barcha tahrir va AI ishlov berish tarixi', 'uz-cyr': 'Audit trail — барча таҳрир ва AI ишлов бериш тарихи' },
+  'para.specialist': { en: 'Specialist', ru: 'Специалист', 'uz-lat': 'Mutaxassis', 'uz-cyr': 'Мутахассис' },
+  'para.actionType': { en: 'Action Type', ru: 'Тип действия', 'uz-lat': 'Amal turi', 'uz-cyr': 'Амал тури' },
+  'para.date': { en: 'Date', ru: 'Дата', 'uz-lat': 'Sana', 'uz-cyr': 'Сана' },
+
+  // Projects
+  'proj.title': { en: 'Projects', ru: 'Проекты', 'uz-lat': 'Loyihalar', 'uz-cyr': 'Лойиҳалар' },
+  'proj.subtitle': { en: 'List of all uploaded documents', ru: 'Список всех загруженных документов', 'uz-lat': 'Barcha yuklangan hujjatlar ro\'yxati', 'uz-cyr': 'Барча юкланган ҳужжатлар рўйхати' },
+  'proj.textNum': { en: 'Text №', ru: 'Текст №', 'uz-lat': 'Matn №', 'uz-cyr': 'Матн №' },
+  'proj.updated': { en: 'Updated', ru: 'Обновлено', 'uz-lat': 'Yangilangan', 'uz-cyr': 'Янгиланган' },
 }
 
 // ═══════════════════════════════════════════════════

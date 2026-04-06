@@ -28,8 +28,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('nav.disputed'), icon: MessageSquare, path: '/linguistic/disputed' },
     { name: t('nav.abbreviations'), icon: Info, path: '/linguistic/abbreviations' },
     { name: t('nav.synonyms'), icon: Repeat2, path: '/synonyms' },
-    { name: 'Луғат', icon: Library, path: '/dictionary' },
-    { name: 'Affix Flags', icon: Layers, path: '/affix-flags' },
+    { name: t('nav.dictionary'), icon: Library, path: '/dictionary' },
+    { name: t('nav.affixFlags'), icon: Layers, path: '/affix-flags' },
   ]
 
   if (isAdmin) {
