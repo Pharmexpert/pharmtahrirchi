@@ -11,6 +11,8 @@ interface DictWord {
   pos: string
 }
 
+interface Translation { ru: string; en: string; definition: string }
+
 const POS_LABELS: Record<string, { label: string; color: string }> = {
   noun: { label: 'От', color: '#3B82F6' },
   verb: { label: 'Феъл', color: '#10B981' },
@@ -31,6 +33,8 @@ export default function DictionaryPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [translations, setTranslations] = useState<Record<string, Translation>>({})
+  const [translatingAll, setTranslatingAll] = useState(false)
 
   const fetchWords = useCallback(async () => {
     setLoading(true)
@@ -51,6 +55,40 @@ export default function DictionaryPage() {
   }, [API_BASE, token, language, page, perPage, search])
 
   useEffect(() => { fetchWords() }, [fetchWords])
+
+  // Fetch cached translations whenever words change
+  useEffect(() => {
+    if (words.length === 0) return
+    const wordList = words.map(w => w.word).join(',')
+    fetch(`${API_BASE}/api/dictionary/translations?words=${encodeURIComponent(wordList)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.translations) setTranslations(prev => ({ ...prev, ...d.translations })) })
+      .catch(() => {})
+  }, [words, API_BASE, token])
+
+  const translateWord = async (word: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dictionary/translate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ word })
+      })
+      if (res.ok) {
+        const d = await res.json()
+        setTranslations(prev => ({ ...prev, [word]: { ru: d.ru, en: d.en, definition: d.definition } }))
+      }
+    } catch {}
+  }
+
+  const translateAllVisible = async () => {
+    setTranslatingAll(true)
+    const untranslated = words.filter(w => !translations[w.word])
+    for (const w of untranslated.slice(0, 25)) {
+      await translateWord(w.word)
+    }
+    setTranslatingAll(false)
+  }
 
   return (
     <div>
@@ -104,6 +142,12 @@ export default function DictionaryPage() {
           padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)',
           background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
         }}><RefreshCw size={14} /> Янгилаш</button>
+        <button onClick={translateAllVisible} disabled={translatingAll} style={{
+          padding: '12px 16px', borderRadius: '10px', border: 'none',
+          background: translatingAll ? '#9CA3AF' : 'linear-gradient(135deg, #B48C64, #8B5E3C)',
+          color: 'white', cursor: translatingAll ? 'not-allowed' : 'pointer',
+          fontWeight: 700, fontSize: '0.82rem'
+        }}>{translatingAll ? '⏳ AI...' : '🤖 AI Таржима'}</button>
       </div>
 
       {/* Table */}
@@ -124,6 +168,7 @@ export default function DictionaryPage() {
             </div>
             {words.map((w, i) => {
               const pos = POS_LABELS[w.pos] || POS_LABELS.other
+              const tr = translations[w.word]
               return (
                 <div key={i} style={{
                   display: 'grid', gridTemplateColumns: '60px 1fr 100px 1fr 1fr 120px',
@@ -135,9 +180,17 @@ export default function DictionaryPage() {
                     fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px',
                     background: `${pos.color}15`, color: pos.color, display: 'inline-block', textAlign: 'center'
                   }}>{pos.label}</span>
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>—</span>
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>—</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{w.flags || '—'}</span>
+                  <span style={{ fontSize: '0.82rem', color: tr?.ru ? '#2563EB' : 'var(--text-muted)', fontWeight: tr?.ru ? 600 : 400 }}>
+                    {tr?.ru || (
+                      <button onClick={() => translateWord(w.word)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: '0.7rem' }}>+ AI</button>
+                    )}
+                  </span>
+                  <span style={{ fontSize: '0.82rem', color: tr?.en ? '#9333EA' : 'var(--text-muted)', fontWeight: tr?.en ? 600 : 400 }}>
+                    {tr?.en || '—'}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }} title={w.flags}>
+                    {tr?.definition ? tr.definition.slice(0, 40) + (tr.definition.length > 40 ? '...' : '') : (w.flags ? w.flags.slice(0, 8) + '...' : '—')}
+                  </span>
                 </div>
               )
             })}

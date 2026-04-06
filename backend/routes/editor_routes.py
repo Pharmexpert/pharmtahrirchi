@@ -73,6 +73,72 @@ async def get_affix_flags(language: str = "cyrl", page: int = 0, per_page: int =
     }
 
 
+@router.post("/api/dictionary/translate")
+async def translate_dictionary_word(payload: Dict[str, Any]):
+    """AI translate a single word to RU and EN."""
+    word = payload.get("word", "").strip()
+    if not word:
+        return {"ru": "", "en": "", "definition": ""}
+
+    # Check cache in DB
+    conn = db.connect_db()
+    conn.row_factory = db.sqlite3.Row
+    cursor = conn.cursor()
+    # Create cache table if not exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dict_translations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT UNIQUE,
+            ru TEXT, en TEXT, definition TEXT, pos TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("SELECT * FROM dict_translations WHERE word = ?", (word,))
+    cached = cursor.fetchone()
+    if cached:
+        conn.close()
+        return dict(cached)
+
+    # Generate via AI
+    try:
+        prompt = f"""Translate Uzbek word "{word}" to Russian and English. Also provide a brief definition in Uzbek.
+Return ONLY JSON: {{"ru": "translation", "en": "translation", "definition": "qisqa izoh"}}"""
+        ai_text = await generate_ai_content(prompt)
+        match = re.search(r'\{.*\}', ai_text, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+            cursor.execute("""
+                INSERT OR REPLACE INTO dict_translations (word, ru, en, definition)
+                VALUES (?, ?, ?, ?)
+            """, (word, result.get("ru", ""), result.get("en", ""), result.get("definition", "")))
+            conn.commit()
+            conn.close()
+            return {"word": word, **result}
+    except Exception as e:
+        pass
+    conn.close()
+    return {"word": word, "ru": "", "en": "", "definition": ""}
+
+
+@router.get("/api/dictionary/translations")
+async def get_translations(words: str = ""):
+    """Get cached translations for a list of words."""
+    if not words:
+        return {"translations": {}}
+    word_list = [w.strip() for w in words.split(",") if w.strip()]
+    conn = db.connect_db()
+    conn.row_factory = db.sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS dict_translations (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT UNIQUE, ru TEXT, en TEXT, definition TEXT, pos TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    placeholders = ",".join(["?"] * len(word_list))
+    cursor.execute(f"SELECT word, ru, en, definition FROM dict_translations WHERE word IN ({placeholders})", word_list)
+    translations = {}
+    for r in cursor.fetchall():
+        translations[r["word"]] = dict(r)
+    conn.close()
+    return {"translations": translations}
+
+
 @router.get("/api/dictionary/stats")
 async def get_dictionary_stats():
     """Get dictionary stats: total words, flags, REP rules."""
