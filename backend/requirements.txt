@@ -17,6 +17,9 @@ langdetect==1.0.9
 PyJWT==2.9.0
 torch --index-url https://download.pytorch.org/whl/cpu
 
+# Spellcheck (uz-hunspell full affix support)
+spylls>=0.1.7
+
 # Testing
 pytest>=8.0.0
 httpx>=0.27.0
