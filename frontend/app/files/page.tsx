@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { FolderOpen, Upload, Download, Trash2, Eye, Play, Loader2, CheckCircle2, AlertCircle, X, FileText, FileIcon, Search, RefreshCw, HardDrive } from 'lucide-react'
-import { useAuth } from '../../components/LoginGuard'
 import { useRouter } from 'next/navigation'
+import api from '../../services/api'
 
 interface UploadedFile {
   filename: string
@@ -44,9 +44,7 @@ function getFileIcon(ext: string): string {
 }
 
 export default function FilesPage() {
-  const { token, user } = useAuth()
   const router = useRouter()
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,33 +72,25 @@ export default function FilesPage() {
   const fetchFiles = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/files`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setFiles(data.files || [])
-      }
+      const data = await api.files.list()
+      setFiles(data.files || [])
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [API_BASE, token])
+  }, [])
 
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/folders`, { headers: { Authorization: `Bearer ${token}` } })
-      if (res.ok) setFolders((await res.json()).folders || [])
+      const data = await api.files.listFolders()
+      setFolders(data.folders || [])
     } catch {}
-  }, [API_BASE, token])
+  }, [])
 
   useEffect(() => { fetchFiles(); fetchFolders() }, [fetchFiles, fetchFolders])
 
   const createFolder = async () => {
     if (!newFolderName.trim()) return
     try {
-      await fetch(`${API_BASE}/api/folders/create`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: newFolderName.trim(), parent: currentFolder })
-      })
+      await api.files.createFolder(newFolderName.trim(), currentFolder)
       showToast('Папка яратилди ✓')
       setNewFolderName(''); setShowNewFolder(false); fetchFolders(); fetchFiles()
     } catch { showToast('Хатолик', 'error') }
@@ -109,29 +99,21 @@ export default function FilesPage() {
   const deleteFolder = async (folderPath: string) => {
     if (!confirm(`"${folderPath}" папкани ўчиришни тасдиқлайсизми?`)) return
     try {
-      await fetch(`${API_BASE}/api/folders/${encodeURIComponent(folderPath)}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      })
+      await api.files.deleteFolder(folderPath)
       showToast('Папка ўчирилди ✓'); fetchFolders(); fetchFiles()
     } catch { showToast('Хатолик', 'error') }
   }
 
   const moveFile = async (filename: string, targetFolder: string) => {
     try {
-      await fetch(`${API_BASE}/api/files/move`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ filename, target_folder: targetFolder })
-      })
+      await api.files.move(filename, targetFolder)
       showToast('Файл кўчирилди ✓'); fetchFiles(); fetchFolders()
     } catch { showToast('Хатолик', 'error') }
   }
 
   const moveFolder = async (folderPath: string, targetFolder: string) => {
     try {
-      await fetch(`${API_BASE}/api/folders/move`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ folder: folderPath, target: targetFolder })
-      })
+      await api.files.moveFolder(folderPath, targetFolder)
       showToast('Папка кўчирилди ✓'); fetchFolders(); fetchFiles()
     } catch { showToast('Хатолик', 'error') }
   }
@@ -139,10 +121,7 @@ export default function FilesPage() {
   const renameFolder = async (path: string, newName: string) => {
     if (!newName.trim()) return
     try {
-      await fetch(`${API_BASE}/api/folders/rename`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ path, new_name: newName.trim() })
-      })
+      await api.files.renameFolder(path, newName.trim())
       showToast('Номи ўзгартирилди ✓'); setRenamingFolder(null); fetchFolders()
     } catch { showToast('Хатолик', 'error') }
   }
@@ -159,14 +138,7 @@ export default function FilesPage() {
     setUploading(true)
     try {
       for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i]
-        const formData = new FormData()
-        formData.append('file', file)
-        await fetch(`${API_BASE}/api/files/upload`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData
-        })
+        await api.files.uploadSimple(fileList[i])
       }
       showToast(`${fileList.length} та файл юкланди ✓`)
       fetchFiles()
@@ -176,11 +148,7 @@ export default function FilesPage() {
 
   const handleDownload = async (filename: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(filename)}/download`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error()
-      const blob = await res.blob()
+      const blob = await api.files.downloadBlob(filename)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url; a.download = filename
@@ -193,13 +161,9 @@ export default function FilesPage() {
   const handleDelete = async (filename: string) => {
     if (!confirm('Файлни ўчиришни тасдиқлайсизми?')) return
     try {
-      const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(filename)}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        showToast('Ўчирилди ✓')
-        fetchFiles()
-      }
+      await api.files.delete(filename)
+      showToast('Ўчирилди ✓')
+      fetchFiles()
     } catch { showToast('Ўчиришда хатолик', 'error') }
   }
 
@@ -207,13 +171,8 @@ export default function FilesPage() {
     setPreviewLoading(true)
     setPreviewFile({ filename, content: '' })
     try {
-      const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(filename)}/preview`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setPreviewFile({ filename, content: data.preview || '' })
-      }
+      const data = await api.files.preview(filename)
+      setPreviewFile({ filename, content: data.preview || '' })
     } catch { setPreviewFile({ filename, content: '[Preview хатоси]' }) }
     finally { setPreviewLoading(false) }
   }
@@ -221,18 +180,9 @@ export default function FilesPage() {
   const handleOpenInEditor = async (filename: string) => {
     setOpeningFile(filename)
     try {
-      const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(filename)}/open`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // Store processing result in sessionStorage and redirect to editor
-        sessionStorage.setItem('editor_data', JSON.stringify(data))
-        router.push('/')
-      } else {
-        showToast('Файлни очишда хатолик', 'error')
-      }
+      const data = await api.files.open(filename)
+      sessionStorage.setItem('editor_data', JSON.stringify(data))
+      router.push('/')
     } catch { showToast('Файлни очишда хатолик', 'error') }
     finally { setOpeningFile(null) }
   }

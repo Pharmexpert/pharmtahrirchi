@@ -228,6 +228,35 @@ export const files = {
   delete: (filename: string) => del<{ success: boolean }>(`/api/files/${filename}`),
   open: (filename: string, mode = 'auto') =>
     post<{ filename: string; data: import('../types/api').RowData[]; text_id: string }>(`/api/files/${filename}/open?mode=${mode}`, {}),
+  downloadBlob: async (filename: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(filename)}/download`, {
+      headers: authHeaders(''),
+    })
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+    return res.blob()
+  },
+  listFolders: () => get<{ folders: any[] }>('/api/folders'),
+  createFolder: (name: string, parent: string) =>
+    post<{ success: boolean }>('/api/folders/create', { name, parent }),
+  deleteFolder: (folderPath: string) =>
+    del<{ success: boolean }>(`/api/folders/${encodeURIComponent(folderPath)}`),
+  move: (filename: string, target_folder: string) =>
+    post<{ success: boolean }>('/api/files/move', { filename, target_folder }),
+  moveFolder: (folder: string, target: string) =>
+    post<{ success: boolean }>('/api/folders/move', { folder, target }),
+  renameFolder: (path: string, new_name: string) =>
+    put<{ success: boolean }>('/api/folders/rename', { path, new_name }),
+  uploadSimple: async (file: File): Promise<{ success: boolean; filename: string }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`${API_BASE}/api/files/upload`, {
+      method: 'POST',
+      headers: authHeaders(''),
+      body: fd,
+    })
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+    return res.json()
+  },
 }
 
 // ═══════════════════════════════════════════════════
