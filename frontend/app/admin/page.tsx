@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 export default function AdminPage() {
   const { token, user: currentUser } = useAuth()
@@ -43,26 +44,18 @@ export default function AdminPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const auth = { 'Authorization': `Bearer ${token}` }
-      const [uRes, sRes, rRes] = await Promise.all([
-        fetch(`${API_BASE}/api/admin/users`, { headers: auth }),
-        fetch(`${API_BASE}/api/admin/db-stats`, { headers: auth }),
-        fetch(`${API_BASE}/api/admin/rules`, { headers: auth })
+      const [uRes, sRes, rRes] = await Promise.allSettled([
+        api.admin.users(),
+        api.admin.dbStats(),
+        api.admin.rules(),
       ])
-      
-      if (uRes.ok) {
-        const uData = await uRes.json()
-        setUsers(uData.users || [])
-      }
-      if (sRes.ok) {
-        const sData = await sRes.json()
+      if (uRes.status === 'fulfilled') setUsers((uRes.value as any).users || [])
+      if (sRes.status === 'fulfilled') {
+        const sData: any = sRes.value
         setStats(sData)
         setDbSizes(sData.db_sizes || {})
       }
-      if (rRes.ok) {
-        const rData = await rRes.json()
-        setRules(rData.rules || [])
-      }
+      if (rRes.status === 'fulfilled') setRules((rRes.value as any).rules || [])
     } catch (err) {
       setError('Data fetch error')
     } finally {
@@ -76,33 +69,15 @@ export default function AdminPage() {
 
   const handleApprove = async (userId: string, status: 'approved' | 'rejected') => {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/approve`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ userId, status })
-      })
-      if (res.ok) {
-        setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u))
-      }
+      await api.admin.approve(userId, status)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u))
     } catch (_e) {}
   }
 
   const handleRoleChange = async (userId: string, role: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/role`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ userId, role })
-      })
-      if (res.ok) {
-        setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
-      }
+      await api.admin.role(userId, role)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
     } catch (_e) {}
   }
 
@@ -111,32 +86,17 @@ export default function AdminPage() {
   const handleDeleteRule = async (id: number) => {
     if (!confirm('Qoidani o\'chirishni tasdiqlaysizmi?')) return
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setRules(prev => prev.filter(r => r.id !== id))
-      }
+      await api.admin.deleteRule(id)
+      setRules(prev => prev.filter(r => r.id !== id))
     } catch (_e) {}
   }
 
   const handleAddRule = async () => {
     if (!newRule.wrong_form || !newRule.correct_form) return
     try {
-      const res = await fetch(`${API_BASE}/api/admin/rules`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...newRule })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setRules(prev => [data.rule || { ...newRule, id: Date.now() }, ...prev])
-        setNewRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
-      }
+      await api.admin.addRule({ ...newRule })
+      setRules(prev => [{ ...newRule, id: Date.now() }, ...prev])
+      setNewRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
     } catch (_e) {}
   }
 
