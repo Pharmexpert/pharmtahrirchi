@@ -30,6 +30,7 @@ export default function RulesPage() {
   const [perPage, setPerPage] = useState(25)
   const [filterWrong, setFilterWrong] = useState('')
   const [filterCorrect, setFilterCorrect] = useState('')
+  const [filterType, setFilterType] = useState('')
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -93,7 +94,8 @@ export default function RulesPage() {
     const matchSearch = !q || r.wrong_form.toLowerCase().includes(q) || r.correct_form.toLowerCase().includes(q)
     const matchWrong = !filterWrong || r.wrong_form.toLowerCase().includes(filterWrong.toLowerCase())
     const matchCorrect = !filterCorrect || r.correct_form.toLowerCase().includes(filterCorrect.toLowerCase())
-    return matchSearch && matchWrong && matchCorrect
+    const matchType = !filterType || r.error_type === filterType
+    return matchSearch && matchWrong && matchCorrect && matchType
   })
   const totalPages = Math.ceil(filteredRules.length / perPage)
   const pageRules = filteredRules.slice(page * perPage, (page + 1) * perPage)
@@ -245,7 +247,20 @@ export default function RulesPage() {
                 <input placeholder="🔍 Тўғри сўз..." value={filterCorrect} onChange={e => { setFilterCorrect(e.target.value); setPage(0) }}
                   style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white' }} />
               </th>
-              <th style={{ padding: '8px 24px' }}></th>
+              <th style={{ padding: '8px 24px' }}>
+                <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0) }}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white', cursor: 'pointer' }}>
+                  <option value="">Барчаси</option>
+                  <option value="S/Spelling">S/Spelling</option>
+                  <option value="REP/Hunspell">REP/Hunspell</option>
+                  <option value="H/Spelling">H/Spelling</option>
+                  <option value="S/Context">S/Context</option>
+                  <option value="G/Grammar">G/Grammar</option>
+                  <option value="Terminology">Terminology</option>
+                  <option value="F/Correction">F/Correction</option>
+                  <option value="G/SPLIT">G/SPLIT</option>
+                </select>
+              </th>
               <th style={{ padding: '8px 24px' }}></th>
               <th style={{ padding: '8px 24px' }}></th>
               <th style={{ padding: '8px 24px' }}></th>
