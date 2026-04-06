@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { 
   Database, Menu, X, LayoutDashboard, FileText, Settings, 
   LogOut, User, Globe, ChevronLeft, ChevronRight, Search, 
-  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen, Repeat2, UserCog
+  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen, Repeat2, UserCog, Library, Layers
 } from 'lucide-react'
 import { useAuth } from './LoginGuard'
 import Link from 'next/link'
@@ -28,6 +28,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('nav.disputed'), icon: MessageSquare, path: '/linguistic/disputed' },
     { name: t('nav.abbreviations'), icon: Info, path: '/linguistic/abbreviations' },
     { name: t('nav.synonyms'), icon: Repeat2, path: '/synonyms' },
+    { name: 'Луғат', icon: Library, path: '/dictionary' },
+    { name: 'Affix Flags', icon: Layers, path: '/affix-flags' },
   ]
 
   if (isAdmin) {

@@ -1,0 +1,175 @@
+'use client'
+
+import React, { useState, useEffect, useCallback } from 'react'
+import { BookOpen, Search, Loader2, RefreshCw } from 'lucide-react'
+import { useAuth } from '../../components/LoginGuard'
+
+interface DictWord {
+  word: string
+  flags: string
+  language: string
+  pos: string
+}
+
+const POS_LABELS: Record<string, { label: string; color: string }> = {
+  noun: { label: 'От', color: '#3B82F6' },
+  verb: { label: 'Феъл', color: '#10B981' },
+  adj: { label: 'Сифат', color: '#F59E0B' },
+  adv: { label: 'Равиш', color: '#8B5CF6' },
+  other: { label: 'Бошқа', color: '#6B7280' },
+}
+
+export default function DictionaryPage() {
+  const { token } = useAuth()
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+  const [words, setWords] = useState<DictWord[]>([])
+  const [language, setLanguage] = useState<'cyrl' | 'lat'>('cyrl')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
+  const [perPage, setPerPage] = useState(50)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const fetchWords = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        language, page: String(page), per_page: String(perPage), search
+      })
+      const res = await fetch(`${API_BASE}/api/dictionary/words?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const d = await res.json()
+        setWords(d.words || [])
+        setTotal(d.total || 0)
+        setTotalPages(d.total_pages || 0)
+      }
+    } catch {} finally { setLoading(false) }
+  }, [API_BASE, token, language, page, perPage, search])
+
+  useEffect(() => { fetchWords() }, [fetchWords])
+
+  return (
+    <div>
+      {/* Hero */}
+      <div style={{
+        background: 'linear-gradient(135deg, #FFF8F0 0%, #FFEFDC 100%)', borderRadius: '20px',
+        padding: '32px 36px', border: '1.5px solid #FDE3C5', marginBottom: '28px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: '14px',
+            background: 'linear-gradient(135deg, #B48C64, #8B5E3C)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <BookOpen size={24} color="white" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Луғат — Hunspell</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
+              Ўзбек тили имло луғати • <strong>{total}</strong> сўз • {language === 'cyrl' ? 'Кирилл' : 'Лотин'}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => { setLanguage('cyrl'); setPage(0) }} style={{
+            padding: '8px 18px', borderRadius: '10px',
+            border: language === 'cyrl' ? '1.5px solid #B48C64' : '1px solid var(--border)',
+            background: language === 'cyrl' ? '#FFF8F0' : 'white',
+            color: language === 'cyrl' ? '#B48C64' : 'var(--text-secondary)',
+            fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer'
+          }}>🇺🇿 Кирилл</button>
+          <button onClick={() => { setLanguage('lat'); setPage(0) }} style={{
+            padding: '8px 18px', borderRadius: '10px',
+            border: language === 'lat' ? '1.5px solid #16A34A' : '1px solid var(--border)',
+            background: language === 'lat' ? '#F0FDF4' : 'white',
+            color: language === 'lat' ? '#16A34A' : 'var(--text-secondary)',
+            fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer'
+          }}>🇺🇿 Lotin</button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search size={15} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input placeholder="Сўз бўйича қидириш..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }}
+            style={{ width: '100%', padding: '12px 16px 12px 40px', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+        <button onClick={fetchWords} style={{
+          padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)',
+          background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+        }}><RefreshCw size={14} /> Янгилаш</button>
+      </div>
+
+      {/* Table */}
+      <div style={{ background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: '60px', textAlign: 'center' }}>
+            <Loader2 size={28} style={{ animation: 'spin 1s linear infinite' }} />
+          </div>
+        ) : (
+          <>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '60px 1fr 100px 1fr 1fr 120px',
+              padding: '14px 20px', background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)', gap: '12px'
+            }}>
+              {['№', 'СЎЗ', 'ТУРКУМ', 'ТАРЖИМА (RU)', 'ТАРЖИМА (EN)', 'ИЗОҲ'].map(h => (
+                <span key={h} style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{h}</span>
+              ))}
+            </div>
+            {words.map((w, i) => {
+              const pos = POS_LABELS[w.pos] || POS_LABELS.other
+              return (
+                <div key={i} style={{
+                  display: 'grid', gridTemplateColumns: '60px 1fr 100px 1fr 1fr 120px',
+                  padding: '12px 20px', borderBottom: '1px solid var(--border)', gap: '12px', alignItems: 'center'
+                }}>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{page * perPage + i + 1}</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{w.word}</span>
+                  <span style={{
+                    fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px',
+                    background: `${pos.color}15`, color: pos.color, display: 'inline-block', textAlign: 'center'
+                  }}>{pos.label}</span>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>—</span>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>—</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{w.flags || '—'}</span>
+                </div>
+              )
+            })}
+          </>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
+          <button disabled={page === 0} onClick={() => setPage(p => p - 1)} style={{
+            padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)',
+            background: page === 0 ? '#F1F5F9' : 'white', cursor: page === 0 ? 'default' : 'pointer',
+            fontWeight: 700, fontSize: '0.82rem'
+          }}>← Олдинги</button>
+          <span style={{ padding: '8px 16px', fontSize: '0.85rem', fontWeight: 600 }}>
+            {page + 1} / {totalPages} ({total} та)
+          </span>
+          <button disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} style={{
+            padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)',
+            background: page >= totalPages - 1 ? '#F1F5F9' : 'white', cursor: page >= totalPages - 1 ? 'default' : 'pointer',
+            fontWeight: 700, fontSize: '0.82rem'
+          }}>Кейинги →</button>
+          <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(0) }} style={{
+            padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.82rem', cursor: 'pointer'
+          }}>
+            <option value={25}>25 / бет</option>
+            <option value={50}>50 / бет</option>
+            <option value={100}>100 / бет</option>
+          </select>
+        </div>
+      )}
+    </div>
+  )
+}

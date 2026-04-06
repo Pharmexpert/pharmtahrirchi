@@ -24,6 +24,73 @@ async def spellcheck_endpoint(payload: Dict[str, Any]):
     return {"errors": errors, "total": len(errors), "stats": spellcheck.get_stats()}
 
 
+# ═══════════════════════════════════════════════════
+# Луғат (Hunspell Dictionary) endpoints
+# ═══════════════════════════════════════════════════
+
+@router.get("/api/dictionary/words")
+async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: int = 50, search: str = ""):
+    """Get hunspell dictionary words with pagination."""
+    import hunspell_data
+    all_words = hunspell_data.get_dictionary_words(language)
+
+    # Filter
+    if search:
+        s = search.lower()
+        all_words = [w for w in all_words if s in w['word'].lower()]
+
+    total = len(all_words)
+    start = page * per_page
+    end = start + per_page
+    return {
+        "words": all_words[start:end],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page
+    }
+
+
+@router.get("/api/dictionary/affix-flags")
+async def get_affix_flags(language: str = "cyrl", page: int = 0, per_page: int = 25, search: str = ""):
+    """Get affix flags with descriptions and examples."""
+    import hunspell_data
+    flags = hunspell_data.get_affix_flags(language)
+
+    if search:
+        s = search.lower()
+        flags = [f for f in flags if s in f['flag'].lower() or s in f['description'].lower()]
+
+    total = len(flags)
+    start = page * per_page
+    end = start + per_page
+    return {
+        "flags": flags[start:end],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page
+    }
+
+
+@router.get("/api/dictionary/stats")
+async def get_dictionary_stats():
+    """Get dictionary stats: total words, flags, REP rules."""
+    import hunspell_data
+    return {
+        "cyrillic": {
+            "words": len(hunspell_data.get_dictionary_words('cyrl')),
+            "affix_flags": len(hunspell_data.get_affix_flags('cyrl')),
+            "rep_rules": len(hunspell_data.get_rep_rules('cyrl'))
+        },
+        "latin": {
+            "words": len(hunspell_data.get_dictionary_words('lat')),
+            "affix_flags": len(hunspell_data.get_affix_flags('lat')),
+            "rep_rules": len(hunspell_data.get_rep_rules('lat'))
+        }
+    }
+
+
 @router.post("/api/align-document")
 async def align_document(request: Request, payload: Dict[str, Any]):
     """AI-based alignment for the entire document in a single batched call."""
