@@ -22,6 +22,7 @@ import bert_engine
 import admin_routes
 import linguistic_routes
 from routes import auth_routes, upload_routes, sayqallash_routes, editor_routes, projects_routes
+from routes.websocket_routes import router as websocket_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -103,6 +104,7 @@ app.include_router(upload_routes.router)
 app.include_router(sayqallash_routes.router)
 app.include_router(editor_routes.router)
 app.include_router(projects_routes.router)
+app.include_router(websocket_router)
 
 
 if __name__ == "__main__":
