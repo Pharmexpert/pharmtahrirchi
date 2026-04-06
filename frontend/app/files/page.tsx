@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { FolderOpen, Upload, Download, Trash2, Eye, Play, Loader2, CheckCircle2, AlertCircle, X, FileText, FileIcon, Search, RefreshCw, HardDrive } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import api from '../../services/api'
+import { useAuth } from '../../components/LoginGuard'
 
 interface UploadedFile {
   filename: string
@@ -16,6 +17,9 @@ interface UploadedFile {
   project_id?: string
   project_name?: string
   specialist_name?: string
+  user_id?: string | null
+  owner_name?: string
+  folder_path?: string
 }
 
 interface Folder {
@@ -45,6 +49,10 @@ function getFileIcon(ext: string): string {
 
 export default function FilesPage() {
   const router = useRouter()
+  const auth = useAuth()
+  const isAdmin = !!auth?.isAdmin
+  const [adminOwnerFilter, setAdminOwnerFilter] = useState<string>('')
+  const [adminMonthFilter, setAdminMonthFilter] = useState<string>('')
 
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -195,10 +203,31 @@ export default function FilesPage() {
 
   const filtered = files.filter(f => {
     const q = search.toLowerCase()
-    const matchSearch = !q || (f.filename || '').toLowerCase().includes(q) || (f.original_filename || '').toLowerCase().includes(q) || (f.specialist_name || '').toLowerCase().includes(q)
+    const matchSearch = !q || (f.filename || '').toLowerCase().includes(q) || (f.original_filename || '').toLowerCase().includes(q) || (f.specialist_name || '').toLowerCase().includes(q) || (f.owner_name || '').toLowerCase().includes(q)
+    if (isAdmin) {
+      const matchOwner = !adminOwnerFilter || (f.owner_name || 'Legacy') === adminOwnerFilter
+      const matchMonth = !adminMonthFilter || (f.folder_path || '').endsWith('/' + adminMonthFilter)
+      return matchSearch && matchOwner && matchMonth
+    }
     const matchFolder = (f.folder || '') === currentFolder
     return matchSearch && matchFolder
   })
+
+  // Distinct owners and months for admin sidebar
+  const adminOwners = isAdmin
+    ? Array.from(new Set(files.map(f => f.owner_name || 'Legacy'))).sort()
+    : []
+  const adminMonths = isAdmin && adminOwnerFilter
+    ? Array.from(new Set(
+        files
+          .filter(f => (f.owner_name || 'Legacy') === adminOwnerFilter)
+          .map(f => {
+            const parts = (f.folder_path || '').split('/')
+            return parts[parts.length - 1] || ''
+          })
+          .filter(Boolean)
+      )).sort().reverse()
+    : []
 
   const currentFolders = folders.filter(f => {
     if (!currentFolder) return !f.path.includes('/')
@@ -386,8 +415,67 @@ export default function FilesPage() {
         </div>
       )}
 
+      {/* Main layout with optional admin sidebar */}
+      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+      {isAdmin && (
+        <div style={{
+          width: 240, flexShrink: 0, background: 'var(--bg-card)',
+          border: '1px solid var(--border)', borderRadius: '16px',
+          padding: '14px', maxHeight: '70vh', overflowY: 'auto'
+        }}>
+          <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, color: '#7C3AED' }}>
+            ADMIN: Фойдаланувчилар
+          </div>
+          <div
+            onClick={() => { setAdminOwnerFilter(''); setAdminMonthFilter('') }}
+            style={{
+              padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700,
+              background: !adminOwnerFilter ? '#F0F7FF' : 'transparent',
+              color: !adminOwnerFilter ? '#2563EB' : 'var(--text-secondary)',
+              marginBottom: 4
+            }}
+          >
+            Барчаси ({files.length})
+          </div>
+          {adminOwners.map(o => {
+            const count = files.filter(f => (f.owner_name || 'Legacy') === o).length
+            const active = adminOwnerFilter === o
+            return (
+              <div key={o}>
+                <div
+                  onClick={() => { setAdminOwnerFilter(o); setAdminMonthFilter('') }}
+                  style={{
+                    padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700,
+                    background: active ? '#F0F7FF' : 'transparent',
+                    color: active ? '#2563EB' : 'var(--text-secondary)',
+                    marginBottom: 2, display: 'flex', justifyContent: 'space-between'
+                  }}
+                >
+                  <span>👤 {o}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{count}</span>
+                </div>
+                {active && adminMonths.map(m => (
+                  <div key={m}
+                    onClick={() => setAdminMonthFilter(adminMonthFilter === m ? '' : m)}
+                    style={{
+                      marginLeft: 14, padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
+                      fontSize: '0.74rem', fontWeight: 600,
+                      background: adminMonthFilter === m ? '#EEF2FF' : 'transparent',
+                      color: adminMonthFilter === m ? '#7C3AED' : 'var(--text-muted)'
+                    }}
+                  >
+                    📅 {m}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* File List */}
       <div style={{
+        flex: 1,
         background: 'var(--bg-card)', borderRadius: '16px',
         border: '1px solid var(--border)', overflow: 'hidden',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
@@ -407,7 +495,7 @@ export default function FilesPage() {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '40px 1fr 100px 120px 110px 200px',
+              display: 'grid', gridTemplateColumns: isAdmin ? '40px 1fr 100px 120px 120px 110px 200px' : '40px 1fr 100px 120px 110px 200px',
               padding: '14px 20px', background: 'var(--bg-secondary)',
               borderBottom: '2px solid var(--border)', gap: '12px'
             }}>
@@ -415,6 +503,7 @@ export default function FilesPage() {
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>ФАЙЛ НОМИ</span>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>ҲАЖМ</span>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>МУТАХАССИС</span>
+              {isAdmin && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase' }}>OWNER</span>}
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>САНА</span>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>АМАЛЛАР</span>
             </div>
@@ -426,7 +515,7 @@ export default function FilesPage() {
                 onDragStart={() => setDragFile(file.filename)}
                 onDragEnd={() => setDragFile(null)}
                 style={{
-                  display: 'grid', gridTemplateColumns: '40px 1fr 100px 120px 110px 200px',
+                  display: 'grid', gridTemplateColumns: isAdmin ? '40px 1fr 100px 120px 120px 110px 200px' : '40px 1fr 100px 120px 110px 200px',
                   padding: '14px 20px', borderBottom: '1px solid var(--border)',
                   gap: '12px', alignItems: 'center', transition: 'background 0.15s',
                   cursor: 'grab', opacity: dragFile === file.filename ? 0.5 : 1
@@ -457,6 +546,12 @@ export default function FilesPage() {
                 <span style={{ fontSize: '0.82rem', color: '#16A34A', fontWeight: 600 }}>
                   {file.specialist_name || '—'}
                 </span>
+
+                {isAdmin && (
+                  <span style={{ fontSize: '0.78rem', color: '#7C3AED', fontWeight: 700 }} title={file.folder_path || ''}>
+                    {file.owner_name || 'Legacy'}
+                  </span>
+                )}
 
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                   {formatDate(file.modified_at)}
@@ -490,6 +585,7 @@ export default function FilesPage() {
             ))}
           </div>
         )}
+      </div>
       </div>
 
       {/* Preview Modal */}

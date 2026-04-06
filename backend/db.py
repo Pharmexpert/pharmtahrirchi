@@ -13,6 +13,7 @@ except ImportError:
 import pickle
 import logging
 import time
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -1527,59 +1528,122 @@ def get_dashboard_entries():
     return [dict(r) for r in rows]
 
 
-def list_uploaded_files() -> List[Dict[str, Any]]:
-    """List all uploaded files from both uploads directory and projects table."""
+def list_uploaded_files(current_user_id: str = None, is_admin: bool = False) -> List[Dict[str, Any]]:
+    """List uploaded files. If is_admin, return all with owner info.
+    Otherwise only return files owned by current_user_id."""
     import os
     _IS_RAILWAY = os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data")
     _DATA_DIR = os.getenv("DATA_DIR", "/app/data" if _IS_RAILWAY else os.path.dirname(os.path.abspath(__file__)))
     UPLOADS_DIR = os.path.join(_DATA_DIR, "uploads")
     os.makedirs(UPLOADS_DIR, exist_ok=True)
-    
+
     files = []
-    # Get files from uploads directory (including subfolders)
     for root, dirs, fnames in os.walk(UPLOADS_DIR):
         rel_dir = os.path.relpath(root, UPLOADS_DIR)
         if rel_dir == ".":
             rel_dir = ""
         for fname in fnames:
             fpath = os.path.join(root, fname)
-            stat = os.stat(fpath)
-            rel_path = os.path.join(rel_dir, fname) if rel_dir else fname
+            try:
+                stat = os.stat(fpath)
+            except OSError:
+                continue
+            rel_path = os.path.join(rel_dir, fname).replace("\\", "/") if rel_dir else fname
             files.append({
                 "filename": rel_path,
                 "path": fpath,
                 "size": stat.st_size,
                 "modified_at": stat.st_mtime,
                 "extension": os.path.splitext(fname)[1].lower(),
-                "folder": rel_dir
+                "folder": rel_dir.replace("\\", "/"),
             })
-    
-    # Enrich with project info from DB
+
+    # Enrich with project + owner info
     conn = connect_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.id, p.name, p.specialist_name, p.original_filename, p.file_path, p.created_at, p.updated_at,
+        SELECT p.id, p.name, p.specialist_name, p.original_filename, p.file_path, p.user_id,
+               p.created_at, p.updated_at,
                u.name as user_full_name
         FROM projects p LEFT JOIN users u ON p.user_id = u.id
         WHERE p.file_path IS NOT NULL
     """)
     projects = {dict(r)["file_path"]: dict(r) for r in cursor.fetchall()}
     conn.close()
-    
+
+    def _safe_folder_name(name: str, fallback: str) -> str:
+        import re as _re
+        if not name:
+            return fallback or "legacy"
+        cleaned = _re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_")
+        return cleaned or (fallback or "legacy")
+
+    enriched = []
     for f in files:
         proj = projects.get(f["path"])
+        owner_id = None
+        owner_name = None
         if proj:
             f["project_id"] = proj["id"]
             f["project_name"] = proj["name"]
             f["specialist_name"] = proj["specialist_name"] or proj.get("user_full_name", "")
             f["original_filename"] = proj.get("original_filename", f["filename"])
+            owner_id = proj.get("user_id")
+            owner_name = proj.get("user_full_name") or proj.get("specialist_name")
         else:
             f["original_filename"] = f["filename"]
-    
-    # Sort by modified time descending
-    files.sort(key=lambda x: x.get("modified_at", 0), reverse=True)
-    return files
+
+        # Infer owner from folder path if unset: uploads/users/<safe_name>/YYYY-MM/...
+        folder = f.get("folder", "") or ""
+        folder_parts = folder.split("/") if folder else []
+        inferred_user_folder = None
+        inferred_month = None
+        if len(folder_parts) >= 2 and folder_parts[0] == "users":
+            inferred_user_folder = folder_parts[1]
+            if len(folder_parts) >= 3:
+                inferred_month = folder_parts[2]
+
+        if owner_id is None and inferred_user_folder:
+            # Try to match inferred folder name to a user
+            owner_name = owner_name or inferred_user_folder
+
+        f["user_id"] = owner_id
+        f["owner_name"] = owner_name or "Legacy"
+
+        # Compute folder_path for admin view grouping
+        if inferred_user_folder:
+            safe = inferred_user_folder
+            month = inferred_month or datetime.fromtimestamp(f["modified_at"]).strftime("%Y-%m")
+            f["folder_path"] = f"users/{safe}/{month}"
+        elif owner_name:
+            safe = _safe_folder_name(owner_name, owner_id or "legacy")
+            month = datetime.fromtimestamp(f["modified_at"]).strftime("%Y-%m")
+            f["folder_path"] = f"users/{safe}/{month}"
+        else:
+            f["folder_path"] = "users/legacy"
+
+        # Filter for non-admin
+        if not is_admin:
+            if owner_id is None or owner_id != current_user_id:
+                continue
+        enriched.append(f)
+
+    enriched.sort(key=lambda x: x.get("modified_at", 0), reverse=True)
+    return enriched
+
+
+def get_file_owner_id(file_path: str) -> Optional[str]:
+    """Return user_id owning this file (via projects.file_path match), or None."""
+    conn = connect_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM projects WHERE file_path = ? LIMIT 1", (file_path,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row).get("user_id")
+    return None
 
 
 def get_file_text_preview(file_path: str, max_chars: int = 2000) -> str:

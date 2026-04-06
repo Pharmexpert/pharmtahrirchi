@@ -1,8 +1,9 @@
 import os
+import re
 import shutil
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import FileResponse
 from pdf2docx import Converter
@@ -21,6 +22,46 @@ UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 router = APIRouter(tags=["upload"])
+
+
+def _safe_user_folder(user: Dict) -> str:
+    name = (user.get("name") or "").strip()
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_")
+    if cleaned:
+        return cleaned
+    return f"user_{user.get('id', 'unknown')}"
+
+
+def _user_upload_dir(user: Dict) -> str:
+    safe = _safe_user_folder(user)
+    ym = datetime.utcnow().strftime("%Y-%m")
+    path = os.path.join(UPLOADS_DIR, "users", safe, ym)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _resolve_upload_path(filename: str) -> str:
+    """Resolve a user-provided filename (possibly with sub-path) to an absolute path
+    inside UPLOADS_DIR; reject traversal."""
+    # Normalize slashes
+    rel = filename.replace("\\", "/").lstrip("/")
+    abs_path = os.path.abspath(os.path.join(UPLOADS_DIR, rel))
+    uploads_abs = os.path.abspath(UPLOADS_DIR)
+    if not abs_path.startswith(uploads_abs + os.sep) and abs_path != uploads_abs:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return abs_path
+
+
+def _enforce_ownership(abs_path: str, current_user: Dict):
+    """Non-admin can only access their own files."""
+    if current_user.get("role") == "admin":
+        return
+    owner_id = db.get_file_owner_id(abs_path)
+    if owner_id is None:
+        # Legacy files without owner: non-admin denied
+        raise HTTPException(status_code=403, detail="Рухсат йўқ")
+    if owner_id != current_user.get("id"):
+        raise HTTPException(status_code=403, detail="Рухсат йўқ")
 
 
 @router.post("/api/upload")
@@ -42,7 +83,8 @@ async def upload_file(request: Request, background_tasks: BackgroundTasks, file:
         raise HTTPException(status_code=400, detail="Файл ҳажми 50MB дан ошмаслиги керак")
     file.file.seek(0)
 
-    persistent_file_path = os.path.join(UPLOADS_DIR, f"{int(datetime.utcnow().timestamp())}_{file.filename}")
+    user_dir = _user_upload_dir(current_user)
+    persistent_file_path = os.path.join(user_dir, f"{int(datetime.utcnow().timestamp())}_{file.filename}")
     with open(persistent_file_path, "wb") as buffer:
         file.file.seek(0)
         shutil.copyfileobj(file.file, buffer)
@@ -98,41 +140,58 @@ async def upload_file(request: Request, background_tasks: BackgroundTasks, file:
 @router.get("/api/files")
 async def list_files(current_user: Dict = Depends(get_current_user)):
     try:
-        files = db.list_uploaded_files()
-        return {"files": files}
+        is_admin = current_user.get("role") == "admin"
+        files = db.list_uploaded_files(current_user_id=current_user.get("id"), is_admin=is_admin)
+        return {"files": files, "is_admin": is_admin}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/files/{filename}/download")
+@router.get("/api/files/{filename:path}/download")
 async def download_file(filename: str, current_user: Dict = Depends(get_current_user)):
-    file_path = os.path.join(UPLOADS_DIR, filename)
+    file_path = _resolve_upload_path(filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл топилмади")
+    _enforce_ownership(file_path, current_user)
     return FileResponse(
         file_path,
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        filename=os.path.basename(filename),
+        headers={"Content-Disposition": f'attachment; filename="{os.path.basename(filename)}"'}
     )
 
 
-@router.get("/api/files/{filename}/preview")
+@router.get("/api/files/{filename:path}/preview")
 async def preview_file(filename: str, current_user: Dict = Depends(get_current_user)):
-    file_path = os.path.join(UPLOADS_DIR, filename)
+    file_path = _resolve_upload_path(filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл топилмади")
+    _enforce_ownership(file_path, current_user)
     preview = db.get_file_text_preview(file_path)
     return {"preview": preview, "filename": filename}
 
 
 @router.post("/api/files/upload")
 async def upload_file_to_directory(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
+    user_dir = _user_upload_dir(current_user)
     safe_name = f"{int(datetime.utcnow().timestamp())}_{file.filename}"
-    file_path = os.path.join(UPLOADS_DIR, safe_name)
+    file_path = os.path.join(user_dir, safe_name)
     with open(file_path, "wb") as buffer:
         file.file.seek(0)
         shutil.copyfileobj(file.file, buffer)
-    return {"success": True, "filename": safe_name, "original": file.filename}
+    # Register ownership in projects table so ownership checks work
+    try:
+        text_id = f"file_{int(datetime.utcnow().timestamp())}_{current_user.get('id','u')}"
+        db.update_project_metadata(text_id, current_user.get("name", ""), user_id=current_user.get("id"))
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE projects SET original_filename = ?, file_path = ? WHERE id = ?",
+                       (file.filename, file_path, text_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Could not register upload ownership: {e}")
+    rel = os.path.relpath(file_path, UPLOADS_DIR).replace("\\", "/")
+    return {"success": True, "filename": rel, "original": file.filename}
 
 
 @router.post("/api/folders/create")
@@ -188,11 +247,12 @@ async def move_file(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
     if not filename:
         raise HTTPException(status_code=400, detail="Файл номи керак")
 
-    src = os.path.join(UPLOADS_DIR, filename)
+    src = _resolve_upload_path(filename)
     if not os.path.exists(src):
         raise HTTPException(status_code=404, detail="Файл топилмади")
+    _enforce_ownership(src, current_user)
 
-    dst_dir = os.path.join(UPLOADS_DIR, target_folder) if target_folder else UPLOADS_DIR
+    dst_dir = _resolve_upload_path(target_folder) if target_folder else UPLOADS_DIR
     os.makedirs(dst_dir, exist_ok=True)
     dst = os.path.join(dst_dir, os.path.basename(filename))
 
@@ -249,11 +309,12 @@ async def move_folder(payload: Dict[str, Any], current_user: Dict = Depends(get_
     return {"success": True, "new_path": new_path}
 
 
-@router.delete("/api/files/{filename}")
+@router.delete("/api/files/{filename:path}")
 async def delete_file(filename: str, current_user: Dict = Depends(get_current_user)):
-    file_path = os.path.join(UPLOADS_DIR, filename)
+    file_path = _resolve_upload_path(filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл топилмади")
+    _enforce_ownership(file_path, current_user)
     try:
         os.remove(file_path)
         return {"success": True}
@@ -261,14 +322,15 @@ async def delete_file(filename: str, current_user: Dict = Depends(get_current_us
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/files/{filename}/open")
+@router.post("/api/files/{filename:path}/open")
 async def open_file_in_editor(filename: str, background_tasks: BackgroundTasks, mode: str = "auto", current_user: Dict = Depends(get_current_user)):
-    file_path = os.path.join(UPLOADS_DIR, filename)
+    file_path = _resolve_upload_path(filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл топилмади")
+    _enforce_ownership(file_path, current_user)
 
     processing_path = file_path
-    original_filename = filename
+    original_filename = os.path.basename(filename)
 
     if filename.lower().endswith(".pdf"):
         docx_path = file_path.rsplit(".", 1)[0] + ".docx"

@@ -83,8 +83,19 @@ export interface DashboardEntry {
 export interface UploadedFile {
   filename: string
   original_name?: string
+  original_filename?: string
   size: number
-  created_at: string
+  created_at?: string
+  modified_at?: number
+  extension?: string
+  folder?: string
+  path?: string
+  project_id?: string
+  project_name?: string
+  specialist_name?: string
+  user_id?: string | null
+  owner_name?: string
+  folder_path?: string
 }
 
 // ═══════════════════════════════════════════════════
