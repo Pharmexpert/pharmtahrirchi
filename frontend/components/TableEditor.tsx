@@ -1,23 +1,16 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
-import { Download, Save, Database, Sparkles, Loader2, Plus, Trash2, BookOpen, MousePointer2, Search } from 'lucide-react'
-import Link from 'next/link'
-import { useAuth } from './LoginGuard'
+import React from 'react'
+import { Save, Sparkles, Loader2, Plus, Trash2, Search } from 'lucide-react'
 import type { RowData } from '../types/api'
 import SynonymPopup from './editor/SynonymPopup'
 import TermHighlighter from './editor/TermHighlighter'
-import type { Term } from './editor/TermHighlighter'
 import RichContent from './editor/RichContent'
 import LangCell from './editor/LangCell'
+import TableToolbar from './editor/TableToolbar'
+import { useTableEditor } from './editor/useTableEditor'
 
 export type { RowData }
-
-interface SynonymPopup {
-  visible: boolean; x: number; y: number
-  word: string; lang: 'ru' | 'uz' | 'en'; rowIdx: number
-  synonyms: string[]; loading: boolean
-}
 
 interface Props {
   initialData: RowData[]
@@ -26,681 +19,47 @@ interface Props {
 }
 
 export default function TableEditor({ initialData, filename, textId = '' }: Props) {
-  const { token, user } = useAuth()
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  const authHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-
-  const [data, setData] = useState<RowData[]>(
-    initialData.map(r => ({ ...r, display_no: r.display_no || String(r.sentence_no || '') }))
-  )
-  const [savingRow, setSavingRow] = useState<number | null>(null)
-  const [improvingRow, setImprovingRow] = useState<{ idx: number, lang: string } | null>(null)
-  const [savingAll, setSavingAll] = useState(false)
-  const [isAiAligning, setIsAiAligning] = useState(false)
-  const [isFinishing, setIsFinishing] = useState(false)
-  const [dragIdx, setDragIdx] = useState<number | null>(null)
-  const [dropIdx, setDropIdx] = useState<number | null>(null)
-  const [saveStatus, setSaveStatus] = useState<string | null>(null)
-  const [popup, setPopup] = useState<SynonymPopup>({
-    visible: false, x: 0, y: 0, word: '', lang: 'ru', rowIdx: -1, synonyms: [], loading: false
-  })
-  const [isLinguisticLoading, setIsLinguisticLoading] = useState(false)
-  const [linguisticProgress, setLinguisticProgress] = useState(0)
-  const [showSourceLangModal, setShowSourceLangModal] = useState<string | null>(null)
-  const [linguisticPreview, setLinguisticPreview] = useState<{ category: string, results: any[], mode?: 'ai' | 'db' } | null>(null)
-  const [linguisticSearchQuery, setLinguisticSearchQuery] = useState('')
-  const [isBatchPolishing, setIsBatchPolishing] = useState(false)
-  const [batchSummary, setBatchSummary] = useState<{ total: number, corrected: number, annotations: number } | null>(null)
-  const [isDraggingPopup, setIsDraggingPopup] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  const popupRef = useRef<HTMLDivElement>(null)
-  
-  // Linguistic terms for highlighting
-  const [terms, setTerms] = useState<Term[]>([])
-
-  // Load terms dictionary on mount
-  useEffect(() => {
-    if (!token) return
-    fetch(`${API_BASE}/api/linguistic/terms-dictionary`, { headers: authHeaders })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (!d) return
-        const allTerms: Term[] = []
-        for (const a of (d.annotated || [])) {
-          for (const field of ['en', 'ru', 'uz']) {
-            if (a[field]) allTerms.push({ id: a.id * 100 + (field === 'en' ? 1 : field === 'ru' ? 2 : 3), type: 'annotated', match: a[field], en: a.en || '', ru: a.ru || '', uz: a.uz || '', detail_en: a.description_en, detail_ru: a.description_ru, detail_uz: a.description_uz })
-          }
-        }
-        for (const d2 of (d.disputed || [])) {
-          for (const field of ['en', 'ru', 'uz']) {
-            if (d2[field]) allTerms.push({ id: d2.id * 100 + 10 + (field === 'en' ? 1 : field === 'ru' ? 2 : 3), type: 'disputed', match: d2[field], en: d2.en || '', ru: d2.ru || '', uz: d2.uz || '', detail_en: d2.context_en, detail_ru: d2.context_ru, detail_uz: d2.context_uz })
-          }
-        }
-        for (const ab of (d.abbreviations || [])) {
-          if (ab.short_form) allTerms.push({ id: ab.id * 100 + 20, type: 'abbreviation', match: ab.short_form, en: ab.long_en || '', ru: ab.long_ru || '', uz: ab.long_uz || '', detail_en: `${ab.short_form} = ${ab.long_en}` })
-        }
-        setTerms(allTerms)
-      })
-      .catch(() => {})
-  }, [API_BASE, token])
-
-  // Column width state (percentages)
-  const [colWidths, setColWidths] = useState([15, 37.5, 37.5, 10])
-  const resizingRef = useRef<{ idx: number; startX: number; startWidths: number[] } | null>(null)
-
-  useEffect(() => {
-    const handleMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return
-      e.preventDefault()
-      const { idx, startX, startWidths } = resizingRef.current
-      const deltaX = e.clientX - startX
-      
-      const tableEl = document.getElementById('main-table')
-      const tableWidth = tableEl?.clientWidth || 1000
-      const deltaPercent = (deltaX / tableWidth) * 100
-      
-      const newWidths = [...startWidths]
-      newWidths[idx] = Math.max(5, startWidths[idx] + deltaPercent)
-      newWidths[idx+1] = Math.max(5, startWidths[idx+1] - deltaPercent)
-      
-      setColWidths(newWidths)
-    }
-    const handleUp = () => {
-      if (resizingRef.current) {
-        resizingRef.current = null
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-      }
-    }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-  }, [])
-
-  const startResizing = (idx: number, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizingRef.current = { idx, startX: e.clientX, startWidths: [...colWidths] }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(e.target as Node))
-        setPopup(p => ({ ...p, visible: false }))
-    }
-    document.addEventListener('mousedown', h)
-    
-    // NEW: Fetch polishing summary on mount to show background results
-    if (textId) {
-      fetch(`${API_BASE}/api/projects/${textId}/polishing-summary`, { headers: authHeaders })
-        .then(res => res.json())
-        .then(r => {
-          if (r.status === 'success' && r.summary) {
-            setBatchSummary(r.summary)
-          }
-        })
-        .catch(err => console.error("Summary fetch error:", err))
-    }
-
-    return () => document.removeEventListener('mousedown', h)
-  }, [textId])
-
-  const notify = (msg: string) => {
-    setSaveStatus(msg)
-    setTimeout(() => setSaveStatus(null), 3500)
-  }
-
-  const update = (idx: number, field: keyof RowData, value: string) =>
-    setData(prev => { const d = [...prev]; (d[idx] as any)[field] = value; return d })
-
-  const insertRowAfter = (idx: number) => {
-    const prev = data[idx]
-    const base = prev.display_no || String(prev.sentence_no)
-    let sub = 1
-    while (data.some(r => r.display_no === base + '.' + sub)) sub++
-    const newRow: RowData = {
-      type: 'content', en: '', ru_v1: '', ru_proposed: '',
-      uz_v1: '', uz_proposed: '', status: 'review',
-      sentence_no: 0, display_no: base + '.' + sub,
-      text_id: textId || prev.text_id || '', notes: ''
-    }
-    setData(prev => { const d = [...prev]; d.splice(idx + 1, 0, newRow); return d })
-  }
-
-  // Drag & Drop rows
-  const handleDragStart = (idx: number) => { setDragIdx(idx) }
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIdx(idx)
-  }
-  const handleDragLeave = () => { setDropIdx(null) }
-  const handleDrop = (e: React.DragEvent, toIdx: number) => {
-    e.preventDefault()
-    if (dragIdx === null || dragIdx === toIdx) { setDragIdx(null); setDropIdx(null); return }
-    setData(prev => {
-      const d = [...prev]
-      const [moved] = d.splice(dragIdx, 1)
-      const actualTo = toIdx > dragIdx ? toIdx - 1 : toIdx
-      d.splice(actualTo, 0, moved)
-      return d
-    })
-    setDragIdx(null); setDropIdx(null)
-    notify(`Қатор #${dragIdx + 1} → #${toIdx + 1} кўчирилди`)
-  }
-  const handleDragEnd = () => { setDragIdx(null); setDropIdx(null) }
-
-  const deleteRow = async (idx: number) => {
-    const row = data[idx]
-    if (row.sentence_no > 0) {
-      try {
-        await fetch(`${API_BASE}/delete-row/${encodeURIComponent(row.text_id)}/${row.sentence_no}`, { 
-          method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
-        })
-      } catch (_e) { /* ignore */ }
-    }
-    setData(prev => prev.filter((_, i) => i !== idx))
-    notify('Gap #' + row.display_no + ' ochirildi')
-  }
-
-  const handleWordClick = async (e: React.MouseEvent<HTMLTextAreaElement>, rowIdx: number, lang: 'ru' | 'uz' | 'en') => {
-    const t = e.currentTarget
-    const s = t.selectionStart ?? 0
-    const end = t.selectionEnd ?? 0
-    const txt = t.value
-    let sel = ''
-    if (s !== end) {
-      sel = txt.slice(s, end).trim()
-    } else {
-      let a = s, b = s
-      while (a > 0 && !/\s/.test(txt[a - 1])) a--
-      while (b < txt.length && !/\s/.test(txt[b])) b++
-      sel = txt.slice(a, b).replace(/[.,;:!?()]/g, '').trim()
-    }
-    if (!sel || sel.length < 2 || sel.split(' ').length > 5) return
-    const px = Math.min(e.clientX, window.innerWidth - 310)
-    const py = Math.min(e.clientY + 22, window.innerHeight - 240)
-    setPopup({ visible: true, x: px, y: py, word: sel, lang: lang === 'en' ? 'en' : lang, rowIdx, synonyms: [], loading: true })
-
-    try {
-      // 1-босқич: Синонимлар базасидан қидириш
-      const dbRes = await fetch(`${API_BASE}/api/synonyms?word=${encodeURIComponent(sel)}&lang=${lang}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      let dbSynonyms: any[] = []
-      if (dbRes.ok) {
-        const dbData = await dbRes.json()
-        dbSynonyms = (dbData.synonyms || [])
-          .filter((s: any) => s.word.toLowerCase() === sel.toLowerCase())
-          .sort((a: any, b: any) => (b.frequency || 0) - (a.frequency || 0))
-          .map((s: any) => ({ word: s.synonym, frequency: s.frequency || 0, probability: Math.min(1, (s.frequency || 0) / 10) }))
-      }
-
-      // 2-босқич: 5 тадан кам бўлса — AI ишга тушади
-      if (dbSynonyms.length < 5) {
-        setPopup(p => ({ ...p, synonyms: dbSynonyms, loading: dbSynonyms.length < 5 }))
-        try {
-          const aiRes = await fetch(`${API_BASE}/api/linguistic/synonyms`, {
-            method: 'POST', headers: authHeaders,
-            body: JSON.stringify({ word: sel, lang, context_en: data[rowIdx].en, source_lang: 'English' })
-          })
-          if (aiRes.ok) {
-            const aiData = await aiRes.json()
-            const aiSyns = (aiData.synonyms || []).map((s: any) => typeof s === 'string' ? { word: s, frequency: 0, probability: 0.5 } : s)
-            // Мавжуд синонимлар билан бирлаштириш
-            const existing = new Set(dbSynonyms.map((s: any) => (s.word || '').toLowerCase()))
-            const merged = [...dbSynonyms, ...aiSyns.filter((s: any) => !existing.has((s.word || '').toLowerCase()))]
-            setPopup(p => ({ ...p, synonyms: merged, loading: false }))
-          } else {
-            setPopup(p => ({ ...p, loading: false }))
-          }
-        } catch { setPopup(p => ({ ...p, loading: false })) }
-      } else {
-        setPopup(p => ({ ...p, synonyms: dbSynonyms, loading: false }))
-      }
-    } catch (_e) { setPopup(p => ({ ...p, loading: false, synonyms: [] })) }
-  }
-
-  const batchTransliterate = async (target: 'latin' | 'cyrillic') => {
-    const uzTexts = data.filter(r => r.type === 'content').map(r => r.uz_proposed || r.uz_v1)
-    if (uzTexts.length === 0) return
-    notify(`Матн ${target === 'latin' ? 'лотинга' : 'кириллга'} ўгирилмоқда...`)
-    try {
-      const res = await fetch(`${API_BASE}/api/linguistic/transliterate-batch`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ texts: uzTexts, target })
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      setData(prev => {
-        const d = [...prev]
-        let uzIdx = 0
-        return d.map(row => {
-          if (row.type === 'content') {
-            const val = r.results[uzIdx++]
-            return { ...row, uz_proposed: val }
-          }
-          return row
-        })
-      })
-      notify('Транслитерация муваффақиятли якунланди')
-    } catch (_e) { notify('Хатолик юз берди') }
-  }
-
-  const applyVariant = (v: string) => {
-    const { rowIdx, word, lang } = popup
-    // 1. Частотани ошириш (мавжуд синоним учун)
-    try {
-      fetch(`${API_BASE}/api/synonyms/select`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ word, synonym: v, lang })
-      })
-    } catch {}
-    // 2. Базага янги синоним сақлаш (AI синонимлар учун)
-    try {
-      fetch(`${API_BASE}/api/synonyms/save`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ word, synonym: v, lang })
-      })
-    } catch {}
-    // 3. Матнда алмаштириш
-    const field = lang === 'ru' ? 'ru_proposed' : lang === 'en' ? 'en' : 'uz_proposed'
-    const current = (data[rowIdx] as any)[field] || ''
-    update(rowIdx, field as keyof RowData, current.replace(word, v))
-    setPopup(p => ({ ...p, visible: false }))
-  }
-
-  // Block-level drag & drop (swap V1/Proposed between rows)
-  const handleBlockDrop = (fromRow: number, fromField: string, toRow: number, toField: string) => {
-    setData(prev => {
-      const d = [...prev]
-      d[fromRow] = { ...d[fromRow] }
-      d[toRow] = { ...d[toRow] }
-      const fromVal = (d[fromRow] as any)[fromField] || ''
-      const toVal = (d[toRow] as any)[toField] || ''
-      ;(d[fromRow] as any)[fromField] = toVal
-      ;(d[toRow] as any)[toField] = fromVal
-      return d
-    })
-    notify(`Блок алмаштирилди: #${fromRow + 1} ↔ #${toRow + 1}`)
-  }
-
-  const improveRow = async (idx: number, lang: 'ru' | 'uz') => {
-    setImprovingRow({ idx, lang })
-    try {
-      const res = await fetch(`${API_BASE}/improve-row`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ ...data[idx], target_lang: lang })
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      setData(prev => {
-        const d = [...prev]
-        d[idx] = { ...d[idx] }
-        if (lang === 'ru' && r.ru_v2) d[idx].ru_proposed = r.ru_v2.replace(/<\/?b>/g, '')
-        if (lang === 'uz' && r.uz_v2) d[idx].uz_proposed = r.uz_v2.replace(/<\/?b>/g, '')
-        if (r.rationale) d[idx].notes = (d[idx].notes ? d[idx].notes + '\n' : '') + r.rationale
-        return d
-      })
-      notify(`${lang.toUpperCase()} #${data[idx].display_no} yaxshilandi`)
-    } catch (_e) { notify('AI xatolik') }
-    finally { setImprovingRow(null) }
-  }
-
-  const saveSingleRow = async (idx: number) => {
-    setSavingRow(idx)
-    try {
-      const row = data[idx]
-      
-      // Auto-generate diff notes before saving
-      let autoNotes = ''
-      try {
-        if (row.uz_v1 && row.uz_proposed && row.uz_v1.trim() !== row.uz_proposed.trim()) {
-          const nRes = await fetch(`${API_BASE}/auto-notes`, {
-            method: 'POST', headers: authHeaders,
-            body: JSON.stringify({ v1: row.uz_v1, proposed: row.uz_proposed, lang: 'uz' })
-          })
-          if (nRes.ok) { const nr = await nRes.json(); if (nr.notes) autoNotes += nr.notes + '\n' }
-        }
-      } catch (_e) {}
-
-      // Self-learning: Use learn-batch to save user correction as rule
-      if (row.uz_proposed && row.uz_proposed !== row.uz_v1) {
-        try {
-          await fetch(`${API_BASE}/api/sayqallash/learn-batch`, {
-            method: 'POST', headers: authHeaders,
-            body: JSON.stringify({ corrections: [{ old_value: row.uz_v1, new_value: row.uz_proposed }], lang: 'uz', modified_by: user?.name || '' })
-          })
-        } catch (_e) {}
-      }
-
-      const res = await fetch(`${API_BASE}/api/save-row`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ ...row, text_id: textId })
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      if (r.new_id && data[idx].sentence_no === 0) {
-        setData(prev => { const d = [...prev]; d[idx] = { ...d[idx], sentence_no: r.new_id }; return d })
-      }
-      notify('Gap #' + data[idx].display_no + ' saqlandi ✓ Qoidalar yangilandi')
-    } catch (_e) { notify('Saqlash xatolik') }
-    finally { setSavingRow(null) }
-  }
-
-  const aiAlign = async () => {
-    setIsAiAligning(true)
-    notify('AI moslashtirilmoqda...')
-    try {
-      const res = await fetch(`${API_BASE}/align-document`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ data })
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      setData(r.data)
-      notify('AI moslashtirildi')
-    } catch (_e) { notify('AI xatolik') }
-    finally { setIsAiAligning(false) }
-  }
-
-  const handleLinguisticBtnClick = (cat: string) => setShowSourceLangModal(cat)
-
-  const startLinguisticAnalysis = async (lang: string) => {
-    const category = showSourceLangModal
-    setShowSourceLangModal(null)
-    if (!category) return
-
-    // Save source lang choice for project
-    try {
-      fetch(`${API_BASE}/api/linguistic/project/source-lang`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ text_id: textId, lang })
-      })
-    } catch {}
-
-    setIsLinguisticLoading(true)
-    setLinguisticProgress(0)
-    
-    // Aggregate text
-    const fullText = data.map(r => r.en).join('\n')
-    
-    const progressInterval = setInterval(() => {
-      setLinguisticProgress(prev => (prev < 90 ? prev + Math.random() * 8 : prev))
-    }, 400)
-
-    try {
-      const res = await fetch(`${API_BASE}/api/linguistic/analyze`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ text: fullText, category, source_lang: lang })
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      clearInterval(progressInterval)
-      setLinguisticProgress(100)
-      setTimeout(() => {
-        setIsLinguisticLoading(false)
-        setLinguisticPreview({ category, results: r.results || [] })
-      }, 500)
-    } catch (_e) {
-      clearInterval(progressInterval)
-      setIsLinguisticLoading(false)
-      notify('Таҳлил вақтида хатолик')
-    }
-  }
-
-  const confirmSaveLinguisticItems = async () => {
-    if (!linguisticPreview) return
-    try {
-      const res = await fetch(`${API_BASE}/api/linguistic/save`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ 
-          category: linguisticPreview.category, 
-          items: linguisticPreview.results,
-          text_id: textId
-        })
-      })
-      if (!res.ok) throw new Error()
-      notify('Маълумотлар базасига сақланди')
-      setLinguisticPreview(null)
-    } catch (_e) { notify('Сақлашда хатолик') }
-  }
-
-  const finishWork = async () => {
-    if (!confirm('Лойиҳани якунлашни тасдиқлайсизми? Бундан кейин лойиҳа архивга ўтказилади.')) return
-    setIsFinishing(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(textId)}/finish`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ data, specialist_name: initialData[0]?.specialist_name || '' })
-      })
-      if (res.ok) {
-        notify('Лойиҳа муваффақиятли якунланди! ✓')
-        setTimeout(() => { window.location.href = '/' }, 1500)
-      } else {
-        notify('Якунлашда хатолик юз берди')
-      }
-    } catch (_e) { notify('Сервер билан боғланишда хатолик') }
-    finally { setIsFinishing(false) }
-  }
-
-  const searchLinguisticDatabase = async (category: string, query: string) => {
-    setIsLinguisticLoading(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/linguistic/all?q=${encodeURIComponent(query)}`, {
-        headers: authHeaders
-      })
-      if (!res.ok) throw new Error()
-      const r = await res.json()
-      // Filter the relevant category from the 'all' results
-      const results = r[category] || []
-      setLinguisticPreview({ category, results, mode: 'db' })
-    } catch (_e) {
-      notify('Қидирувда хатолик')
-    } finally {
-      setIsLinguisticLoading(false)
-    }
-  }
-
-  const runBatchSayqallash = async () => {
-    const contentRows = data.filter(r => r.type === 'content')
-    if (contentRows.length === 0) return
-    
-    setIsBatchPolishing(true)
-    setLinguisticProgress(0)
-    notify('Ҳужжат сайқалланмоқда...')
-    
-    let correctedCount = 0
-    let totalAnns = 0
-    
-    // Process in sequential chunks to avoid overloading AI/DB
-    const CHUNK_SIZE = 5
-    const newData = [...data]
-    
-    for (let i = 0; i < contentRows.length; i += CHUNK_SIZE) {
-      const chunk = contentRows.slice(i, i + CHUNK_SIZE)
-      // Map global indices for current chunk
-      const chunkIndices = data.map((r, idx) => r.type === 'content' ? idx : -1)
-                              .filter(idx => idx !== -1)
-                              .slice(i, i + CHUNK_SIZE)
-      
-      try {
-        const payload = chunk.map(r => ({ text: r.uz_proposed || r.uz_v1, lang: 'uz', en: r.en }))
-        const res = await fetch(`${API_BASE}/api/sayqallash-batch`, {
-          method: 'POST', headers: authHeaders,
-          body: JSON.stringify({ rows: payload, lang: 'uz' })
-        })
-        if (res.ok) {
-          const r = await res.json()
-          r.results.forEach((res: any, j: number) => {
-            const dataIdx = chunkIndices[j]
-            if (res.corrected && res.corrected !== (newData[dataIdx].uz_proposed || newData[dataIdx].uz_v1)) {
-              newData[dataIdx] = { 
-                ...newData[dataIdx], 
-                uz_proposed: res.corrected,
-                notes: (newData[dataIdx].notes ? newData[dataIdx].notes + '\n' : '') + `AI Сайқаллаш: ${res.annotations?.length || 0} та тузатиш.`
-              }
-              correctedCount++
-              totalAnns += res.annotations?.length || 0
-            }
-          })
-        }
-      } catch (err) {
-        console.error("Batch polish chunk error:", err)
-      }
-      
-      setLinguisticProgress(Math.min(100, Math.round(((i + CHUNK_SIZE) / contentRows.length) * 100)))
-    }
-    
-    setData(newData)
-    setIsBatchPolishing(false)
-    setBatchSummary({ total: contentRows.length, corrected: correctedCount, annotations: totalAnns })
-  }
-
-  const handleSaveAll = async () => {
-    setSavingAll(true)
-    try {
-      const res = await fetch(`${API_BASE}/save`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ data })
-      })
-      if (!res.ok) throw new Error()
-      notify('Barchasi saqlandi')
-    } catch (_e) { notify('Saqlash xatolik') }
-    finally { setSavingAll(false) }
-  }
-
-  const handleExport = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/export`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ filename, data })
-      })
-      if (!res.ok) throw new Error()
-      
-      const contentDisposition = res.headers.get('content-disposition')
-      let downloadName = 'confirmed_output.docx'
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
-        if (match && match[1]) downloadName = match[1].replace(/['"]/g, '')
-      } else if (filename) {
-        downloadName = 'confirmed_' + filename
-        if (!downloadName.endsWith('.docx')) downloadName += '.docx'
-      }
-      
-      const blob = await res.blob()
-      const typedBlob = new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      const url = window.URL.createObjectURL(typedBlob)
-      const a = document.createElement('a')
-      a.style.display = 'none'
-      a.href = url
-      a.download = downloadName
-      a.setAttribute('download', downloadName)
-      document.body.appendChild(a)
-      a.click()
-      setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url) }, 200)
-      notify('DOCX yuklandi: ' + downloadName)
-    } catch (_e) { notify('Export xatolik') }
-  }
-
-  // Magic Split
-  const onMagicSplit = async (idx: number) => {
-    setSavingRow(idx)
-    notify('AI mantiqiy bo\'lish nuqtasini qidirmoqda...')
-    try {
-      const res = await fetch(`${API_BASE}/api/split-row`, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ row: data[idx] })
-      })
-      if (res.ok) {
-        const r = await res.json()
-        setData(prev => { const d = [...prev]; d.splice(idx, 1, r.row1, r.row2); return d })
-        notify('AI orqali bo\'lindi ✓')
-      } else {
-        // Fallback
-        const row = data[idx]
-        const mid = Math.floor(row.en.length / 2)
-        const row1 = { ...row, en: row.en.slice(0, mid) }
-        const row2 = { ...row, en: row.en.slice(mid), sentence_no: 0, display_no: row.display_no + '.1' }
-        setData(prev => { const d = [...prev]; d.splice(idx, 1, row1, row2); return d })
-        notify('Fallback bo\'lish')
-      }
-    } catch (_e) { notify('Xatolik') }
-    finally { setSavingRow(null) }
-  }
+  const editor = useTableEditor({ initialData, filename, textId })
+  const {
+    token, API_BASE, authHeaders,
+    data, setData,
+    savingRow, improvingRow,
+    dragIdx, dropIdx, popup, setPopup,
+    isLinguisticLoading, linguisticProgress,
+    showSourceLangModal, setShowSourceLangModal,
+    linguisticPreview, setLinguisticPreview,
+    linguisticSearchQuery, setLinguisticSearchQuery,
+    isBatchPolishing, batchSummary, setBatchSummary,
+    terms, colWidths,
+    notify, update, insertRowAfter,
+    handleDragStart, handleDragOver, handleDragLeave, handleDrop, handleDragEnd,
+    deleteRow, handleWordClick, applyVariant, handleBlockDrop,
+    improveRow, saveSingleRow, startLinguisticAnalysis,
+    confirmSaveLinguisticItems, searchLinguisticDatabase,
+    onMagicSplit, startResizing,
+  } = editor
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: "'Inter','Segoe UI',sans-serif", background: '#f1f5f9' }}>
 
-      <header style={{ flexShrink: 0, position: 'sticky', top: 0, zIndex: 100, background: '#1e293b', color: 'white', padding: '0 14px', height: '50px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 2px 8px rgba(0,0,0,.25)' }}>
-        <Database size={17} color="#60a5fa" style={{ flexShrink: 0 }} />
-        <span style={{ fontWeight: 800, fontSize: '0.88rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Pharma Editor</span>
-        {textId && <span style={{ background: '#334155', padding: '2px 9px', borderRadius: 20, fontSize: '0.72rem', color: '#93c5fd', fontWeight: 700, flexShrink: 0 }}>ID: {textId}</span>}
-        <span style={{ fontSize: '0.73rem', color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>
-        
-        <div style={{ display: 'flex', gap: 4, background: '#334155', padding: '3px 6px', borderRadius: 8, margin: '0 8px' }}>
-          <button onClick={() => handleLinguisticBtnClick('annotated')} 
-            style={{ background: showSourceLangModal === 'annotated' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
-            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
-            <BookOpen size={12} style={{verticalAlign:'middle', marginRight:3}}/> Изоҳли
-          </button>
-          <button onClick={() => handleLinguisticBtnClick('disputed')} 
-            style={{ background: showSourceLangModal === 'disputed' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
-            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
-            <Sparkles size={12} style={{verticalAlign:'middle', marginRight:3}}/> Мунозарали
-          </button>
-          <button onClick={() => handleLinguisticBtnClick('abbreviations')} 
-            style={{ background: showSourceLangModal === 'abbreviations' ? '#475569' : 'none', border: 'none', color: '#cbd5e1', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', padding: '2px 8px', borderRadius: 4, transition: 'all .2s' }} 
-            onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#cbd5e1'}>
-            <Database size={12} style={{verticalAlign:'middle', marginRight:3}}/> Қисқартмалар
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button onClick={() => batchTransliterate('latin')} title="Lotinga o'girish"
-            style={{ background: '#334155', border: 'none', color: '#94a3b8', fontSize: '0.65rem', fontWeight: 700, padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#94a3b8'}>
-            A→Z
-          </button>
-          <button onClick={() => batchTransliterate('cyrillic')} title="Kirillga o'girish"
-            style={{ background: '#334155', border: 'none', color: '#94a3b8', fontSize: '0.65rem', fontWeight: 700, padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.color='white'} onMouseLeave={e => e.currentTarget.style.color='#94a3b8'}>
-            А→Я
-          </button>
-        </div>
-
-        {saveStatus && <span style={{ background: '#22c55e', color: 'white', padding: '2px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>{saveStatus}</span>}
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-          <Link href="/rules" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#334155', color: '#94a3b8', padding: '5px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none', transition: 'all 0.2s' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'white', e.currentTarget.style.background = '#475569')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8', e.currentTarget.style.background = '#334155')}>
-            <BookOpen size={14} />
-            Rules DB
-          </Link>
-          <button onClick={runBatchSayqallash} disabled={isBatchPolishing} style={{ padding: '5px 10px', background: isBatchPolishing ? '#4b5563' : 'linear-gradient(135deg,#059669,#10b981)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: isBatchPolishing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-            {isBatchPolishing ? 'Сайқалланмоқда...' : '✦ Сайқаллаш (Barchasi)'}
-          </button>
-          <button onClick={aiAlign} disabled={isAiAligning} style={{ padding: '5px 10px', background: isAiAligning ? '#4b5563' : 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: isAiAligning ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-            {isAiAligning ? 'Moslashtirilmoqda...' : 'AI Moslash'}
-          </button>
-          <button onClick={handleSaveAll} disabled={savingAll} style={{ padding: '5px 10px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {savingAll ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
-          <button onClick={finishWork} disabled={isFinishing} style={{ padding: '5px 10px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(217,119,6,0.3)' }}>
-            {isFinishing ? 'Якунланмоқда...' : 'Ишни якунлаш ✓'}
-          </button>
-          <button onClick={handleExport} style={{ padding: '5px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Export DOCX
-          </button>
-          {textId && (
-            <button onClick={() => window.open(`${API_BASE}/api/projects/${textId}/export-pdf`, '_blank')} style={{ padding: '5px 10px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              Export PDF
-            </button>
-          )}
-        </div>
-      </header>
+      <TableToolbar
+        textId={textId}
+        filename={filename}
+        API_BASE={API_BASE}
+        showSourceLangModal={editor.showSourceLangModal}
+        saveStatus={editor.saveStatus}
+        isBatchPolishing={editor.isBatchPolishing}
+        isAiAligning={editor.isAiAligning}
+        savingAll={editor.savingAll}
+        isFinishing={editor.isFinishing}
+        handleLinguisticBtnClick={editor.handleLinguisticBtnClick}
+        batchTransliterate={editor.batchTransliterate}
+        runBatchSayqallash={editor.runBatchSayqallash}
+        aiAlign={editor.aiAlign}
+        handleSaveAll={editor.handleSaveAll}
+        finishWork={editor.finishWork}
+        handleExport={editor.handleExport}
+      />
 
       {/* Progress Modal (Batch Polishing / AI Analysis) */}
       {(isLinguisticLoading || isBatchPolishing) && (
@@ -729,7 +88,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             </div>
             <h3 style={{ margin: '0 0 10px 0', fontSize: '1.3rem', color: '#1e293b' }}>Сайқаллаш якунланди!</h3>
             <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '25px' }}>Ҳужжат тўлиқ таҳлил қилинди ва тузатишлар киритилди.</p>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '30px' }}>
               <div style={{ background: '#f8fafc', padding: '15px', borderRadius: 12 }}>
                 <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b' }}>{batchSummary.total}</div>
@@ -744,7 +103,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                 <div style={{ fontSize: '0.65rem', color: '#7c3aed', textTransform: 'uppercase' }}>Хатолар</div>
               </div>
             </div>
-            
+
             <button onClick={() => setBatchSummary(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>
               Натижаларни кўриш
             </button>
@@ -760,14 +119,14 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
             <p style={{ fontSize: '0.8rem', color: '#64748b', textAlign: 'center', marginBottom: '20px' }}>
               Танланган категория: <span style={{ fontWeight: 800, color: '#6366f1' }}>{showSourceLangModal === 'annotated' ? 'Изоҳли луғат' : showSourceLangModal === 'disputed' ? 'Мунозарали' : 'Қисқартмалар'}</span>
             </p>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ border: '1.5px solid #6366f1', borderRadius: 12, padding: '12px', background: '#f5f3ff', marginBottom: 10 }}>
                 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>Базадан қидириш (4,365+ та)</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <input 
-                    type="text" 
-                    placeholder="Калит сўзни ёзинг..." 
+                  <input
+                    type="text"
+                    placeholder="Калит сўзни ёзинг..."
                     value={linguisticSearchQuery}
                     onChange={e => setLinguisticSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && searchLinguisticDatabase(showSourceLangModal, linguisticSearchQuery)}
@@ -835,7 +194,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                         {item.description_en || item.context_en || item.long_en}
                       </td>
                       <td style={{ padding: '10px' }}>
-                        {item.is_duplicate 
+                        {item.is_duplicate
                           ? <span style={{ color: '#d97706', fontSize: '0.65rem', fontWeight: 700, background: '#fef3c7', padding: '2px 5px', borderRadius: 4 }}>бор</span>
                           : <span style={{ color: '#16a34a', fontSize: '0.65rem', fontWeight: 700, background: '#dcfce7', padding: '2px 5px', borderRadius: 4 }}>янги</span>
                         }
@@ -868,34 +227,34 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
           <thead style={{ position: 'sticky', top: 0, zIndex: 5 }}>
             <tr>
               <th style={{ padding: '5px 7px', fontSize: '0.62rem', background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', width: 32 }}>#</th>
-              
+
               <th style={{ position: 'relative', textAlign: 'left', padding: '5px 7px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 700, background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', overflow: 'visible' }}>
                 English (Original)
-                <div onMouseDown={e => startResizing(0, e)} 
+                <div onMouseDown={e => startResizing(0, e)}
                   style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'col-resize', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }} 
+                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#3b82f6', e.currentTarget.style.width = '3px')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#cbd5e1', e.currentTarget.style.width = '2px')} />
                 </div>
               </th>
-              
+
               <th style={{ position: 'relative', textAlign: 'left', padding: '5px 7px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 700, background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', overflow: 'visible' }}>
                 Russian
-                <div onMouseDown={e => startResizing(1, e)} 
+                <div onMouseDown={e => startResizing(1, e)}
                   style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'col-resize', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }} 
+                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#3b82f6', e.currentTarget.style.width = '3px')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#cbd5e1', e.currentTarget.style.width = '2px')} />
                 </div>
               </th>
-              
+
               <th style={{ position: 'relative', textAlign: 'left', padding: '5px 7px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 700, background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', overflow: 'visible' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   Uzbek
                   <button onClick={async () => {
                     const texts = data.map(r => r.uz_proposed || r.uz_v1)
                     const res = await fetch(`${API_BASE}/api/transliterate-batch`, {
-                      method: 'POST', headers: authHeaders, 
+                      method: 'POST', headers: authHeaders,
                       body: JSON.stringify({ texts, target: 'latin' })
                     })
                     const r = await res.json()
@@ -907,14 +266,14 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                     setData(newData)
                   }} style={{ background: '#334155', border: 'none', color: '#93c5fd', fontSize: '0.55rem', padding: '2px 5px', borderRadius: 4, cursor: 'pointer', fontWeight: 800 }}>К→Л</button>
                 </div>
-                <div onMouseDown={e => startResizing(2, e)} 
+                <div onMouseDown={e => startResizing(2, e)}
                   style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'col-resize', zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }} 
+                  <div style={{ width: 2, height: '60%', background: '#cbd5e1', borderRadius: 2, transition: 'background .15s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#3b82f6', e.currentTarget.style.width = '3px')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#cbd5e1', e.currentTarget.style.width = '2px')} />
                 </div>
               </th>
-              
+
               <th style={{ textAlign: 'left', padding: '5px 7px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 700, background: '#f1f5f9', borderBottom: '2px solid #e2e8f0' }}>Izoh</th>
             </tr>
           </thead>
@@ -924,9 +283,9 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                 {dropIdx === idx && dragIdx !== null && dragIdx !== idx && (
                   <tr><td colSpan={5} style={{ padding: 0, height: 3, background: '#3b82f6' }} /></tr>
                 )}
-                <tr 
-                  style={{ 
-                    background: row.type === 'marker' ? '#dbeafe' : dragIdx === idx ? '#fef9c3' : 'white', 
+                <tr
+                  style={{
+                    background: row.type === 'marker' ? '#dbeafe' : dragIdx === idx ? '#fef9c3' : 'white',
                     borderBottom: '1px solid #e9edf2',
                     opacity: dragIdx === idx ? 0.5 : 1,
                     transition: 'opacity .15s'
@@ -935,8 +294,8 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                   onDragLeave={handleDragLeave}
                   onDrop={e => handleDrop(e, idx)}
                 >
-                  <td 
-                    draggable 
+                  <td
+                    draggable
                     onDragStart={() => handleDragStart(idx)}
                     onDragEnd={handleDragEnd}
                     style={{ padding: '4px 2px', verticalAlign: 'top', borderRight: '1px solid #e9edf2', textAlign: 'center', width: 32, cursor: 'grab' }}
