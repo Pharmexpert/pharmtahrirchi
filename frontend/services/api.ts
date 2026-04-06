@@ -158,6 +158,12 @@ export const dictionary = {
     post<{ suggestions: import('../types/api').DictionarySuggestion[]; in_dictionary: boolean }>('/api/dictionary/suggest', { word }),
   bertSynonyms: (word: string, context: string, lang: string) =>
     post<{ synonyms: string[]; source: string }>('/api/bert/synonyms', { word, context, lang }),
+  words: (language: string, page: number, per_page: number, search: string) =>
+    get<{ words: any[]; total: number; total_pages: number }>(`/api/dictionary/words?language=${language}&page=${page}&per_page=${per_page}&search=${encodeURIComponent(search)}`),
+  affixFlags: (language: string, page: number, per_page: number, search: string) =>
+    get<{ flags: any[]; total: number; total_pages: number }>(`/api/dictionary/affix-flags?language=${language}&page=${page}&per_page=${per_page}&search=${encodeURIComponent(search)}`),
+  translate: (word: string) => post<{ ru: string; en: string; definition: string }>('/api/dictionary/translate', { word }),
+  translations: (words: string) => get<{ translations: Record<string, any> }>(`/api/dictionary/translations?words=${encodeURIComponent(words)}`),
 }
 
 // ═══════════════════════════════════════════════════
@@ -290,6 +296,7 @@ export const admin = {
     return get<{ rules: import('../types/api').SayqallashRule[] }>(`/api/admin/rules${qs}`)
   },
   users: () => get<{ users: any[] }>('/api/admin/users'),
+  activity: (limit = 200) => get<{ entries: any[] }>(`/api/admin/activity?limit=${limit}`),
   approve: (user_id: string, status: 'approved' | 'rejected') =>
     post<{ success: boolean }>('/api/admin/approve', { user_id, status }),
   role: (user_id: string, role: string) =>

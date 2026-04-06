@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Layers, Search, Loader2, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 interface AffixFlag {
   flag: string
@@ -28,20 +29,12 @@ export default function AffixFlagsPage() {
   const fetchFlags = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        language, page: String(page), per_page: String(perPage), search
-      })
-      const res = await fetch(`${API_BASE}/api/dictionary/affix-flags?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const d = await res.json()
-        setFlags(d.flags || [])
-        setTotal(d.total || 0)
-        setTotalPages(d.total_pages || 0)
-      }
+      const d: any = await api.dictionary.affixFlags(language, page, perPage, search)
+      setFlags(d.flags || [])
+      setTotal(d.total || 0)
+      setTotalPages(d.total_pages || 0)
     } catch {} finally { setLoading(false) }
-  }, [API_BASE, token, language, page, perPage, search])
+  }, [language, page, perPage, search])
 
   useEffect(() => { fetchFlags() }, [fetchFlags])
 

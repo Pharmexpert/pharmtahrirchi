@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import Link from 'next/link'
+import api from '../../services/api'
 
 export default function HistoryPage() {
   const { token, user } = useAuth()
@@ -30,13 +31,8 @@ export default function HistoryPage() {
   const fetchProjects = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setProjects(data.projects || [])
-      }
+      const data: any = await api.projects.list()
+      setProjects(data.projects || [])
     } catch (err) {
       console.error('Fetch error:', err)
     } finally {
@@ -48,13 +44,8 @@ export default function HistoryPage() {
     e.stopPropagation()
     if (!confirm("Ushbu loyihani o'chirishni tasdiqlaysizmi?")) return
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setProjects(projects.filter(p => p.id !== id))
-      }
+      await api.projects.delete(id)
+      setProjects(projects.filter(p => p.id !== id))
     } catch (_e) {}
   }
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Activity, Search, Filter, Calendar, User, FileText, CheckCircle, Database, AlertCircle, Loader2, ArrowRight } from 'lucide-react'
 import { useAuth } from '../../../components/LoginGuard'
+import api from '../../../services/api'
 
 interface ActivityLog {
   id: number
@@ -27,19 +28,14 @@ export default function ActivityPage() {
   const fetchLogs = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/admin/activity?limit=200`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setLogs(data.logs || [])
-      }
+      const data: any = await api.admin.activity(200)
+      setLogs(data.logs || data.entries || [])
     } catch (e) {
       console.error("Failed to fetch logs:", e)
     } finally {
       setLoading(false)
     }
-  }, [API_BASE, token])
+  }, [])
 
   useEffect(() => {
     fetchLogs()

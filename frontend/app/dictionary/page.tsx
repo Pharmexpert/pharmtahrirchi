@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { BookOpen, Search, Loader2, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 interface DictWord {
   word: string
@@ -39,20 +40,12 @@ export default function DictionaryPage() {
   const fetchWords = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        language, page: String(page), per_page: String(perPage), search
-      })
-      const res = await fetch(`${API_BASE}/api/dictionary/words?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const d = await res.json()
-        setWords(d.words || [])
-        setTotal(d.total || 0)
-        setTotalPages(d.total_pages || 0)
-      }
+      const d: any = await api.dictionary.words(language, page, perPage, search)
+      setWords(d.words || [])
+      setTotal(d.total || 0)
+      setTotalPages(d.total_pages || 0)
     } catch {} finally { setLoading(false) }
-  }, [API_BASE, token, language, page, perPage, search])
+  }, [language, page, perPage, search])
 
   useEffect(() => { fetchWords() }, [fetchWords])
 
@@ -60,24 +53,15 @@ export default function DictionaryPage() {
   useEffect(() => {
     if (words.length === 0) return
     const wordList = words.map(w => w.word).join(',')
-    fetch(`${API_BASE}/api/dictionary/translations?words=${encodeURIComponent(wordList)}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.translations) setTranslations(prev => ({ ...prev, ...d.translations })) })
+    api.dictionary.translations(wordList)
+      .then((d: any) => { if (d?.translations) setTranslations(prev => ({ ...prev, ...d.translations })) })
       .catch(() => {})
-  }, [words, API_BASE, token])
+  }, [words])
 
   const translateWord = async (word: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/dictionary/translate`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ word })
-      })
-      if (res.ok) {
-        const d = await res.json()
-        setTranslations(prev => ({ ...prev, [word]: { ru: d.ru, en: d.en, definition: d.definition } }))
-      }
+      const d: any = await api.dictionary.translate(word)
+      setTranslations(prev => ({ ...prev, [word]: { ru: d.ru, en: d.en, definition: d.definition } }))
     } catch {}
   }
 
