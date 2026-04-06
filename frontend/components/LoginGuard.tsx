@@ -93,7 +93,7 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
       login: "Кириш",
       register: "Рўйхатдан ўтиш",
       forgotPw: "Паролни унутдингизми?",
-      noAccount: "Ҳисобингиз йўқми?",
+      noAccount: "Аккаунтингиз йўқми?",
       hasAccount: "Ҳисобингиз борми?",
       name: "Исм-фамилия",
       confirmPw: "Паролни тасдиқланг",
@@ -813,12 +813,11 @@ export default function LoginGuard({ children }: { children: React.ReactNode }) 
               </div>
             )}
 
-              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
-                © 2026 Pharma Translation Platform
-              </p>
-
           </div>
         </div>
+        <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#8B5E3C', letterSpacing: '1px', textTransform: 'uppercase', textAlign: 'center', marginTop: '24px' }}>
+          © 2026 Pharma Translation Platform
+        </p>
       </div>
     )
   }
