@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   /* Colors — Warm Milky/Cream Palette from site v.4 */
   --bg-primary: #FFF8F0;
