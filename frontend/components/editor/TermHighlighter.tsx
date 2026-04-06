@@ -23,6 +23,8 @@ const COLORS = {
 
 export default function TermHighlighter({ text, terms }: Props) {
   const [tooltip, setTooltip] = useState<{ term: Term; x: number; y: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
 
   if (!text || terms.length === 0) return <>{text}</>
 
@@ -86,31 +88,59 @@ export default function TermHighlighter({ text, terms }: Props) {
       })}
 
       {tooltip && (
-        <div style={{
-          position: 'fixed', left: Math.min(tooltip.x, window.innerWidth - 380), top: tooltip.y,
-          width: '360px', background: 'white', borderRadius: '12px', padding: '16px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)', border: `2px solid ${COLORS[tooltip.term.type].border}`,
-          zIndex: 9999, fontSize: '0.82rem', lineHeight: '1.6'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+        <div
+          onMouseDown={e => {
+            setIsDragging(true)
+            const el = e.currentTarget.getBoundingClientRect()
+            setDragOffset({ x: e.clientX - el.left, y: e.clientY - el.top })
+          }}
+          onMouseMove={e => {
+            if (isDragging) setTooltip(t => t ? { ...t, x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y } : null)
+          }}
+          onMouseUp={() => setIsDragging(false)}
+          onMouseLeave={() => setIsDragging(false)}
+          style={{
+            position: 'fixed', left: tooltip.x, top: tooltip.y,
+            width: '380px', background: 'white', borderRadius: '14px', padding: '18px',
+            boxShadow: '0 12px 48px rgba(0,0,0,0.25)', border: `2px solid ${COLORS[tooltip.term.type].border}`,
+            zIndex: 9999, fontSize: '0.82rem', lineHeight: '1.6',
+            cursor: isDragging ? 'grabbing' : 'grab', userSelect: 'none'
+          }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <span style={{
               padding: '3px 10px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 700,
               background: COLORS[tooltip.term.type].bg, color: COLORS[tooltip.term.type].text
             }}>{COLORS[tooltip.term.type].label}</span>
-            <span onClick={() => setTooltip(null)} style={{ cursor: 'pointer', fontSize: '1rem', opacity: 0.5 }}>✕</span>
+            <span style={{ fontSize: '0.65rem', color: '#94A3B8' }}>суриш учун тортинг</span>
+            <span onClick={() => setTooltip(null)} style={{ cursor: 'pointer', fontSize: '1.1rem', opacity: 0.5, lineHeight: 1 }}>✕</span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div><span style={{ fontWeight: 700, color: '#9333EA' }}>🇬🇧 EN:</span> {tooltip.term.en}</div>
             <div><span style={{ fontWeight: 700, color: '#2563EB' }}>🇷🇺 RU:</span> {tooltip.term.ru}</div>
             <div><span style={{ fontWeight: 700, color: '#16A34A' }}>🇺🇿 UZ:</span> {tooltip.term.uz}</div>
-
-            {tooltip.term.detail_en && (
-              <div style={{ marginTop: '6px', padding: '8px', background: '#F8FAFC', borderRadius: '8px', fontSize: '0.78rem', color: '#475569' }}>
-                {tooltip.term.detail_en}
-              </div>
-            )}
           </div>
+
+          {(tooltip.term.detail_en || tooltip.term.detail_ru || tooltip.term.detail_uz) && (
+            <div style={{ marginTop: '10px', borderTop: '1px solid #E2E8F0', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Таъриф / Контекст</div>
+              {tooltip.term.detail_en && (
+                <div style={{ padding: '6px 8px', background: '#F5F3FF', borderRadius: '6px', fontSize: '0.76rem', color: '#4338CA', lineHeight: '1.5' }}>
+                  <strong>EN:</strong> {tooltip.term.detail_en}
+                </div>
+              )}
+              {tooltip.term.detail_ru && (
+                <div style={{ padding: '6px 8px', background: '#EFF6FF', borderRadius: '6px', fontSize: '0.76rem', color: '#1E40AF', lineHeight: '1.5' }}>
+                  <strong>RU:</strong> {tooltip.term.detail_ru}
+                </div>
+              )}
+              {tooltip.term.detail_uz && (
+                <div style={{ padding: '6px 8px', background: '#F0FDF4', borderRadius: '6px', fontSize: '0.76rem', color: '#166534', lineHeight: '1.5' }}>
+                  <strong>UZ:</strong> {tooltip.term.detail_uz}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </span>
