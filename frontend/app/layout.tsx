@@ -14,6 +14,12 @@ export const metadata: Metadata = {
   description: 'Trilingual Document Aligner for Pharmaceutical Standards',
 }
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+}
+
 export default function RootLayout({
   children,
 }: {

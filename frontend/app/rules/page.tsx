@@ -216,7 +216,7 @@ export default function RulesPage() {
         background: 'var(--bg-card)', borderRadius: 'var(--radius-xl)',
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)', overflow: 'hidden'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <div className="responsive-table-wrap"><table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
               <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Хато шакл</th>
@@ -341,7 +341,7 @@ export default function RulesPage() {
               })
             )}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Pagination */}

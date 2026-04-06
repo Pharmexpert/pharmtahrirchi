@@ -236,7 +236,7 @@ export default function ParagraphsPage() {
         border: '1px solid var(--border)', overflow: 'hidden',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="responsive-table-wrap"><table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '40px' }}>№</th>
@@ -383,7 +383,7 @@ export default function ParagraphsPage() {
               )
             })}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {/* Edit Modal */}
