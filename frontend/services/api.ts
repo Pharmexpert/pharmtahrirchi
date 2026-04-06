@@ -283,6 +283,12 @@ export const linguistic = {
     post<{ synonyms: string[] }>('/api/linguistic/synonyms', payload),
   transliterateBatch: (texts: string[], target: string) =>
     post<{ texts: string[] }>('/api/transliterate-batch', { texts, target }),
+  all: () => get<{ annotated: any[]; disputed: any[]; abbreviations: any[] }>('/api/linguistic/all'),
+  save: (data: Record<string, unknown>) => post<{ success: boolean }>('/api/linguistic/save', data),
+  update: (category: string, id: number, data: Record<string, unknown>) =>
+    put<{ success: boolean }>(`/api/linguistic/update/${category}/${id}`, data),
+  remove: (category: string, id: number) =>
+    del<{ success: boolean }>(`/api/linguistic/delete/${category}/${id}`),
 }
 
 // ═══════════════════════════════════════════════════

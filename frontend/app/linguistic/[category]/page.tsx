@@ -5,6 +5,7 @@ import { Search, Plus, Edit2, Trash2, Download, CheckCircle2, AlertCircle, Loade
 import { useAuth } from '../../../components/LoginGuard'
 import { useParams, useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
+import api from '../../../services/api'
 
 type Category = 'annotated' | 'disputed' | 'abbreviations'
 type StatusFilter = 'all' | 'new' | 'confirmed' | 'duplicates'
@@ -146,15 +147,10 @@ export default function LinguisticCategoryPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/linguistic/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setItems(data[category] || [])
-      }
+      const data: any = await api.linguistic.all()
+      setItems(data[category] || [])
     } finally { setLoading(false) }
-  }, [category, API_BASE, token])
+  }, [category])
 
   useEffect(() => { fetchItems() }, [fetchItems])
 
@@ -162,38 +158,24 @@ export default function LinguisticCategoryPage() {
     if (!editItem || !token) return
     setSaving(true)
     try {
-      let res: Response
       if (editItem.id) {
-        res = await fetch(`${API_BASE}/api/linguistic/update/${category}/${editItem.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(editItem)
-        })
+        await api.linguistic.update(category, editItem.id, editItem as any)
       } else {
-        res = await fetch(`${API_BASE}/api/linguistic/save`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ category, items: [editItem] })
-        })
+        await api.linguistic.save({ category, items: [editItem] })
       }
-      if (res.ok) {
-        showToast(editItem.id ? 'Янгиланди ✓' : 'Қўшилди ✓')
-        setEditItem(null)
-        fetchItems()
-      } else { showToast('Хатолик юз берди', 'error') }
-    } finally { setSaving(false) }
+      showToast(editItem.id ? 'Янгиланди ✓' : 'Қўшилди ✓')
+      setEditItem(null)
+      fetchItems()
+    } catch { showToast('Хатолик юз берди', 'error') }
+    finally { setSaving(false) }
   }
 
   const handleDelete = async (id: number) => {
     if (!token || !confirm('Ўчиришни тасдиқлайсизми?')) return
     try {
-      const res = await fetch(`${API_BASE}/api/linguistic/delete/${category}/${id}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setItems(prev => prev.filter(x => x.id !== id))
-        showToast('Ўчирилди')
-      }
+      await api.linguistic.remove(category, id)
+      setItems(prev => prev.filter(x => x.id !== id))
+      showToast('Ўчирилди')
     } catch { showToast('Хатолик', 'error') }
   }
 
