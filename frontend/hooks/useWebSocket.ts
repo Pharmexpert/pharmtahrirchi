@@ -83,8 +83,9 @@ export function useWebSocket(
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data) as RemoteUpdate;
-          if (msg.type === "presence" && Array.isArray((msg as { users?: ConnectedUser[] }).users)) {
-            setConnectedUsers((msg as { users: ConnectedUser[] }).users);
+          const raw = msg as unknown as { users?: ConnectedUser[] };
+          if (msg.type === "presence" && Array.isArray(raw.users)) {
+            setConnectedUsers(raw.users);
           }
           setRemoteUpdates((prev) => [...prev.slice(-99), msg]);
         } catch {

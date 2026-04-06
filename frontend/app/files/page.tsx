@@ -73,7 +73,7 @@ export default function FilesPage() {
     setLoading(true)
     try {
       const data = await api.files.list()
-      setFiles(data.files || [])
+      setFiles((data.files || []) as any)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }, [])
