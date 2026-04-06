@@ -5,6 +5,7 @@ import { Search, Download, Loader2, CheckCircle2, AlertCircle, Edit2, Save, X, A
 import { useAuth } from '../../components/LoginGuard'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
+import api from '../../services/api'
 
 interface ParagraphEntry {
   id: number
@@ -55,19 +56,14 @@ export default function ParagraphsPage() {
   const fetchEntries = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setEntries(data.entries || [])
-      }
+      const data = await api.dashboard.all()
+      setEntries((data as any).entries || [])
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [API_BASE, token])
+  }, [])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
 
@@ -75,26 +71,19 @@ export default function ParagraphsPage() {
     if (!editEntry || !token) return
     setSaving(true)
     try {
-      // Update via linguistic sync endpoint
-      const res = await fetch(`${API_BASE}/api/dashboard/record`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          en: editEntry.en_text,
-          ru: editEntry.ru_text,
-          uz: editEntry.uz_text,
-          specialist: editEntry.specialist_name || user?.name || 'Aniqlanmagan',
-          text_id: editEntry.text_id || '',
-          action_type: 'Manual Edit'
-        })
+      await api.dashboard.record({
+        en: editEntry.en_text || '',
+        ru: editEntry.ru_text || '',
+        uz: editEntry.uz_text || '',
+        specialist: editEntry.specialist_name || user?.name || 'Aniqlanmagan',
+        text_id: editEntry.text_id || '',
+        action_type: 'Manual Edit'
       })
-      if (res.ok) {
-        showToast('Сақланди ✓')
-        setEditEntry(null)
-        fetchEntries()
-      } else {
-        showToast('Хатолик юз берди', 'error')
-      }
+      showToast('Сақланди ✓')
+      setEditEntry(null)
+      fetchEntries()
+    } catch {
+      showToast('Хатолик юз берди', 'error')
     } finally {
       setSaving(false)
     }
