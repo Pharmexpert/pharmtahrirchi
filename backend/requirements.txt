@@ -20,6 +20,9 @@ torch --index-url https://download.pytorch.org/whl/cpu
 # Spellcheck (uz-hunspell full affix support)
 spylls>=0.1.7
 
+# PDF export
+reportlab>=4.0.0
+
 # Testing
 pytest>=8.0.0
 httpx>=0.27.0

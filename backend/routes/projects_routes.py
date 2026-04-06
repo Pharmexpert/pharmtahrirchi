@@ -44,6 +44,81 @@ async def save_data(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/projects/{project_id}/export-pdf")
+async def export_project_pdf(project_id: str, current_user: Dict = Depends(get_current_user)):
+    """Export project as PDF using reportlab (3-column landscape table)."""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        import io
+
+        data = db.get_history(project_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                leftMargin=10*mm, rightMargin=10*mm,
+                                topMargin=10*mm, bottomMargin=10*mm)
+
+        styles = getSampleStyleSheet()
+        normal = styles['Normal']
+        normal.fontSize = 8
+        normal.leading = 10
+
+        # Build table data
+        rows = [['№', 'ENGLISH', 'РУССКИЙ', 'ЎЗБЕКЧА']]
+        for i, r in enumerate(data, 1):
+            en = r.get('en_text', '') or ''
+            ru = r.get('confirmed_ru_text') or r.get('ru_proposed') or r.get('ru_v1') or ''
+            uz = r.get('confirmed_uz_text') or r.get('uz_proposed') or r.get('uz_v1') or ''
+            rows.append([
+                str(i),
+                Paragraph(en[:500], normal),
+                Paragraph(ru[:500], normal),
+                Paragraph(uz[:500], normal),
+            ])
+
+        col_widths = [15*mm, 90*mm, 90*mm, 90*mm]
+        table = Table(rows, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ]))
+
+        doc.build([table])
+        buf.seek(0)
+
+        return FileResponse(
+            path=None,
+            media_type="application/pdf",
+            filename=f"PharmaExpert_{project_id}.pdf"
+        ) if False else __pdf_response(buf, project_id)
+    except ImportError:
+        raise HTTPException(status_code=503, detail="reportlab not installed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def __pdf_response(buf, project_id):
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="PharmaExpert_{project_id}.pdf"'}
+    )
+
+
 @router.get("/api/projects/{project_id}/export")
 async def export_project_live(project_id: str, current_user: Dict = Depends(get_current_user)):
     try:
