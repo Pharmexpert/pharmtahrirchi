@@ -236,6 +236,17 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     db.update_user_role(user_id, role)
     return {"success": True}
 
+@router.post("/drugs/seed")
+async def seed_drugs(current_user: dict = Depends(get_admin_user)):
+    """One-time seed: import 80+ standard pharmaceutical INNs."""
+    try:
+        import seed_drugs
+        inserted = seed_drugs.seed()
+        return {"success": True, "inserted": inserted}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/drugs")
 async def list_drugs(q: str = "", limit: int = 100, current_user: dict = Depends(get_current_user)):
     """Search/list drugs in pharma DB."""
