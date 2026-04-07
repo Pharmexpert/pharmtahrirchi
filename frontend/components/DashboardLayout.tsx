@@ -26,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { name: t('nav.dashboard'), icon: LayoutDashboard, path: '/dashboard' },
+    { name: 'Фармацевт ёрдамчиси', icon: ShieldCheck, path: '/assistant' },
     { name: t('nav.tilshunos'), icon: Globe, path: '/tilshunos' },
     { name: t('nav.paragraphs'), icon: FileText, path: '/paragraphs' },
     { name: t('nav.projects'), icon: History, path: '/projects' },

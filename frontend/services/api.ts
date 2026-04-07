@@ -600,6 +600,32 @@ export const tilshunos = {
     qs.set('limit', String(limit))
     return get<{ training_log: any[]; training_log_count: number; sayqallash_rules: any[]; sayqallash_count: number; total: number }>(`/api/tilshunos/training-log/export?${qs.toString()}`)
   },
+}
+
+// ═══════════════════════════════════════════════════
+// Pharmacist Assistant
+// ═══════════════════════════════════════════════════
+export const assistant = {
+  engines: () => get<{ engines: Array<{ key: string; label: string; available: boolean; mode?: string; model?: string; languages?: string[]; capabilities?: string[] }> }>('/api/assistant/engines'),
+  chat: (message: string, opts: { engine?: string; lang?: string; history?: Array<{ role: string; content: string }>; system?: string } = {}) =>
+    post<{ text: string; engine?: string; error?: string }>('/api/assistant/chat', { message, ...opts }),
+  edit: (text: string, opts: { engine?: string; lang?: string } = {}) =>
+    post<{ text: string; engine?: string; error?: string }>('/api/assistant/edit', { text, ...opts }),
+  translate: (text: string, opts: { engine?: string; source_lang?: string; target_lang?: string } = {}) =>
+    post<{ text: string; engine?: string; error?: string }>('/api/assistant/translate', { text, ...opts }),
+  upload: async (file: File, kind = 'auto') => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('kind', kind)
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    const res = await fetch(`${API_BASE}/api/assistant/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{ filename: string; size: number; size_mb: number; kind: string; text?: string; base64?: string; mime?: string; transcribed?: boolean }>
+  },
 
   extractText: async (file: File): Promise<{ text: string }> => {
     const fd = new FormData()
@@ -619,7 +645,7 @@ export const tilshunos = {
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp, tilshunos,
+  morph, grammar, learn, nlp, tilshunos, assistant,
   API_BASE,
 }
 
