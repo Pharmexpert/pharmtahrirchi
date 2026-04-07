@@ -120,6 +120,40 @@ Return ONLY JSON: {{"ru": "translation", "en": "translation", "definition": "qis
     return {"word": word, "ru": "", "en": "", "definition": ""}
 
 
+@router.post("/api/dictionary/add")
+async def add_word_to_dictionary(payload: Dict[str, Any]):
+    """Add a word to the user dictionary so it stops being marked as a spelling error."""
+    word = (payload.get("word") or "").strip()
+    lang = (payload.get("lang") or "uz").strip()
+    if not word:
+        return {"ok": False, "error": "empty word"}
+    try:
+        conn = db.connect_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_dictionary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word TEXT NOT NULL,
+                lang TEXT DEFAULT 'uz',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(word, lang)
+            )
+        """)
+        cursor.execute("INSERT OR IGNORE INTO user_dictionary (word, lang) VALUES (?, ?)", (word, lang))
+        conn.commit()
+        conn.close()
+        # Also try to add to running Hunspell instance
+        try:
+            import spellcheck
+            if hasattr(spellcheck, "add_word"):
+                spellcheck.add_word(word, lang)
+        except Exception:
+            pass
+        return {"ok": True, "word": word}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.get("/api/dictionary/translations")
 async def get_translations(words: str = ""):
     """Get cached translations for a list of words."""

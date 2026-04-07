@@ -147,11 +147,37 @@ export default function TilshunosPage() {
       return
     }
     try {
-      await api.dictionary.translate(sel)
-      alert(`"${sel}" луғатга қўшилди`)
-    } catch (_) {
-      alert('Хатолик')
+      const backendLang = lang.startsWith('uz') ? 'uz' : lang
+      const r = await api.dictionary.add(sel, backendLang)
+      if (r.ok) {
+        // Generate translation in background (cache)
+        api.dictionary.translate(sel).catch(() => {})
+        alert(`"${sel}" луғатга қўшилди ✓`)
+        // Re-run check so the word turns "known"
+        if (text && result) {
+          const cr = await api.tilshunos.check(text, backendLang)
+          setResult(cr)
+          if (backendLang === 'uz') {
+            const cl = await api.tilshunos.classify(text, 'uz')
+            setClassified(cl.spans || [])
+          }
+        }
+      } else {
+        alert('Хатолик: ' + (r.error || 'noma\'lum'))
+      }
+    } catch (e: any) {
+      alert('Хатолик: ' + (e?.message || e))
     }
+  }
+
+  // Shared file extractor (PDF/DOCX/TXT) → returns plain text
+  const extractFile = async (f: File): Promise<string> => {
+    const name = f.name.toLowerCase()
+    if (name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.csv')) {
+      return await f.text()
+    }
+    const r = await api.tilshunos.extractText(f)
+    return r.text || ''
   }
 
   const openSynonymsForSelection = async () => {
@@ -445,15 +471,19 @@ export default function TilshunosPage() {
                 <Upload size={13} /> Файлдан юклаш
                 <input
                   type="file"
-                  accept=".txt,.md,.csv,text/plain"
+                  accept=".txt,.md,.csv,.pdf,.docx"
                   style={{ display: 'none' }}
                   onChange={async (e) => {
                     const f = e.target.files?.[0]
                     if (!f) return
-                    const txt = await f.text()
-                    setText(txt)
-                    setResult(null)
-                    setClassified(null)
+                    try {
+                      const txt = await extractFile(f)
+                      setText(txt)
+                      setResult(null)
+                      setClassified(null)
+                    } catch (err: any) {
+                      alert('Файлни ўқиб бўлмади: ' + (err?.message || err))
+                    }
                     e.target.value = ''
                   }}
                 />
@@ -557,6 +587,82 @@ export default function TilshunosPage() {
               <option value="uz-lat">🇺🇿 O'zbek (Lotin)</option>
             </select>
           </div>
+          {/* Shared toolbar for translate mode (source side) */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+            <button
+              onClick={async () => {
+                try {
+                  const pasted = await navigator.clipboard.readText()
+                  if (pasted) setSourceText(pasted)
+                } catch (_) {}
+              }}
+              style={toolbarBtn}
+            >
+              <ClipboardPaste size={13} /> Жойлаш
+            </button>
+
+            <label style={{ ...toolbarBtn, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Upload size={13} /> Файлдан юклаш
+              <input
+                type="file"
+                accept=".txt,.md,.csv,.pdf,.docx"
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  try {
+                    const txt = await extractFile(f)
+                    setSourceText(txt)
+                  } catch (err: any) {
+                    alert('Файлни ўқиб бўлмади: ' + (err?.message || err))
+                  }
+                  e.target.value = ''
+                }}
+              />
+            </label>
+
+            <button
+              onClick={() => { setSourceText(''); setTargetText('') }}
+              disabled={!sourceText && !targetText}
+              style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: (sourceText || targetText) ? 1 : 0.5 }}
+            >
+              <Trash2 size={13} /> Тозалаш
+            </button>
+
+            <button
+              onClick={async () => {
+                const sel = window.getSelection()?.toString().trim()
+                if (!sel) { alert('Аввал матндан сўзни белгиланг'); return }
+                try {
+                  const r = await api.synonyms.list(sel)
+                  const opts = (r as any).synonyms?.map((s: any) => s.synonym) || []
+                  setSynPopup({ word: sel, x: window.innerWidth / 2 - 120, y: 200, options: opts })
+                } catch (_) { alert('Хатолик') }
+              }}
+              style={toolbarBtn}
+            >
+              Синонимлар
+            </button>
+
+            <button
+              onClick={async () => {
+                const sel = window.getSelection()?.toString().trim()
+                if (!sel) { alert('Аввал матндан сўзни белгиланг'); return }
+                try {
+                  const backendLang = sourceLang.startsWith('uz') ? 'uz' : sourceLang
+                  const r = await api.dictionary.add(sel, backendLang)
+                  if (r.ok) {
+                    api.dictionary.translate(sel).catch(() => {})
+                    alert(`"${sel}" луғатга қўшилди ✓`)
+                  } else alert('Хатолик: ' + (r.error || ''))
+                } catch (e: any) { alert('Хатолик: ' + (e?.message || e)) }
+              }}
+              style={toolbarBtn}
+            >
+              <BookPlus size={13} /> Луғатга қўшиш
+            </button>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[sourceLang]}</div>

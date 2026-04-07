@@ -16,13 +16,64 @@ unified analysis with categorized issues, suggestions, and confidence scores.
 import logging
 import re
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from auth import get_current_user
 import db
 
 logger = logging.getLogger("tilshunos_routes")
 router = APIRouter(prefix="/api/tilshunos", tags=["tilshunos"])
+
+
+@router.post("/extract-text")
+async def extract_text_from_file(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
+    """Extract plain text from uploaded .txt/.docx/.pdf for Tilshunos editor."""
+    name = (file.filename or "").lower()
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        if name.endswith(".txt") or name.endswith(".md") or name.endswith(".csv"):
+            for enc in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
+                try:
+                    return {"text": raw.decode(enc)}
+                except UnicodeDecodeError:
+                    continue
+            return {"text": raw.decode("utf-8", errors="ignore")}
+        if name.endswith(".docx"):
+            import io
+            from docx import Document
+            doc = Document(io.BytesIO(raw))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            paragraphs.append(cell.text)
+            return {"text": "\n".join(paragraphs)}
+        if name.endswith(".pdf"):
+            import io
+            text = ""
+            try:
+                import pdfplumber
+                with pdfplumber.open(io.BytesIO(raw)) as pdf:
+                    text = "\n".join((p.extract_text() or "") for p in pdf.pages)
+            except Exception:
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(io.BytesIO(raw))
+                    text = "\n".join((p.extract_text() or "") for p in reader.pages)
+                except Exception:
+                    from PyPDF2 import PdfReader  # type: ignore
+                    reader = PdfReader(io.BytesIO(raw))
+                    text = "\n".join((p.extract_text() or "") for p in reader.pages)
+            return {"text": text}
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("extract-text failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/rules/stats")

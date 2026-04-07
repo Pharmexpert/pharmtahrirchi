@@ -163,6 +163,7 @@ export const dictionary = {
   affixFlags: (language: string, page: number, per_page: number, search: string) =>
     get<{ flags: any[]; total: number; total_pages: number }>(`/api/dictionary/affix-flags?language=${language}&page=${page}&per_page=${per_page}&search=${encodeURIComponent(search)}`),
   translate: (word: string) => post<{ ru: string; en: string; definition: string }>('/api/dictionary/translate', { word }),
+  add: (word: string, lang = 'uz') => post<{ ok: boolean; word?: string; error?: string }>('/api/dictionary/add', { word, lang }),
   translations: (words: string) => get<{ translations: Record<string, any> }>(`/api/dictionary/translations?words=${encodeURIComponent(words)}`),
 }
 
@@ -558,6 +559,19 @@ export const tilshunos = {
 
   confirm: (payload: { wrong: string; correct: string; context?: string; category?: string; lang?: string }) =>
     post<LearnResult>('/api/tilshunos/confirm', payload),
+
+  extractText: async (file: File): Promise<{ text: string }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    const res = await fetch(`${API_BASE}/api/tilshunos/extract-text`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
 }
 
 // Re-export everything as default namespace
