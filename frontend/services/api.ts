@@ -600,6 +600,19 @@ export const tilshunos = {
     qs.set('limit', String(limit))
     return get<{ training_log: any[]; training_log_count: number; sayqallash_rules: any[]; sayqallash_count: number; total: number }>(`/api/tilshunos/training-log/export?${qs.toString()}`)
   },
+
+  extractText: async (file: File): Promise<{ text: string }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    const res = await fetch(`${API_BASE}/api/tilshunos/extract-text`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
 }
 
 // ═══════════════════════════════════════════════════
@@ -625,19 +638,6 @@ export const assistant = {
     })
     if (!res.ok) throw new Error(await res.text())
     return res.json() as Promise<{ filename: string; size: number; size_mb: number; kind: string; text?: string; base64?: string; mime?: string; transcribed?: boolean }>
-  },
-
-  extractText: async (file: File): Promise<{ text: string }> => {
-    const fd = new FormData()
-    fd.append('file', file)
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-    const res = await fetch(`${API_BASE}/api/tilshunos/extract-text`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
   },
 }
 
