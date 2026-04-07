@@ -798,6 +798,20 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     return out
 
 
+@router.post("/normalize-drug")
+async def normalize_drug_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Find canonical INN/brand for a drug name (cross-script + fuzzy)."""
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return {"input": name, "matches": [], "best": None}
+    try:
+        import drug_normalizer
+        return drug_normalizer.normalize(name, max_results=int(payload.get("max_results", 5)))
+    except Exception as e:
+        logger.exception("normalize-drug failed")
+        return {"input": name, "matches": [], "best": None, "error": str(e)}
+
+
 @router.get("/training-log/export")
 async def export_training_log(kind: str = None, limit: int = 10000, current_user: Dict = Depends(get_current_user)):
     """
