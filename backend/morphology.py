@@ -262,6 +262,11 @@ class MorphAnalysis:
     negation: bool = False
     source: str = "hunspell"             # hunspell/heuristic/combined
 
+    # Phase 2.5: Validation
+    valid_order: bool = True             # passes Uzbek slot order
+    order_score: float = 1.0             # 0..1 (1 = perfect)
+    order_issues: List[str] = field(default_factory=list)
+
     def breakdown(self) -> str:
         """Human-readable: 'ишла + моқда (progressive) + мас (negation) + санми (2sg.question)'"""
         parts = []
@@ -286,6 +291,9 @@ class MorphAnalysis:
             "negation": self.negation,
             "breakdown": self.breakdown(),
             "source": self.source,
+            "valid_order": self.valid_order,
+            "order_score": self.order_score,
+            "order_issues": self.order_issues,
         }
 
 
@@ -341,37 +349,36 @@ class UzbekMorphologyAnalyzer:
         dic = self._get_dict(script)
         word_lower = word.lower()
 
+        result: Optional[MorphAnalysis] = None
+
         # Step 1: Direct dictionary lookup (whole word)
         if dic and dic.lookup(word_lower):
-            # Even though Hunspell accepts the word as a whole, try to decompose it
-            # heuristically so we can show stem + affixes to the user.
             heuristic = self._heuristic_decompose(word_lower, script, dic)
             if heuristic and len(heuristic.morphemes) > 1:
-                # Heuristic found at least one suffix → use richer breakdown
                 heuristic.source = "hunspell.direct+heuristic"
                 if heuristic.pos == "unknown":
                     heuristic.pos = self._infer_pos_from_word(word_lower, dic)
-                return heuristic
-            # Otherwise, return as a single stem
-            return MorphAnalysis(
-                word=word, stem=word_lower,
-                pos=self._infer_pos_from_word(word_lower, dic),
-                morphemes=[Morpheme(surface=word, kind="stem")],
-                source="hunspell.direct"
-            )
+                result = heuristic
+            else:
+                result = MorphAnalysis(
+                    word=word, stem=word_lower,
+                    pos=self._infer_pos_from_word(word_lower, dic),
+                    morphemes=[Morpheme(surface=word, kind="stem")],
+                    source="hunspell.direct"
+                )
 
-        # Step 2: Heuristic greedy suffix stripping
-        analysis = self._heuristic_decompose(word_lower, script, dic)
-        if analysis:
-            return analysis
+        # Step 2: Heuristic decomposition
+        if result is None:
+            analysis = self._heuristic_decompose(word_lower, script, dic)
+            if analysis:
+                result = analysis
 
         # Step 3: Spylls suggestion fallback
-        if dic:
+        if result is None and dic:
             try:
                 suggestions = list(dic.suggest(word_lower))[:1]
                 if suggestions:
-                    # Word is probably a typo → return "unknown" analysis with suggestion
-                    return MorphAnalysis(
+                    result = MorphAnalysis(
                         word=word, stem=suggestions[0],
                         pos="unknown",
                         morphemes=[Morpheme(surface=word, kind="stem", gloss=f"тавсия: {suggestions[0]}")],
@@ -380,7 +387,23 @@ class UzbekMorphologyAnalyzer:
             except Exception:
                 pass
 
-        return None
+        if result is None:
+            return None
+
+        # Phase 2.5: Validate morpheme order against canonical Uzbek slots
+        try:
+            from uzbek_morpheme_rules import validate_morpheme_order
+            validation = validate_morpheme_order(
+                [m.to_dict() for m in result.morphemes],
+                pos_hint=result.pos or "verb",
+            )
+            result.valid_order = validation.valid
+            result.order_score = validation.score
+            result.order_issues = validation.issues
+        except Exception as e:
+            logger.debug(f"Morpheme order validation skipped: {e}")
+
+        return result
 
     def is_valid_form(self, word: str) -> bool:
         """Quick yes/no: is this word morphologically well-formed?"""
@@ -402,56 +425,47 @@ class UzbekMorphologyAnalyzer:
     # ───────────────────────────────────────────────
 
     def _heuristic_decompose(self, word: str, script: str, dic) -> Optional[MorphAnalysis]:
-        """Try to peel off known Uzbek suffixes one by one from the end."""
+        """
+        Beam-search based decomposition that explores multiple suffix candidates
+        and ranks them by Uzbek slot order validity.
+
+        Strategy:
+          1. Generate up to TOP_K candidate decompositions
+          2. Score each by stem-in-dict bonus + slot order monotonicity
+          3. Return the highest-scoring valid candidate
+        """
         suffixes = UZBEK_SUFFIXES_CYR if script == "cyrl" else UZBEK_SUFFIXES_LAT
-        original = word
 
-        morphemes: List[Morpheme] = []
-        features: Dict = {
-            "tense": None, "person": None, "number": None,
-            "case": None, "mood": None, "negation": False,
-        }
+        candidates = self._beam_decompose(word, suffixes, dic, beam_width=4, max_depth=6)
+        if not candidates:
+            return None
 
-        max_iterations = 6
-        for _ in range(max_iterations):
-            stripped_something = False
-            for suffix, gloss in suffixes:
-                if word.endswith(suffix) and len(word) > len(suffix) + 1:
-                    potential_stem = word[:-len(suffix)]
-                    # Check if the potential stem is in dictionary
-                    if dic and dic.lookup(potential_stem):
-                        morphemes.insert(0, Morpheme(surface=suffix, kind="suffix", gloss=gloss))
-                        self._enrich_features(features, gloss)
-                        word = potential_stem
-                        stripped_something = True
-                        break
+        # Score each candidate
+        best = None
+        best_score = -1.0
+        for cand in candidates:
+            score = self._score_candidate(cand, dic)
+            if score > best_score:
+                best_score = score
+                best = cand
 
-                    # Or maybe stem itself needs another round of stripping → continue peeling
-                    # Check if stem has any more suffixes to strip
-                    if len(potential_stem) >= 3:
-                        # Heuristic: if stem looks like plausible Uzbek root (mostly consonants+vowels), accept
-                        if self._looks_like_root(potential_stem):
-                            morphemes.insert(0, Morpheme(surface=suffix, kind="suffix", gloss=gloss))
-                            self._enrich_features(features, gloss)
-                            word = potential_stem
-                            stripped_something = True
-                            break
-            if not stripped_something:
-                break
+        if best is None:
+            return None
 
-        if not morphemes:
-            return None  # No decomposition happened
+        morpheme_list = best["morphemes"]
+        stem = best["stem"]
+        features = best["features"]
 
-        # Add stem as first morpheme
-        morphemes.insert(0, Morpheme(surface=word, kind="stem"))
+        if len(morpheme_list) <= 1:
+            return None  # No real decomposition
 
-        pos = self._infer_pos_from_suffixes(morphemes)
+        pos = self._infer_pos_from_suffixes(morpheme_list)
 
         return MorphAnalysis(
-            word=original,
-            stem=word,
+            word=word,
+            stem=stem,
             pos=pos,
-            morphemes=morphemes,
+            morphemes=morpheme_list,
             tense=features["tense"],
             person=features["person"],
             number=features["number"],
@@ -460,6 +474,112 @@ class UzbekMorphologyAnalyzer:
             negation=features["negation"],
             source="heuristic",
         )
+
+    def _beam_decompose(self, word: str, suffixes, dic, beam_width: int = 4, max_depth: int = 6) -> List[Dict]:
+        """
+        Beam search: at each peeling step, keep top N candidates that have
+        the highest "is_in_dict OR looks_like_root" plausibility.
+
+        Returns a list of candidate dicts:
+          { stem, morphemes, features, depth }
+        """
+        # Each beam state: (current_word, morpheme_chain, features, log_score)
+        initial_features = {
+            "tense": None, "person": None, "number": None,
+            "case": None, "mood": None, "negation": False,
+        }
+        # Initial beam = just the word as candidate stem
+        beam = [{
+            "stem": word,
+            "morphemes": [Morpheme(surface=word, kind="stem")],
+            "features": dict(initial_features),
+            "score": 0.0,
+        }]
+        # Final candidates
+        final_candidates = []
+
+        for depth in range(max_depth):
+            new_beam = []
+            for state in beam:
+                w = state["stem"]
+                if dic and dic.lookup(w):
+                    # This is a valid terminal
+                    final_candidates.append(state)
+
+                # Try peeling each suffix
+                for suffix, gloss in suffixes:
+                    if w.endswith(suffix) and len(w) > len(suffix) + 1:
+                        potential_stem = w[:-len(suffix)]
+                        in_dict = bool(dic and dic.lookup(potential_stem))
+                        looks_root = self._looks_like_root(potential_stem)
+                        if not (in_dict or looks_root):
+                            continue
+                        new_state = {
+                            "stem": potential_stem,
+                            "morphemes": [Morpheme(surface=potential_stem, kind="stem")] +
+                                         [Morpheme(surface=suffix, kind="suffix", gloss=gloss)] +
+                                         [m for m in state["morphemes"] if m.kind == "suffix"],
+                            "features": self._merge_features(state["features"], gloss),
+                            "score": state["score"] + (2.0 if in_dict else 0.5),
+                        }
+                        new_beam.append(new_state)
+
+            if not new_beam:
+                break
+            # Keep top beam_width by score
+            new_beam.sort(key=lambda s: -s["score"])
+            beam = new_beam[:beam_width]
+
+        # Add final beam states as candidates if they're valid
+        for state in beam:
+            if dic and dic.lookup(state["stem"]):
+                final_candidates.append(state)
+            elif self._looks_like_root(state["stem"]):
+                final_candidates.append(state)
+
+        return final_candidates
+
+    def _merge_features(self, base: Dict, gloss: str) -> Dict:
+        """Like _enrich_features but creates a new dict."""
+        new_features = dict(base)
+        self._enrich_features(new_features, gloss)
+        return new_features
+
+    def _score_candidate(self, candidate: Dict, dic) -> float:
+        """
+        Score a candidate decomposition.
+
+        Components:
+          + 5.0 if stem is in dictionary
+          + 1.0 per morpheme that has a recognized slot
+          + 3.0 if morpheme order is valid (monotone increasing slots)
+          - 2.0 per slot order violation
+          + 0.5 * number of morphemes (prefer richer parses, but not too many)
+        """
+        from uzbek_morpheme_rules import validate_morpheme_order
+
+        score = 0.0
+
+        if dic and dic.lookup(candidate["stem"]):
+            score += 5.0
+
+        morphemes_dict = [m.to_dict() for m in candidate["morphemes"]]
+        validation = validate_morpheme_order(morphemes_dict)
+
+        if validation.valid:
+            score += 3.0
+        score -= 2.0 * len(validation.issues)
+
+        # Prefer fewer morphemes (Occam's razor) — but not too few
+        n_suffixes = sum(1 for m in candidate["morphemes"] if m.kind == "suffix")
+        score += min(n_suffixes, 4) * 0.3
+
+        # Bonus for recognized slots
+        for slot in validation.morpheme_slots:
+            if slot >= 0:
+                score += 0.5
+
+        return score
 
     def _looks_like_root(self, s: str) -> bool:
         """Cheap check: does this look like a plausible Uzbek root or partial stem?
