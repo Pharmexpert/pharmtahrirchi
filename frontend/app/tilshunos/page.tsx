@@ -113,11 +113,25 @@ export default function TilshunosPage() {
   }
 
   const [aiEngines, setAiEngines] = useState<Record<string, any> | null>(null)
+  const [entities, setEntities] = useState<Array<{ text: string; from: number; to: number; type: string; score?: number }>>([])
+  const [showEntities, setShowEntities] = useState(true)
 
   useEffect(() => {
     api.tilshunos.rulesStats().then(setStats).catch(() => {})
     api.tilshunos.publicAiEngines().then(r => setAiEngines(r.engines || null)).catch(() => {})
   }, [])
+
+  // Auto-extract entities when text is set + result available
+  useEffect(() => {
+    if (!text || text.length < 10 || !showEntities) {
+      setEntities([])
+      return
+    }
+    const t = setTimeout(() => {
+      api.tilshunos.extractEntities(text).then(r => setEntities(r.entities || [])).catch(() => {})
+    }, 800)
+    return () => clearTimeout(t)
+  }, [text, showEntities])
 
   useEffect(() => {
     if (text && text.length > 5) {
@@ -316,13 +330,14 @@ export default function TilshunosPage() {
     if (!text) return <span style={{ color: '#9CA3AF' }}>Матн киритинг ва «Синов олиб бориш» тугмасини босинг...</span>
     if (!result) return <div style={{ whiteSpace: 'pre-wrap' }}>{text}</div>
 
-    // Merge errors + classification into non-overlapping spans
+    // Merge errors + classification + entities into non-overlapping spans
     type Span = {
       from: number
       to: number
       issue?: LinguisticIssue
       issueIdx?: number
       wordCategory?: string
+      entityType?: string
     }
     const spans: Span[] = []
 
@@ -346,6 +361,16 @@ export default function TilshunosPage() {
         )
         if (!overlapsError && c.category !== 'unknown') {
           spans.push({ from: c.from, to: c.to, wordCategory: c.category })
+        }
+      }
+    }
+
+    // NER entities (DRUG, DOSE, PERSON, LOC, ORG)
+    if (showEntities && entities.length > 0) {
+      for (const ent of entities) {
+        const overlap = spans.some(s => (ent.from >= s.from && ent.from < s.to) || (ent.to > s.from && ent.to <= s.to))
+        if (!overlap) {
+          spans.push({ from: ent.from, to: ent.to, entityType: ent.type })
         }
       }
     }
@@ -393,6 +418,30 @@ export default function TilshunosPage() {
             }}
             title={s.wordCategory}
           >{content}</span>
+        )
+      } else if (s.entityType) {
+        const ENTITY_COLORS: Record<string, string> = {
+          DRUG: '#7C3AED',     // purple — лекарственный препарат
+          DOSE: '#0891B2',     // teal — доза/единица
+          PERSON: '#059669',   // green — odamlar
+          LOC: '#DC2626',      // red — жойлар
+          ORG: '#D97706',      // orange — компании
+          MISC: '#6B7280',     // gray — бошқа
+        }
+        const color = ENTITY_COLORS[s.entityType] || ENTITY_COLORS.MISC
+        parts.push(
+          <span key={`ent${i}`}
+            title={`${s.entityType}: ${content}`}
+            style={{
+              background: `${color}22`,
+              color,
+              fontWeight: 700,
+              padding: '1px 4px',
+              borderRadius: 4,
+              border: `1px solid ${color}66`,
+              fontSize: '0.94em',
+            }}
+          >{content}<sub style={{ fontSize: '0.55em', marginLeft: 2, opacity: 0.7 }}>{s.entityType}</sub></span>
         )
       }
       cursor = Math.max(cursor, s.to)
