@@ -156,10 +156,83 @@ UZBEK_SUFFIXES_CYR = [
     ("и", "3sg.possessive"),
 ]
 
+# Sort cyrillic suffixes longest-first for greedy matching
+UZBEK_SUFFIXES_CYR.sort(key=lambda x: -len(x[0]))
+
+# Full Cyrillic → Latin transliteration map for Uzbek
+_CYR_TO_LAT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "j", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "x", "ц": "ts", "ш": "sh", "ы": "i", "э": "e", "ю": "yu",
+    "я": "ya", "ғ": "g'", "қ": "q", "ҳ": "h", "ў": "o'", "ъ": "'", "ь": "",
+    "ч": "ch", "ў": "o'",
+}
+
+
+def _cyr_to_lat(s: str) -> str:
+    out = []
+    for ch in s:
+        out.append(_CYR_TO_LAT.get(ch, ch))
+    return "".join(out)
+
+
+# Build Latin suffix list by full transliteration of cyrillic ones,
+# plus add common Latin-specific forms
 UZBEK_SUFFIXES_LAT = [
-    (s.replace("ғ", "g'").replace("қ", "q").replace("ҳ", "h").replace("ў", "o'").replace("ш", "sh").replace("ч", "ch").replace("ъ", "'"), t)
-    for s, t in UZBEK_SUFFIXES_CYR
+    (_cyr_to_lat(s), t) for s, t in UZBEK_SUFFIXES_CYR
 ]
+
+# Manually verified additions for Latin (in case transliteration produces ambiguities)
+_LAT_ADDITIONS = [
+    ("moqdaman", "1sg.progressive"),
+    ("moqdasan", "2sg.progressive"),
+    ("moqdamiz", "1pl.progressive"),
+    ("moqdasiz", "2pl.progressive"),
+    ("moqdalar", "3pl.progressive"),
+    ("moqda", "3sg.progressive"),
+    ("ganman", "1sg.past.perfect"),
+    ("gansan", "2sg.past.perfect"),
+    ("gan", "3sg.past.perfect"),
+    ("dim", "1sg.past"),
+    ("ding", "2sg.past"),
+    ("di", "3sg.past"),
+    ("masangiz", "2pl.negation.conditional"),
+    ("masang", "2sg.negation.conditional"),
+    ("magin", "2sg.prohibitive"),
+    ("may", "negation.converb"),
+    ("mas", "negation"),
+    ("ma", "negation"),
+    ("sanmi", "2sg.question"),
+    ("sizmi", "2pl.question"),
+    ("mikan", "dubitative"),
+    ("mi", "question"),
+    ("larni", "plural.accusative"),
+    ("larga", "plural.dative"),
+    ("lardan", "plural.ablative"),
+    ("larda", "plural.locative"),
+    ("lar", "plural"),
+    ("ning", "genitive"),
+    ("ni", "accusative"),
+    ("dan", "ablative"),
+    ("da", "locative"),
+    ("ga", "dative"),
+    ("imiz", "1pl.possessive"),
+    ("ingiz", "2pl.possessive"),
+    ("im", "1sg.possessive"),
+    ("ing", "2sg.possessive"),
+    ("si", "3sg.possessive"),
+]
+# Merge additions in front (longest-first preserved due to suffix matching loop)
+_seen = set()
+_merged = []
+for entry in _LAT_ADDITIONS + UZBEK_SUFFIXES_LAT:
+    if entry[0] and entry[0] not in _seen:
+        _seen.add(entry[0])
+        _merged.append(entry)
+# Sort by length desc so greedy matching works
+_merged.sort(key=lambda x: -len(x[0]))
+UZBEK_SUFFIXES_LAT = _merged
 
 
 @dataclass
