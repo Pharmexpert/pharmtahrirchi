@@ -26,6 +26,7 @@ from routes.websocket_routes import router as websocket_router
 from routes.morph_routes import router as morph_router
 from routes.grammar_routes import router as grammar_router
 from routes.learn_routes import router as learn_router
+from routes.nlp_admin_routes import router as nlp_admin_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -99,6 +100,31 @@ async def startup_event():
 
     asyncio.create_task(run_migration())
 
+    # ═══════════════════════════════════════════════
+    # Phase 6: Nightly dictionary growth scheduler (APScheduler)
+    # Runs every night at 03:00 Tashkent time (UTC+5)
+    # ═══════════════════════════════════════════════
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        from scripts.nightly_dictionary_grow import grow_dictionary
+
+        scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
+        scheduler.add_job(
+            lambda: grow_dictionary(window_hours=24),
+            CronTrigger(hour=3, minute=0),
+            id="nightly_grow",
+            name="Nightly dictionary growth",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.start()
+        logger.info("[Scheduler] Nightly dictionary growth scheduled at 03:00 Asia/Tashkent")
+    except ImportError:
+        logger.warning("[Scheduler] APScheduler not installed — nightly growth disabled")
+    except Exception as e:
+        logger.error(f"[Scheduler] Failed to start: {e}")
+
 
 # ═══════════════════════════════════════════════════
 # Static Files & Route Registration
@@ -120,6 +146,7 @@ app.include_router(websocket_router)
 app.include_router(morph_router)
 app.include_router(grammar_router)
 app.include_router(learn_router)
+app.include_router(nlp_admin_router)
 
 
 if __name__ == "__main__":
