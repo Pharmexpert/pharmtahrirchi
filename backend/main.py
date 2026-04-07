@@ -61,7 +61,7 @@ async def public_ai_engines():
         }
     except Exception:
         out["engines"]["bert"] = {"available": False}
-    for name, mod in [("mistral", "mistral_engine"), ("llama", "llama_engine"), ("russian", "russian_engine"), ("nllb", "translator_engine")]:
+    for name, mod in [("mistral", "mistral_engine"), ("llama", "llama_engine"), ("russian", "russian_engine"), ("nllb", "translator_engine"), ("ner", "ner_engine")]:
         try:
             m = __import__(mod)
             out["engines"][name] = {

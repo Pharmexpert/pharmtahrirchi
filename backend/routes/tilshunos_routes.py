@@ -798,6 +798,21 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     return out
 
 
+@router.post("/extract-entities")
+async def extract_entities_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Extract named entities (DRUG, DOSE, PERSON, LOC, ORG) from text."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"entities": [], "stats": {}}
+    try:
+        import ner_engine
+        ents = await ner_engine.extract_async(text)
+        return {"entities": ents, "stats": ner_engine.stats(text)}
+    except Exception as e:
+        logger.exception("extract-entities failed")
+        return {"entities": [], "error": str(e)}
+
+
 @router.post("/cluster-synonyms")
 async def cluster_synonyms(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """Group related words via BERT embedding clustering."""
