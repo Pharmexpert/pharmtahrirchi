@@ -343,6 +343,12 @@ export const admin = {
     post<{ success: boolean; is_blocked: number }>('/api/admin/users/block', { userId, blocked }),
   userActivity: (userId: string, limit = 100) =>
     get<{ user: any; activity: any[] }>(`/api/admin/users/${encodeURIComponent(userId)}/activity?limit=${limit}`),
+  // Pharma DB
+  drugs: (q = '', limit = 100) => get<{ drugs: any[]; total: number }>(`/api/admin/drugs?q=${encodeURIComponent(q)}&limit=${limit}`),
+  addDrug: (drug: any) => post<{ success: boolean; id?: number; error?: string }>('/api/admin/drugs', drug),
+  seedDrugs: () => post<{ success: boolean; inserted?: number }>('/api/admin/drugs/seed', {}),
+  medicalTerms: (q = '', limit = 100) => get<{ terms: any[]; total: number }>(`/api/admin/medical-terms?q=${encodeURIComponent(q)}&limit=${limit}`),
+  addMedicalTerm: (term: any) => post<{ success: boolean; id?: number; error?: string }>('/api/admin/medical-terms', term),
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
   updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),

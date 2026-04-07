@@ -42,6 +42,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isAdmin) {
     navItems.push({ name: t('nav.admin'), icon: ShieldCheck, path: '/admin' })
+    navItems.push({ name: 'Pharma DB', icon: Database, path: '/admin/pharma' })
   }
 
   return (
