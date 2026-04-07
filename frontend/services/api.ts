@@ -560,6 +560,12 @@ export const tilshunos = {
   confirm: (payload: { wrong: string; correct: string; context?: string; category?: string; lang?: string }) =>
     post<LearnResult>('/api/tilshunos/confirm', payload),
 
+  learnDiff: (original: string, corrected: string, lang = 'uz', source = 'tilshunos_edit') =>
+    post<{ learned: number; pairs: Array<{ wrong: string; correct: string }> }>('/api/tilshunos/learn-diff', { original, corrected, lang, source }),
+
+  translate: (text: string, source_lang: string, target_lang: string) =>
+    post<{ translated: string }>('/api/tilshunos/translate', { text, source_lang, target_lang }),
+
   extractText: async (file: File): Promise<{ text: string }> => {
     const fd = new FormData()
     fd.append('file', file)

@@ -79,6 +79,31 @@ export default function TilshunosPage() {
   const [targetLang, setTargetLang] = useState<Lang>('uz-lat')
   const [sourceText, setSourceText] = useState('')
   const [targetText, setTargetText] = useState('')
+  const [translating, setTranslating] = useState(false)
+
+  // Original snapshots for self-learning diff
+  const [originalText, setOriginalText] = useState('')
+  const [originalSource, setOriginalSource] = useState('')
+  const [originalTarget, setOriginalTarget] = useState('')
+
+  // Track when text is loaded to capture original snapshot
+  useEffect(() => {
+    if (text && !originalText) setOriginalText(text)
+  }, [text])
+  useEffect(() => {
+    if (sourceText && !originalSource) setOriginalSource(sourceText)
+  }, [sourceText])
+  useEffect(() => {
+    if (targetText && !originalTarget) setOriginalTarget(targetText)
+  }, [targetText])
+
+  // Send diff to self-learning when user clears or finishes editing
+  const sendLearnDiff = async (orig: string, curr: string, langCode: string, source: string) => {
+    if (!orig || !curr || orig === curr) return
+    try {
+      await api.tilshunos.learnDiff(orig, curr, langCode, source)
+    } catch (_) {}
+  }
 
   useEffect(() => {
     api.tilshunos.rulesStats().then(setStats).catch(() => {})
@@ -490,7 +515,11 @@ export default function TilshunosPage() {
               </label>
 
               <button
-                onClick={() => { setText(''); setResult(null); setClassified(null); setPopup(null) }}
+                onClick={async () => {
+                  // Save edits to Sayqallash before clearing
+                  await sendLearnDiff(originalText, text, lang.startsWith('uz') ? 'uz' : lang, 'tilshunos_edit')
+                  setText(''); setResult(null); setClassified(null); setPopup(null); setOriginalText('')
+                }}
                 disabled={!text}
                 style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: text ? 1 : 0.5 }}
               >
@@ -633,11 +662,40 @@ export default function TilshunosPage() {
             </label>
 
             <button
-              onClick={() => { setSourceText(''); setTargetText('') }}
+              onClick={async () => {
+                // Self-learning: diff source + target before clearing
+                const sLang = sourceLang.startsWith('uz') ? 'uz' : sourceLang
+                const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
+                await sendLearnDiff(originalSource, sourceText, sLang, 'tilshunos_translate_src')
+                await sendLearnDiff(originalTarget, targetText, tLang, 'tilshunos_translate_tgt')
+                setSourceText(''); setTargetText(''); setOriginalSource(''); setOriginalTarget('')
+              }}
               disabled={!sourceText && !targetText}
               style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: (sourceText || targetText) ? 1 : 0.5 }}
             >
               <Trash2 size={13} /> Тозалаш
+            </button>
+
+            <button
+              onClick={async () => {
+                if (!sourceText.trim()) return
+                setTranslating(true)
+                try {
+                  const sLang = sourceLang.startsWith('uz') ? 'uz' : sourceLang
+                  const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
+                  const r = await api.tilshunos.translate(sourceText, sLang, tLang)
+                  setTargetText(r.translated || '')
+                  setOriginalTarget(r.translated || '')
+                } catch (e: any) {
+                  alert('Таржима хатоси: ' + (e?.message || e))
+                } finally {
+                  setTranslating(false)
+                }
+              }}
+              disabled={translating || !sourceText.trim()}
+              style={{ ...toolbarBtn, marginLeft: 'auto', background: 'linear-gradient(135deg,#10B981,#059669)', color: 'white', border: 'none', padding: '8px 18px' }}
+            >
+              {translating ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Таржима қилиш
             </button>
 
             <button

@@ -447,6 +447,19 @@ export function useTableEditor({ initialData, filename, textId = '' }: UseTableE
     if (!confirm('Лойиҳани якунлашни тасдиқлайсизми? Бундан кейин лойиҳа архивга ўтказилади.')) return
     setIsFinishing(true)
     try {
+      // Self-learning: collect all v1→proposed diffs across the document
+      try {
+        const corrections = data
+          .filter(r => r.uz_proposed && r.uz_v1 && r.uz_proposed.trim() !== r.uz_v1.trim())
+          .map(r => ({ old_value: r.uz_v1, new_value: r.uz_proposed }))
+        if (corrections.length > 0) {
+          await fetch(`${API_BASE}/api/sayqallash/learn-batch`, {
+            method: 'POST', headers: authHeaders,
+            body: JSON.stringify({ corrections, lang: 'uz', modified_by: user?.name || '' })
+          })
+        }
+      } catch (_e) {}
+
       const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(textId)}/finish`, {
         method: 'POST',
         headers: authHeaders,

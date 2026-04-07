@@ -573,3 +573,94 @@ async def confirm_correction(payload: Dict[str, Any], current_user: Dict = Depen
         lang=payload.get("lang", "uz"),
         source="tilshunos_confirmed",
     )
+
+
+@router.post("/translate")
+async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """AI-translate text between EN/RU/UZ for Tilshunos translate panel."""
+    text = (payload.get("text") or "").strip()
+    src = payload.get("source_lang", "en")
+    tgt = payload.get("target_lang", "uz")
+    if not text:
+        return {"translated": ""}
+    label = {"en": "English", "ru": "Russian", "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)"}
+    src_l = label.get(src, src)
+    tgt_l = label.get(tgt, tgt)
+    try:
+        from routes.editor_routes import generate_ai_content
+        prompt = f"Translate the following {src_l} text to {tgt_l}. Return ONLY the translation, no explanations.\n\n{text}"
+        translated = await generate_ai_content(prompt)
+        return {"translated": (translated or "").strip()}
+    except Exception as e:
+        logger.exception("translate failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/learn-diff")
+async def learn_from_diff(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """
+    Diff original vs corrected text by sentence + word, then add (wrong→correct)
+    pairs to sayqallash_rules so the system learns from manual edits.
+
+    Request: { "original": "...", "corrected": "...", "lang": "uz", "source": "tilshunos_edit" }
+    """
+    original = (payload.get("original") or "").strip()
+    corrected = (payload.get("corrected") or "").strip()
+    if not original or not corrected or original == corrected:
+        return {"learned": 0, "pairs": []}
+
+    lang = payload.get("lang", "uz")
+    source = payload.get("source", "tilshunos_edit")
+
+    import difflib
+
+    def split_sents(t: str):
+        # Split on . ! ? newline, keep non-empty
+        parts = re.split(r'(?<=[\.!\?])\s+|\n+', t)
+        return [p.strip() for p in parts if p.strip()]
+
+    def split_words(s: str):
+        return re.findall(r"[\w'\u2019\u02bb\u02bc\u2018-]+", s)
+
+    orig_sents = split_sents(original)
+    corr_sents = split_sents(corrected)
+
+    sm_sent = difflib.SequenceMatcher(None, orig_sents, corr_sents)
+    pairs: List[Dict[str, str]] = []
+    for tag, i1, i2, j1, j2 in sm_sent.get_opcodes():
+        if tag == 'equal':
+            continue
+        # Align sentences pairwise within block
+        ow = []
+        for s in orig_sents[i1:i2]:
+            ow += split_words(s)
+        cw = []
+        for s in corr_sents[j1:j2]:
+            cw += split_words(s)
+        sm_word = difflib.SequenceMatcher(None, ow, cw)
+        for wt, a1, a2, b1, b2 in sm_word.get_opcodes():
+            if wt == 'equal':
+                continue
+            if wt == 'replace' and (a2 - a1) == (b2 - b1):
+                for k in range(a2 - a1):
+                    w_old, w_new = ow[a1 + k], cw[b1 + k]
+                    if w_old.lower() == w_new.lower():
+                        continue
+                    pairs.append({"wrong": w_old, "correct": w_new})
+
+    learned = 0
+    for p in pairs:
+        try:
+            db.add_sayqallash_rule(
+                wrong=p["wrong"],
+                correct=p["correct"],
+                error_type='S/Spelling',
+                context=corrected[:200],
+                lang=lang,
+                source=source,
+            )
+            learned += 1
+        except Exception as e:
+            logger.warning(f"learn-diff add failed for {p}: {e}")
+
+    return {"learned": learned, "pairs": pairs}
