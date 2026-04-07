@@ -580,7 +580,20 @@ export const tilshunos = {
     post<{ semantic_score: number; llm_note?: string }>('/api/tilshunos/translation-quality', { source, target }),
 
   aiStatus: () =>
-    get<{ bert: boolean; mistral: { available: boolean; mode: string; model: string }; gemini: boolean; anthropic: boolean }>('/api/tilshunos/ai-status'),
+    get<{ bert: boolean; mistral: any; llama: any; russian: any; nllb: any; ner: any; gemini: boolean; anthropic: boolean }>('/api/tilshunos/ai-status'),
+
+  publicAiEngines: () =>
+    get<{ engines: Record<string, any> }>('/api/ai-engines'),
+
+  extractEntities: (text: string) =>
+    post<{ entities: Array<{ text: string; from: number; to: number; type: string; score?: number }>; stats: Record<string, number> }>('/api/tilshunos/extract-entities', { text }),
+
+  trainingLogExport: (kind?: string, limit = 10000) => {
+    const qs = new URLSearchParams()
+    if (kind) qs.set('kind', kind)
+    qs.set('limit', String(limit))
+    return get<{ training_log: any[]; training_log_count: number; sayqallash_rules: any[]; sayqallash_count: number; total: number }>(`/api/tilshunos/training-log/export?${qs.toString()}`)
+  },
 
   extractText: async (file: File): Promise<{ text: string }> => {
     const fd = new FormData()

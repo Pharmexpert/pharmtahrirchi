@@ -112,8 +112,11 @@ export default function TilshunosPage() {
     } catch (_) {}
   }
 
+  const [aiEngines, setAiEngines] = useState<Record<string, any> | null>(null)
+
   useEffect(() => {
     api.tilshunos.rulesStats().then(setStats).catch(() => {})
+    api.tilshunos.publicAiEngines().then(r => setAiEngines(r.engines || null)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -459,6 +462,29 @@ export default function TilshunosPage() {
           <StatPill label="Изоҳли" value={stats.platform_databases?.annotated_words || 0} color="#2563EB" />
           <StatPill label="Мунозарали" value={stats.platform_databases?.disputed_words || 0} color="#EA580C" />
           <StatPill label="Қисқартмалар" value={stats.platform_databases?.abbreviations || 0} color="#059669" />
+        </div>
+      )}
+
+      {/* AI Engines status badges */}
+      {aiEngines && (
+        <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap', fontSize: '0.65rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>🤖 AI Engines:</span>
+          {Object.entries(aiEngines).map(([name, info]: [string, any]) => {
+            const ok = info?.available
+            const mode = info?.mode || (info?.uzbert_available !== undefined ? (info.ensemble ? 'ensemble' : 'single') : '')
+            const color = ok ? '#16A34A' : '#9CA3AF'
+            const bg = ok ? '#F0FDF4' : '#F3F4F6'
+            return (
+              <span key={name} title={info?.model || name} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 8px', borderRadius: 10, background: bg, color,
+                border: `1px solid ${color}33`, fontWeight: 700,
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+                {name.toUpperCase()}{mode ? ` · ${mode}` : ''}
+              </span>
+            )
+          })}
         </div>
       )}
 
