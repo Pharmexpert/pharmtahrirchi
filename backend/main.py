@@ -52,7 +52,13 @@ async def public_ai_engines():
     out = {"engines": {}}
     try:
         import bert_engine
-        out["engines"]["bert"] = {"available": bool(bert_engine.engine.initialized)}
+        out["engines"]["bert"] = {
+            "available": bool(bert_engine.engine.initialized),
+            "model": bert_engine.MODEL_NAME,
+            "ensemble": bert_engine.ENSEMBLE_MODE,
+            "uzbert_available": bool(bert_engine.engine.uzbert_initialized),
+            "uzbert_model": bert_engine.UZBERT_MODEL,
+        }
     except Exception:
         out["engines"]["bert"] = {"available": False}
     for name, mod in [("mistral", "mistral_engine"), ("russian", "russian_engine"), ("nllb", "translator_engine")]:

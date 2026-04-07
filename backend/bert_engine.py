@@ -27,9 +27,15 @@ if os.getenv("HF_TOKEN"):
 import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForMaskedLM
 
-# Uzbek BERT model — uses env var, falls back to HuggingFace auto-download
+# Primary Uzbek BERT — Tahrirchi (8.7M corpus, 2024)
 _default_local = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tahrirchi-bert-base")
 MODEL_NAME = os.getenv("BERT_MODEL", _default_local if os.path.exists(_default_local) else "tahrirchi/tahrirchi-bert-base")
+
+# Secondary Uzbek BERT — UzBERT (CopperCity Labs, 142GB corpus, 2020)
+# Used as ENSEMBLE complement: lowercase Latin script, BPE-tokenized
+UZBERT_MODEL = os.getenv("UZBERT_MODEL", "coppercitylabs/uzbert-base-uncased")
+ENSEMBLE_MODE = os.getenv("BERT_ENSEMBLE", "1") == "1"  # Default ON
+
 
 class BertEngine:
     _instance = None
@@ -43,43 +49,64 @@ class BertEngine:
                 cls._instance.nlp = None
                 cls._instance.tokenizer = None
                 cls._instance.model = None
+                # Ensemble (UzBERT) — secondary model
+                cls._instance.uzbert_initialized = False
+                cls._instance.uzbert_nlp = None
+                cls._instance.uzbert_tokenizer = None
+                cls._instance.uzbert_model = None
         return cls._instance
 
     def initialize(self):
-        """Initialize BERT in a background thread."""
+        """Initialize Tahrirchi BERT (and UzBERT if ensemble enabled) in background threads."""
         if self.initialized:
             return
-        
         thread = threading.Thread(target=self._load_model)
         thread.daemon = True
         thread.start()
         logger.info(f"[*] BERT Engine ({MODEL_NAME}) initialization started in background...")
 
+        if ENSEMBLE_MODE:
+            uzbert_thread = threading.Thread(target=self._load_uzbert)
+            uzbert_thread.daemon = True
+            uzbert_thread.start()
+            logger.info(f"[*] UzBERT ensemble ({UZBERT_MODEL}) initialization started in background...")
+
     def _load_model(self):
         try:
-            # Using CPU by default for stability (Mac/Windows)
             device = 0 if torch.cuda.is_available() else -1
-            
             logger.info(f"[*] Loading tokenizer for {MODEL_NAME}...")
             self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-            
             logger.info(f"[*] Loading model for {MODEL_NAME}...")
-            # Load floating-point model first
             fp32_model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
-            
-            # Apply 8-bit dynamic quantization to Linear layers
             logger.info(f"[*] Quantizing model (8-bit)...")
             self.model = torch.quantization.quantize_dynamic(
                 fp32_model, {torch.nn.Linear}, dtype=torch.qint8
             )
-            
             logger.info(f"[*] Setting up pipeline...")
             self.nlp = pipeline("fill-mask", model=self.model, tokenizer=self.tokenizer, device=device)
-            
             self.initialized = True
             logger.info(f"[+] BERT Engine ({MODEL_NAME}) is READY.")
         except Exception as e:
             logger.error(f"[!] Error loading BERT model: {e}")
+
+    def _load_uzbert(self):
+        """Load secondary UzBERT model for ensemble predictions."""
+        try:
+            device = 0 if torch.cuda.is_available() else -1
+            logger.info(f"[*] [UzBERT] Loading tokenizer for {UZBERT_MODEL}...")
+            self.uzbert_tokenizer = AutoTokenizer.from_pretrained(UZBERT_MODEL)
+            logger.info(f"[*] [UzBERT] Loading model {UZBERT_MODEL}...")
+            uz_fp32 = AutoModelForMaskedLM.from_pretrained(UZBERT_MODEL)
+            logger.info(f"[*] [UzBERT] Quantizing (8-bit)...")
+            self.uzbert_model = torch.quantization.quantize_dynamic(
+                uz_fp32, {torch.nn.Linear}, dtype=torch.qint8
+            )
+            self.uzbert_nlp = pipeline("fill-mask", model=self.uzbert_model, tokenizer=self.uzbert_tokenizer, device=device)
+            self.uzbert_initialized = True
+            logger.info(f"[+] UzBERT ({UZBERT_MODEL}) is READY (ensemble enabled).")
+        except Exception as e:
+            logger.warning(f"[!] UzBERT load failed (non-fatal, ensemble disabled): {e}")
+            self.uzbert_initialized = False
 
     # ───────────────────────────────────────────────────
     # Helpers
@@ -112,34 +139,77 @@ class BertEngine:
     # ───────────────────────────────────────────────────
     # Mask prediction (with cross-script + window + Hunspell filter)
     # ───────────────────────────────────────────────────
+    def _query_single_model(self, nlp, tokenizer, text: str, top_k: int):
+        """Query a single fill-mask model and return list of (token, score) pairs."""
+        try:
+            mask_token = tokenizer.mask_token if tokenizer else "[MASK]"
+            # Replace generic [MASK] with the specific mask token of this tokenizer
+            t = text.replace("[MASK]", mask_token) if mask_token != "[MASK]" else text
+            if mask_token not in t:
+                return []
+            results = nlp(t, top_k=top_k)
+            out = []
+            for r in results:
+                tok = r.get('token_str', '').strip().lstrip('##').strip()
+                score = float(r.get('score', 0.0))
+                if tok and tok not in ('[UNK]', '[PAD]', '[SEP]', '[CLS]', '<s>', '</s>', '<pad>', '<unk>', '<mask>'):
+                    out.append((tok.lower(), score))
+            return out
+        except Exception as e:
+            logger.warning(f"[BERT single query] {e}")
+            return []
+
     def predict_mask(self, text: str, top_k: int = 10, hunspell_filter: bool = False, lang: str = "uz", final_k: int = 5):
-        """Predict the masked word with optional Hunspell filtering and cross-script normalization."""
+        """
+        Ensemble prediction: Tahrirchi BERT + UzBERT.
+
+        Combines results from both models with weighted scoring:
+            final_score = (tahrirchi_score * 0.6) + (uzbert_score * 0.4)
+        Tokens predicted by BOTH models get a 1.5x boost.
+        """
         if not self.initialized or not self.nlp:
             return []
         try:
             normalized = self._normalize_to_latin(text)
             if "[MASK]" not in normalized:
                 return []
-            results = self.nlp(normalized, top_k=top_k)
-            tokens = []
-            for r in results:
-                t = r.get('token_str', '').strip().lstrip('##')
-                if not t or t in ('[UNK]', '[PAD]', '[SEP]', '[CLS]'):
-                    continue
-                tokens.append(t)
 
+            # 1. Primary model (Tahrirchi)
+            primary = self._query_single_model(self.nlp, self.tokenizer, normalized, top_k)
+
+            # 2. Secondary model (UzBERT) if ensemble enabled
+            secondary = []
+            if ENSEMBLE_MODE and self.uzbert_initialized and self.uzbert_nlp:
+                secondary = self._query_single_model(self.uzbert_nlp, self.uzbert_tokenizer, normalized, top_k)
+
+            # 3. Combine — weighted ensemble with agreement boost
+            score_map = {}
+            for tok, sc in primary:
+                score_map[tok] = score_map.get(tok, 0) + sc * 0.6
+            for tok, sc in secondary:
+                if tok in score_map:
+                    score_map[tok] = score_map[tok] + sc * 0.4
+                    score_map[tok] *= 1.5  # agreement boost
+                else:
+                    score_map[tok] = sc * 0.4
+
+            # 4. Sort by combined score
+            ranked = sorted(score_map.items(), key=lambda x: -x[1])
+            tokens = [t for t, _ in ranked]
+
+            # 5. Hunspell filter (only keep tokens that exist in dict)
             if hunspell_filter:
                 try:
                     import spellcheck
-                    is_cyr = False  # we always normalized to latin
-                    filtered = [t for t in tokens if spellcheck.is_correct(t, is_cyrillic=is_cyr)]
+                    filtered = [t for t in tokens if spellcheck.is_correct(t, is_cyrillic=False)]
                     if filtered:
                         tokens = filtered
                 except Exception:
                     pass
+
             return tokens[:final_k]
         except Exception as e:
-            logger.error(f"[!] BERT Prediction Error: {e}")
+            logger.error(f"[!] BERT Ensemble Prediction Error: {e}")
             return []
 
     def predict_in_context(self, full_text: str, wrong_word: str, top_k: int = 10, hunspell_filter: bool = True):
