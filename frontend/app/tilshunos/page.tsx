@@ -73,6 +73,13 @@ export default function TilshunosPage() {
   const [popup, setPopup] = useState<{ issue: LinguisticIssue; x: number; y: number } | null>(null)
   const [synPopup, setSynPopup] = useState<{ word: string; x: number; y: number; options: string[] } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const richEditRef = useRef<HTMLDivElement>(null)
+  const richSrcRef = useRef<HTMLDivElement>(null)
+  const richTgtRef = useRef<HTMLDivElement>(null)
+  // Rich (DOCX) HTML content — when present, render rich editor instead of plain
+  const [richHtml, setRichHtml] = useState<string>('')
+  const [richSrcHtml, setRichSrcHtml] = useState<string>('')
+  const [richTgtHtml, setRichTgtHtml] = useState<string>('')
 
   // Translation mode
   const [sourceLang, setSourceLang] = useState<Lang>('en')
@@ -195,14 +202,31 @@ export default function TilshunosPage() {
     }
   }
 
-  // Shared file extractor (PDF/DOCX/TXT) → returns plain text
-  const extractFile = async (f: File): Promise<string> => {
+  // Shared file extractor — for DOCX returns rich HTML (preserves tables/images/formatting)
+  const extractFile = async (f: File): Promise<{ text: string; html?: string }> => {
     const name = f.name.toLowerCase()
     if (name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.csv')) {
-      return await f.text()
+      return { text: await f.text() }
+    }
+    if (name.endsWith('.docx')) {
+      try {
+        const mammoth = await import('mammoth')
+        const buf = await f.arrayBuffer()
+        const result = await mammoth.convertToHtml({ arrayBuffer: buf }, {
+          // Inline images as base64 data URIs so they survive without external storage
+          convertImage: mammoth.images.imgElement(async (img: any) => {
+            const dataUri = await img.read('base64').then((s: string) => `data:${img.contentType};base64,${s}`)
+            return { src: dataUri }
+          }),
+        } as any)
+        const tx = await mammoth.extractRawText({ arrayBuffer: buf })
+        return { text: tx.value || '', html: result.value || '' }
+      } catch (e) {
+        // Fallback to backend plain extraction
+      }
     }
     const r = await api.tilshunos.extractText(f)
-    return r.text || ''
+    return { text: r.text || '' }
   }
 
   const openSynonymsForSelection = async () => {
@@ -530,8 +554,9 @@ export default function TilshunosPage() {
                     const f = e.target.files?.[0]
                     if (!f) return
                     try {
-                      const txt = await extractFile(f)
-                      setText(txt)
+                      const ex = await extractFile(f)
+                      setText(ex.text)
+                      setRichHtml(ex.html || '')
                       setResult(null)
                       setClassified(null)
                     } catch (err: any) {
@@ -546,7 +571,7 @@ export default function TilshunosPage() {
                 onClick={async () => {
                   // Save edits to Sayqallash before clearing
                   await sendLearnDiff(originalText, text, lang.startsWith('uz') ? 'uz' : lang, 'tilshunos_edit')
-                  setText(''); setResult(null); setClassified(null); setPopup(null); setOriginalText('')
+                  setText(''); setRichHtml(''); setResult(null); setClassified(null); setPopup(null); setOriginalText('')
                 }}
                 disabled={!text}
                 style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: text ? 1 : 0.5 }}
@@ -576,9 +601,25 @@ export default function TilshunosPage() {
               </button>
             </div>
 
-            {/* Single editor area: textarea when no result, annotated view when result */}
+            {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
             <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }}>
-              {!result ? (
+              {richHtml && !result ? (
+                <div
+                  ref={richEditRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={e => setText((e.currentTarget as HTMLDivElement).innerText)}
+                  dangerouslySetInnerHTML={{ __html: richHtml }}
+                  className="docx-rich"
+                  style={{
+                    width: '100%', flex: 1, minHeight: 500, padding: 24,
+                    border: '1.5px solid var(--border)', borderRadius: 10,
+                    fontSize: '0.95rem', fontFamily: 'Times New Roman, Georgia, serif',
+                    background: 'white', lineHeight: 1.6, outline: 'none',
+                    overflow: 'auto', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.04)',
+                  }}
+                />
+              ) : !result ? (
                 <textarea
                   ref={textareaRef}
                   value={text}
@@ -679,8 +720,9 @@ export default function TilshunosPage() {
                   const f = e.target.files?.[0]
                   if (!f) return
                   try {
-                    const txt = await extractFile(f)
-                    setSourceText(txt)
+                    const ex = await extractFile(f)
+                    setSourceText(ex.text)
+                    setRichSrcHtml(ex.html || '')
                   } catch (err: any) {
                     alert('Файлни ўқиб бўлмади: ' + (err?.message || err))
                   }
@@ -696,7 +738,7 @@ export default function TilshunosPage() {
                 const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
                 await sendLearnDiff(originalSource, sourceText, sLang, 'tilshunos_translate_src')
                 await sendLearnDiff(originalTarget, targetText, tLang, 'tilshunos_translate_tgt')
-                setSourceText(''); setTargetText(''); setOriginalSource(''); setOriginalTarget('')
+                setSourceText(''); setTargetText(''); setRichSrcHtml(''); setRichTgtHtml(''); setOriginalSource(''); setOriginalTarget('')
               }}
               disabled={!sourceText && !targetText}
               style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: (sourceText || targetText) ? 1 : 0.5 }}
@@ -763,13 +805,46 @@ export default function TilshunosPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[sourceLang]}</div>
-              <textarea value={sourceText} onChange={e => setSourceText(e.target.value)} placeholder="Асл матн..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+              {richSrcHtml ? (
+                <div
+                  ref={richSrcRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={e => setSourceText((e.currentTarget as HTMLDivElement).innerText)}
+                  dangerouslySetInnerHTML={{ __html: richSrcHtml }}
+                  className="docx-rich"
+                  style={{ width: '100%', minHeight: 500, padding: 20, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.9rem', fontFamily: 'Times New Roman, Georgia, serif', background: 'white', lineHeight: 1.6, outline: 'none', overflow: 'auto' }}
+                />
+              ) : (
+                <textarea value={sourceText} onChange={e => setSourceText(e.target.value)} placeholder="Асл матн..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+              )}
             </div>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[targetLang]}</div>
-              <textarea value={targetText} onChange={e => setTargetText(e.target.value)} placeholder="Таржима..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+              {richTgtHtml ? (
+                <div
+                  ref={richTgtRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={e => setTargetText((e.currentTarget as HTMLDivElement).innerText)}
+                  dangerouslySetInnerHTML={{ __html: richTgtHtml }}
+                  className="docx-rich"
+                  style={{ width: '100%', minHeight: 500, padding: 20, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.9rem', fontFamily: 'Times New Roman, Georgia, serif', background: 'white', lineHeight: 1.6, outline: 'none', overflow: 'auto' }}
+                />
+              ) : (
+                <textarea value={targetText} onChange={e => setTargetText(e.target.value)} placeholder="Таржима..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+              )}
             </div>
           </div>
+          <style jsx global>{`
+            .docx-rich table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+            .docx-rich table, .docx-rich th, .docx-rich td { border: 1px solid #D1D5DB; }
+            .docx-rich th, .docx-rich td { padding: 6px 10px; vertical-align: top; }
+            .docx-rich img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
+            .docx-rich h1, .docx-rich h2, .docx-rich h3 { font-weight: 700; margin: 12px 0 6px; }
+            .docx-rich p { margin: 6px 0; }
+            .docx-rich ul, .docx-rich ol { padding-left: 24px; }
+          `}</style>
         </div>
       )}
 
