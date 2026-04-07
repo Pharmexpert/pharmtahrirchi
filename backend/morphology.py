@@ -453,50 +453,77 @@ class UzbekMorphologyAnalyzer:
         )
 
     def _looks_like_root(self, s: str) -> bool:
-        """Cheap check: does this look like a plausible Uzbek root?"""
-        if len(s) < 2 or len(s) > 10:
+        """Cheap check: does this look like a plausible Uzbek root or partial stem?
+
+        Allow up to 20 chars because intermediate stems during recursive
+        suffix peeling can be longer than final roots.
+        """
+        if len(s) < 2 or len(s) > 20:
             return False
-        # Must have at least one vowel
-        vowels = set("аеёиоуыюяўаеиоуэü")  # cyr + lat loose
+        # Must have at least one vowel (cyrillic OR latin)
+        # Cyrillic vowels: а е ё и о у ы ю я ў э
+        # Latin vowels: a e i o u (and o' for ў)
+        vowels = set("аеёиоуыюяўэaeiou")
         return any(ch in vowels for ch in s.lower())
 
     def _enrich_features(self, features: Dict, gloss: str):
-        """Extract grammar features from suffix gloss."""
+        """Extract grammar features from suffix gloss.
+
+        IMPORTANT: Suffixes are peeled from end → start, so the FIRST call
+        corresponds to the OUTERMOST suffix. Outermost suffix wins for
+        person/number/mood/case (use first-write-wins semantics).
+        Negation and tense accumulate (last write wins, since they may be
+        nested in deeper morphemes).
+        """
         g = gloss.lower()
+
+        # Negation accumulates (any negation marker → negation True)
         if "negation" in g or "negative" in g or "prohibitive" in g:
             features["negation"] = True
+
+        # Tense: last write wins (deeper = closer to root = main verb tense)
         if "past" in g:
             features["tense"] = "past"
         elif "progressive" in g or "present" in g:
             features["tense"] = "progressive" if "progressive" in g else "present"
         elif "future" in g or "habitual" in g:
             features["tense"] = "future" if "future" in g else "habitual"
-        if "1sg" in g or "1pl" in g:
-            features["person"] = 1
-        elif "2sg" in g or "2pl" in g:
-            features["person"] = 2
-        elif "3sg" in g or "3pl" in g:
-            features["person"] = 3
-        if "1sg" in g or "2sg" in g or "3sg" in g:
-            features["number"] = "singular"
-        elif "1pl" in g or "2pl" in g or "3pl" in g or "plural" in g:
-            features["number"] = "plural"
-        if "question" in g or "interrogative" in g or "dubitative" in g:
-            features["mood"] = "interrogative"
-        elif "imperative" in g:
-            features["mood"] = "imperative"
-        elif "optative" in g:
-            features["mood"] = "optative"
-        if "accusative" in g:
-            features["case"] = "accusative"
-        elif "dative" in g:
-            features["case"] = "dative"
-        elif "ablative" in g:
-            features["case"] = "ablative"
-        elif "locative" in g:
-            features["case"] = "locative"
-        elif "genitive" in g:
-            features["case"] = "genitive"
+
+        # Person/number: FIRST WRITE WINS (outermost suffix = surface agreement)
+        if features.get("person") is None:
+            if "1sg" in g or "1pl" in g:
+                features["person"] = 1
+            elif "2sg" in g or "2pl" in g:
+                features["person"] = 2
+            elif "3sg" in g or "3pl" in g:
+                features["person"] = 3
+        if features.get("number") is None:
+            if "1sg" in g or "2sg" in g or "3sg" in g:
+                features["number"] = "singular"
+            elif "1pl" in g or "2pl" in g or "3pl" in g or "plural" in g:
+                features["number"] = "plural"
+
+        # Mood: first write wins (outermost suffix marks utterance type)
+        if features.get("mood") is None:
+            if "question" in g or "interrogative" in g or "dubitative" in g:
+                features["mood"] = "interrogative"
+            elif "imperative" in g:
+                features["mood"] = "imperative"
+            elif "optative" in g:
+                features["mood"] = "optative"
+
+        # Case: first write wins
+        if features.get("case") is None:
+            if "accusative" in g:
+                features["case"] = "accusative"
+            elif "dative" in g:
+                features["case"] = "dative"
+            elif "ablative" in g:
+                features["case"] = "ablative"
+            elif "locative" in g:
+                features["case"] = "locative"
+            elif "genitive" in g:
+                features["case"] = "genitive"
 
     def _infer_pos_from_word(self, word: str, dic) -> str:
         """Look up Hunspell flags and map to POS."""
