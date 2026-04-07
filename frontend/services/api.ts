@@ -541,6 +541,12 @@ export const tilshunos = {
   check: (text: string, lang = 'uz', categories?: string[]) =>
     post<TilshunosCheckResult>('/api/tilshunos/check', { text, lang, categories }),
 
+  classify: (text: string, lang = 'uz') =>
+    post<{
+      spans: Array<{ from: number; to: number; word: string; category: 'known' | 'annotated' | 'disputed' | 'abbreviation' | 'unknown' }>
+      counts: Record<string, number>
+    }>('/api/tilshunos/classify', { text, lang }),
+
   improve: (text: string, lang = 'uz', auto_apply_severity: 'low' | 'medium' | 'high' = 'high') =>
     post<{
       original_text: string
