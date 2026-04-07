@@ -106,6 +106,7 @@ UZBEK_SUFFIXES_CYR = [
     ("димиз", "1pl.past"),
     ("динг", "2sg.past"),
     ("дим", "1sg.past"),
+    ("дик", "1pl.past"),
     ("ди", "3sg.past"),
     # Future / habitual
     ("адиганмиз", "1pl.habitual"),
@@ -512,7 +513,22 @@ class UzbekMorphologyAnalyzer:
                         potential_stem = w[:-len(suffix)]
                         in_dict = bool(dic and dic.lookup(potential_stem))
                         looks_root = self._looks_like_root(potential_stem)
-                        if not (in_dict or looks_root):
+                        # Minimum stem length: 2 for dict-recognized stems,
+                        # 3 for heuristic-only roots (avoid stripping into nonsense)
+                        if in_dict:
+                            if len(potential_stem) < 2:
+                                continue
+                        else:
+                            if len(potential_stem) < 3:
+                                continue
+                            if not looks_root:
+                                continue
+
+                        # Phonological constraint: don't strip vowel-only single-letter
+                        # suffix "и"/"i" if the original word is itself a recognized
+                        # noun ending in consonant+vowel (e.g. "dori" = drug, not "dor"+"i")
+                        if suffix in ("i", "и") and dic and dic.lookup(w):
+                            # Original word is a valid Hunspell entry → don't peel "i"
                             continue
                         new_state = {
                             "stem": potential_stem,
@@ -655,15 +671,43 @@ class UzbekMorphologyAnalyzer:
                 features["case"] = "genitive"
 
     def _infer_pos_from_word(self, word: str, dic) -> str:
-        """Look up Hunspell flags and map to POS."""
+        """
+        Look up Hunspell flags and map to POS by counting noun vs verb signals.
+
+        Uzbek Hunspell dict assigns multiple flags per word; many nouns have
+        possessive/case/plural markers (B, M, S, V) AND a separate entry with
+        verb conjugation flags (X) because the same root can serve both roles
+        in agglutinative language. We weight noun signals stronger than verb
+        because most "uy", "mehmon", "kitob" type words are primarily nouns.
+        """
+        # Strong noun signals: possessive/plural/case markers
+        NOUN_FLAGS = {"S", "V", "B", "C", "D", "M", "N"}
+        # Strong verb signals: tense/conjugation
+        VERB_FLAGS = {"F", "X"}
+
         try:
-            entries = dic.dic.homonyms(word) if hasattr(dic.dic, "homonyms") else []
+            entries = list(dic.dic.homonyms(word)) if hasattr(dic.dic, "homonyms") else []
+            noun_count = 0
+            verb_count = 0
             for entry in entries:
                 flags = getattr(entry, "flags", set()) or set()
-                for f in flags:
-                    sem = FLAG_SEMANTICS.get(str(f), {})
-                    if "pos" in sem:
-                        return sem["pos"]
+                fs = {str(f) for f in flags}
+                noun_count += len(fs & NOUN_FLAGS)
+                verb_count += len(fs & VERB_FLAGS)
+
+            # 3+ noun flags is decisive → noun
+            if noun_count >= 3:
+                return "noun"
+            # Pure verb (no noun flags at all)
+            if verb_count > 0 and noun_count == 0:
+                return "verb"
+            # Mixed but verb stronger
+            if verb_count > noun_count:
+                return "verb"
+            # Default: noun (most accepted Uzbek words are nouns)
+            if noun_count > 0:
+                return "noun"
+            return "noun"
         except Exception:
             pass
         return "unknown"
