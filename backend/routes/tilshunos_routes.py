@@ -151,21 +151,56 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
         raise HTTPException(status_code=400, detail="text too long (max 50000)")
 
     all_issues = []
+    # Track which word spans already have issues to avoid duplicates
+    seen_spans = set()  # (from_index, to_index)
 
-    # ───── 1. Pattern-based linguistic rules ─────
-    try:
-        from uzbek_linguistic_rules import check_text_against_rules
-        violations = check_text_against_rules(
-            text,
-            categories=requested_categories,
-            script="both",
-        )
-        for v in violations:
-            issue = v.to_dict()
-            issue["source"] = "pattern_rules"
-            all_issues.append(issue)
-    except Exception as e:
-        logger.warning(f"[tilshunos] pattern rules check failed: {e}")
+    # ───── 1. Per-word Hunspell spell check (Uzbek) ─────
+    if lang == "uz":
+        try:
+            import spellcheck
+            # Detect script by checking any cyrillic character
+            is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text)
+
+            for match in re.finditer(r"\w+", text, re.UNICODE):
+                word = match.group()
+                if len(word) < 2:
+                    continue
+                # Skip digits / mixed
+                if any(ch.isdigit() for ch in word):
+                    continue
+
+                try:
+                    ok = spellcheck.is_correct(word, is_cyrillic=is_cyr)
+                    if ok:
+                        continue
+
+                    suggestions = spellcheck.suggest(word, is_cyrillic=is_cyr, max_suggestions=5)
+                    if not suggestions:
+                        continue
+
+                    span = (match.start(), match.end())
+                    if span in seen_spans:
+                        continue
+                    seen_spans.add(span)
+
+                    all_issues.append({
+                        "category": "orthography",
+                        "subcategory": "spelling",
+                        "rule_id": "HUNSPELL",
+                        "error_type": "S/Spelling",
+                        "from_index": match.start(),
+                        "to_index": match.end(),
+                        "matched_text": word,
+                        "suggestion": suggestions[0] if suggestions else "",
+                        "suggestions": suggestions,
+                        "message": f"Имло хатоси: '{word}' луғатда топилмади",
+                        "severity": "high",
+                        "source": "hunspell",
+                    })
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.warning(f"[tilshunos] hunspell check failed: {e}")
 
     # ───── 2. Sayqallash rules (DB-based exact + semantic) ─────
     if lang == "uz" and (not requested_categories or "orthography" in requested_categories or "spelling" in requested_categories):
@@ -174,6 +209,11 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
             sayqallash_results = []
             find_corrections(text, lang, sayqallash_results)
             for r in sayqallash_results:
+                span = (r.get("from_index", 0), r.get("to_index", 0))
+                if span in seen_spans:
+                    continue
+                seen_spans.add(span)
+
                 all_issues.append({
                     "category": "orthography",
                     "subcategory": "sayqallash_db",
@@ -183,12 +223,34 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
                     "to_index": r.get("to_index", 0),
                     "matched_text": r.get("old_value", ""),
                     "suggestion": r.get("new_value", ""),
-                    "message": f"Sayqallash DB қоидаси: {r.get('error_type', '')}",
+                    "suggestions": [r.get("new_value", "")],
+                    "message": f"Sayqallash қоидаси: {r.get('error_type', '')}",
                     "severity": "medium",
                     "source": "sayqallash_db",
                 })
         except Exception as e:
             logger.warning(f"[tilshunos] sayqallash check failed: {e}")
+
+    # ───── 3. Sentence-level pattern rules (orthography/punctuation sentence-wide only) ─────
+    try:
+        from uzbek_linguistic_rules import check_text_against_rules
+        # Only sentence-level rules, not single-char patterns that cause false positives
+        violations = check_text_against_rules(
+            text,
+            categories=["punctuation"],  # only punctuation patterns are reliable
+            script="both",
+        )
+        for v in violations:
+            span = (v.from_index, v.to_index)
+            if span in seen_spans:
+                continue
+            seen_spans.add(span)
+            issue = v.to_dict()
+            issue["source"] = "pattern_rules"
+            issue["suggestions"] = [v.suggestion] if v.suggestion else []
+            all_issues.append(issue)
+    except Exception as e:
+        logger.warning(f"[tilshunos] pattern rules check failed: {e}")
 
     # ───── 3. Morphology analysis ─────
     morphology_results = []
