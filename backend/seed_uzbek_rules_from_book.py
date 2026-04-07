@@ -20,17 +20,23 @@ PDF_JSON = "/tmp/ona_tili.json"
 
 
 def load_pages():
-    if not os.path.exists(PDF_JSON):
-        # Try to extract on-the-fly
-        try:
-            from pypdf import PdfReader
-            reader = PdfReader(os.path.expanduser("~/Desktop/Ona tili (M.Hamroyev, D.Muhamedova va b.).pdf"))
-            return [{"page": i + 1, "text": p.extract_text() or ""} for i, p in enumerate(reader.pages)]
-        except Exception as e:
-            print(f"Cannot read PDF: {e}")
-            return []
-    with open(PDF_JSON, encoding="utf-8") as f:
-        return json.load(f)
+    # First try bundled text file
+    text_file = os.path.join(os.path.dirname(__file__), "ona_tili_text.txt")
+    if os.path.exists(text_file):
+        with open(text_file, encoding="utf-8") as f:
+            full = f.read()
+        chunks = full.split("[PAGE_BREAK]")
+        return [{"page": i + 1, "text": c} for i, c in enumerate(chunks) if c.strip()]
+    if os.path.exists(PDF_JSON):
+        with open(PDF_JSON, encoding="utf-8") as f:
+            return json.load(f)
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(os.path.expanduser("~/Desktop/Ona tili (M.Hamroyev, D.Muhamedova va b.).pdf"))
+        return [{"page": i + 1, "text": p.extract_text() or ""} for i, p in enumerate(reader.pages)]
+    except Exception as e:
+        print(f"Cannot read source: {e}")
+        return []
 
 
 def extract_rules(pages):

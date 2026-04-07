@@ -189,6 +189,45 @@ app.include_router(tilshunos_router)
 app.include_router(assistant_router)
 
 
+# ═══════════════════════════════════════════════════
+# Auto-seed: drugs + Uzbek rules from Ona tili book (idempotent)
+# ═══════════════════════════════════════════════════
+@app.on_event("startup")
+async def auto_seed_databases():
+    """Seed drugs DB + Uzbek rules from book on first startup if tables are empty."""
+    try:
+        import db as _db
+        conn = _db.connect_db()
+        cur = conn.cursor()
+
+        # Check if drugs table is empty
+        try:
+            cur.execute("SELECT COUNT(*) FROM drugs")
+            drugs_count = cur.fetchone()[0]
+        except Exception:
+            drugs_count = 0
+        conn.close()
+
+        if drugs_count == 0:
+            try:
+                import seed_drugs
+                inserted = seed_drugs.seed()
+                logger.info(f"[auto-seed] Drugs: +{inserted} new")
+            except Exception as e:
+                logger.warning(f"[auto-seed] drugs failed: {e}")
+
+        # Try to seed Uzbek rules from book if PDF text is bundled
+        try:
+            import seed_uzbek_rules_from_book
+            result = seed_uzbek_rules_from_book.main()
+            if result:
+                logger.info(f"[auto-seed] Uzbek rules: {result}")
+        except Exception as e:
+            logger.info(f"[auto-seed] uzbek rules skipped: {e}")
+    except Exception as e:
+        logger.warning(f"[auto-seed] outer failed: {e}")
+
+
 if __name__ == "__main__":
     import startup
     startup.setup_tahrirchi_db()
