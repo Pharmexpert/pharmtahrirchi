@@ -26,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { name: t('nav.dashboard'), icon: LayoutDashboard, path: '/dashboard' },
+    { name: t('nav.tilshunos'), icon: Globe, path: '/tilshunos' },
     { name: t('nav.paragraphs'), icon: FileText, path: '/paragraphs' },
     { name: t('nav.projects'), icon: History, path: '/projects' },
     { name: t('nav.files'), icon: FolderOpen, path: '/files' },
@@ -37,7 +38,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('nav.dictionary'), icon: Library, path: '/dictionary' },
     { name: t('nav.affixFlags'), icon: Layers, path: '/affix-flags' },
     { name: t('nav.morphology'), icon: Layers, path: '/morphology' },
-    { name: t('nav.tilshunos'), icon: Globe, path: '/tilshunos' },
   ]
 
   if (isAdmin) {
