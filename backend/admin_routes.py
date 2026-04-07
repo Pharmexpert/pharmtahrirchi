@@ -236,6 +236,93 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     db.update_user_role(user_id, role)
     return {"success": True}
 
+@router.get("/drugs")
+async def list_drugs(q: str = "", limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Search/list drugs in pharma DB."""
+    conn = db.connect_db()
+    conn.row_factory = db.sqlite3.Row
+    cur = conn.cursor()
+    if q:
+        cur.execute("SELECT * FROM drugs WHERE inn LIKE ? OR brand_name LIKE ? OR atc_code LIKE ? ORDER BY inn LIMIT ?",
+                    (f"%{q}%", f"%{q}%", f"%{q}%", limit))
+    else:
+        cur.execute("SELECT * FROM drugs ORDER BY id DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) FROM drugs")
+    total = cur.fetchone()[0]
+    conn.close()
+    return {"drugs": rows, "total": total}
+
+
+@router.post("/drugs")
+async def add_drug(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Add a new drug to the pharma DB."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO drugs (inn, brand_name, atc_code, form, dose, manufacturer, country, registration_number, category, description, lang)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payload.get("inn", ""), payload.get("brand_name", ""), payload.get("atc_code", ""),
+            payload.get("form", ""), payload.get("dose", ""), payload.get("manufacturer", ""),
+            payload.get("country", ""), payload.get("registration_number", ""),
+            payload.get("category", ""), payload.get("description", ""), payload.get("lang", "uz"),
+        ))
+        conn.commit()
+        new_id = cur.lastrowid
+        conn.close()
+        return {"success": True, "id": new_id}
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/medical-terms")
+async def list_medical_terms(q: str = "", limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Search multilingual medical terms (uz/ru/en)."""
+    conn = db.connect_db()
+    conn.row_factory = db.sqlite3.Row
+    cur = conn.cursor()
+    if q:
+        cur.execute("""
+            SELECT * FROM medical_terms
+            WHERE term_uz LIKE ? OR term_ru LIKE ? OR term_en LIKE ?
+            ORDER BY term_uz LIMIT ?
+        """, (f"%{q}%", f"%{q}%", f"%{q}%", limit))
+    else:
+        cur.execute("SELECT * FROM medical_terms ORDER BY id DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) FROM medical_terms")
+    total = cur.fetchone()[0]
+    conn.close()
+    return {"terms": rows, "total": total}
+
+
+@router.post("/medical-terms")
+async def add_medical_term(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Add a multilingual medical term."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO medical_terms (term_uz, term_ru, term_en, definition, category, synonyms, atc_code, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payload.get("term_uz", ""), payload.get("term_ru", ""), payload.get("term_en", ""),
+            payload.get("definition", ""), payload.get("category", ""),
+            payload.get("synonyms", ""), payload.get("atc_code", ""),
+            payload.get("source", "manual"),
+        ))
+        conn.commit()
+        new_id = cur.lastrowid
+        conn.close()
+        return {"success": True, "id": new_id}
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/users/block")
 async def toggle_block_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
     """Block or unblock a user from logging in (Admin only)."""
