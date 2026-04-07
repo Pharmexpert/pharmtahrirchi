@@ -216,6 +216,18 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
             # Detect script by checking any cyrillic character
             is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text)
 
+            # Cross-script transliteration helper — checks the SAME word in BOTH scripts
+            # so a word marked unknown in Cyrillic Hunspell but known in Latin (or vice versa)
+            # is treated as correct. Invisible to user.
+            def _translit_to_other(w: str, from_cyr: bool) -> str:
+                try:
+                    import transliterate as tl  # local helper module
+                    if from_cyr:
+                        return tl.to_latin(w)
+                    return tl.to_cyrillic(w)
+                except Exception:
+                    return w
+
             for match in re.finditer(UZ_WORD_RE, text, re.UNICODE):
                 word = match.group()
                 # Strip surrounding apostrophes (not part of word) but keep inner ones
@@ -240,6 +252,16 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
                     ok = any(spellcheck.is_correct(v, is_cyrillic=is_cyr) for v in variants)
                     if ok:
                         continue
+
+                    # Cross-script check: try the SAME word in the OTHER script's dictionary
+                    other_word = _translit_to_other(word, is_cyr)
+                    if other_word and other_word != word:
+                        if spellcheck.is_correct(other_word, is_cyrillic=not is_cyr):
+                            continue
+                        # also try apostrophe-normalized for the other script
+                        ow_h = other_word.replace("'", "\u02bb").replace("\u2019", "\u02bb")
+                        if ow_h != other_word and spellcheck.is_correct(ow_h, is_cyrillic=not is_cyr):
+                            continue
 
                     # Try suggestions from all variants
                     suggestions = []
@@ -481,10 +503,22 @@ async def classify_words(payload: Dict[str, Any], current_user: Dict = Depends(g
         elif wl in abbr_set:
             category = "abbreviation"
         else:
-            # Check Hunspell
+            # Check Hunspell in CURRENT script
             variants = [word, word.replace("'", "\u02bb"), word.replace("\u2019", "\u02bb")]
             if any(spellcheck.is_correct(v, is_cyrillic=is_cyr) for v in variants):
                 category = "known"
+            else:
+                # Cross-script: Uzbek Cyrillic ↔ Latin are the same language, only different scripts.
+                # Transliterate the word and check Hunspell in the OTHER script.
+                try:
+                    import transliterate as tl
+                    other = tl.to_latin(word) if is_cyr else tl.to_cyrillic(word)
+                    if other and other != word:
+                        ov = [other, other.replace("'", "\u02bb"), other.replace("\u2019", "\u02bb")]
+                        if any(spellcheck.is_correct(v, is_cyrillic=not is_cyr) for v in ov):
+                            category = "known"
+                except Exception:
+                    pass
         spans.append({
             "from": match.start(),
             "to": match.end(),
