@@ -55,6 +55,47 @@ def main():
 
     os.makedirs(os.path.dirname(DEST), exist_ok=True)
 
+    # Clean up any partial downloads from previous failed attempts to free disk space
+    cache_dir = os.path.join(os.path.dirname(DEST), ".cache")
+    if os.path.exists(cache_dir):
+        try:
+            import shutil
+            shutil.rmtree(cache_dir)
+            log.info(f"Cleaned partial download cache: {cache_dir}")
+        except Exception as e:
+            log.warning(f"Failed to clean cache: {e}")
+    # Also clean any orphan .gguf.tmp files
+    try:
+        for f in os.listdir(os.path.dirname(DEST)):
+            if f.endswith(".tmp") or f.endswith(".incomplete") or f.endswith(".partial"):
+                try:
+                    os.remove(os.path.join(os.path.dirname(DEST), f))
+                    log.info(f"Removed partial: {f}")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Check available disk space before attempting download
+    try:
+        import shutil as _sh
+        total, used, free = _sh.disk_usage(os.path.dirname(DEST))
+        free_mb = free // (1024 * 1024)
+        log.info(f"Disk: {free_mb} MB free at {os.path.dirname(DEST)}")
+        # Estimated GGUF sizes (MB)
+        size_estimates = {
+            "Q8_0": 7700, "Q6_K": 6000, "Q5_K_M": 5100, "Q5_K_S": 4900,
+            "Q4_K_M": 4400, "Q4_K_S": 4100, "Q3_K_M": 3300, "Q3_K_S": 2900,
+            "Q2_K": 2700, "f16": 14000,
+        }
+        wanted_mb = next((mb for tag, mb in size_estimates.items() if tag in FILE), 5000)
+        if free_mb < wanted_mb + 200:
+            log.error(f"Not enough disk space: need ~{wanted_mb} MB, have {free_mb} MB free")
+            log.error(f"Please resize Railway volume to at least {(wanted_mb + 2000) // 1024 + 1} GB")
+            return 1
+    except Exception:
+        pass
+
     try:
         from huggingface_hub import hf_hub_download
     except ImportError:
