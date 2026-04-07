@@ -41,6 +41,7 @@ const translations: Record<string, Record<LangCode, string>> = {
   'nav.synonyms': { en: 'Synonyms', ru: 'Синонимы', 'uz-lat': 'Sinonimlar', 'uz-cyr': 'Синонимлар' },
   'nav.dictionary': { en: 'Dictionary', ru: 'Словарь', 'uz-lat': 'Lug\'at', 'uz-cyr': 'Луғат' },
   'nav.affixFlags': { en: 'Native Language Rules', ru: 'Правила родного языка', 'uz-lat': 'Ona tili qoidalari', 'uz-cyr': 'Она тили қоидалари' },
+  'nav.morphology': { en: 'Morphology', ru: 'Морфология', 'uz-lat': 'Morfologiya', 'uz-cyr': 'Морфология' },
   'nav.admin': { en: 'Admin', ru: 'Админ', 'uz-lat': 'Admin', 'uz-cyr': 'Админ' },
 
   // Умумий

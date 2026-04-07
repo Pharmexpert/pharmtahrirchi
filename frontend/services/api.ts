@@ -370,10 +370,136 @@ export const specialists = {
   list: () => get<{ specialists: string[] }>('/api/specialists'),
 }
 
+// ═══════════════════════════════════════════════════
+// Phase 2: Morphology Analyzer
+// ═══════════════════════════════════════════════════
+
+export interface MorphMorpheme {
+  surface: string
+  kind: 'stem' | 'suffix' | 'prefix'
+  gloss: string
+  category: string
+}
+
+export interface MorphAnalysis {
+  word: string
+  stem: string
+  pos: string
+  morphemes: MorphMorpheme[]
+  tense: string | null
+  person: number | null
+  number: string | null
+  case: string | null
+  mood: string | null
+  negation: boolean
+  breakdown: string
+  source: string
+  valid: boolean
+}
+
+export const morph = {
+  analyze: (word: string) =>
+    post<MorphAnalysis>('/api/morph/analyze', { word }),
+  analyzeText: (text: string) =>
+    post<{ analyses: MorphAnalysis[]; unknowns: string[]; total_words: number; recognized: number; unknown: number }>(
+      '/api/morph/analyze-text',
+      { text }
+    ),
+  validate: (words: string[]) =>
+    post<{ results: Record<string, boolean>; total: number }>('/api/morph/validate', { words }),
+  flags: () => get<{ flags: Record<string, any>; total: number }>('/api/morph/flags'),
+}
+
+// ═══════════════════════════════════════════════════
+// Phase 4: Grammar Checker
+// ═══════════════════════════════════════════════════
+
+export interface GrammarIssue {
+  word: string
+  from_index: number
+  to_index: number
+  issue_type: string
+  message: string
+  suggestions: string[]
+  source: string
+  confidence: number
+}
+
+export const grammar = {
+  check: (text: string, lang = 'uz') =>
+    post<{ issues: GrammarIssue[]; total: number; by_type: Record<string, number>; lang: string }>(
+      '/api/grammar/check',
+      { text, lang }
+    ),
+  lexiconSearch: (word: string, k = 10) =>
+    post<{ results: Array<{ word: string; frequency: number; similarity: number }>; total: number }>(
+      '/api/grammar/lexicon-search',
+      { word, k }
+    ),
+}
+
+// ═══════════════════════════════════════════════════
+// Phase 5: Self-Learning Loop
+// ═══════════════════════════════════════════════════
+
+export interface LearnResult {
+  success: boolean
+  rule_id?: number
+  rule_action?: 'inserted' | 'updated'
+  bert_indexed?: boolean
+  faiss_added?: boolean
+  lexicon_added?: boolean
+  activity_logged?: boolean
+  reason?: string
+}
+
+export const learn = {
+  correction: (payload: {
+    wrong: string
+    correct: string
+    context?: string
+    error_type?: string
+    lang?: string
+  }) => post<LearnResult>('/api/learn/correction', payload),
+  batch: (corrections: Array<{
+    wrong: string
+    correct: string
+    context?: string
+    error_type?: string
+    lang?: string
+  }>, lang = 'uz') =>
+    post<{ success: boolean; total: number; inserted: number; updated: number; bert_indexed: number; lexicon_added: number; results: LearnResult[] }>(
+      '/api/learn/batch',
+      { corrections, lang }
+    ),
+  stats: (since_days = 7) =>
+    get<{
+      since_days: number
+      total_recent_actions: number
+      by_error_type: Record<string, number>
+      top_users: Array<{ user: string; count: number }>
+      total_learned_rules: number
+      total_rules: number
+      learning_ratio: number
+    }>(`/api/learn/stats?since_days=${since_days}`),
+}
+
+// ═══════════════════════════════════════════════════
+// Phase 7: NLP Admin / Health
+// ═══════════════════════════════════════════════════
+
+export const nlp = {
+  health: () => get<{ overall: string; components: Record<string, any> }>('/api/nlp/health'),
+  growNow: () => post<{ success: boolean; summary: any }>('/api/nlp/grow-now', {}),
+  growthHistory: (limit = 30) => get<{ runs: any[]; limit: number }>(`/api/nlp/growth-history?limit=${limit}`),
+  dashboardSummary: () => get<{ last_7_days: any; last_30_days: any; recent_nightly_runs: any[] }>('/api/nlp/dashboard-summary'),
+}
+
 // Re-export everything as default namespace
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
+  morph, grammar, learn, nlp,
   API_BASE,
 }
 

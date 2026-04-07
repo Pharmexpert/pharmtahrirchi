@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
+import api from '../../services/api'
 
 export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token, contextEn, contextRu, contextUz }: {
   v1: string; proposed: string; rowIdx: number; lang: 'ru' | 'uz'; isMarker: boolean
@@ -63,6 +64,16 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
     const text = proposed || v1 || ''
     const newText = text.substring(0, ann.from_index) + ann.new_value + text.substring(ann.to_index)
     onProposedChange(newText)
+
+    // Phase 5: Self-learning loop — backend learns from this acceptance
+    api.learn.correction({
+      wrong: ann.old_value,
+      correct: ann.new_value,
+      context: text.substring(Math.max(0, ann.from_index - 50), Math.min(text.length, ann.to_index + 50)),
+      error_type: ann.error_type || 'S/Spelling',
+      lang,
+    }).catch(() => {/* silent — non-blocking */})
+
     const diff = ann.new_value.length - ann.old_value.length
     const remaining = annotations.filter((_, i) => i !== idx).map(a => {
       if (a.from_index > ann.from_index) {
@@ -87,6 +98,19 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
       text = text.substring(0, ann.from_index) + ann.new_value + text.substring(ann.to_index)
     }
     onProposedChange(text)
+
+    // Phase 5: Self-learning batch — all accepted at once
+    const corrections = annotations.map(ann => ({
+      wrong: ann.old_value,
+      correct: ann.new_value,
+      context: text.substring(0, 200),
+      error_type: ann.error_type || 'S/Spelling',
+      lang,
+    }))
+    if (corrections.length > 0) {
+      api.learn.batch(corrections, lang).catch(() => {/* silent */})
+    }
+
     setAnnotations([])
     setShowAnnotations(false)
   }
