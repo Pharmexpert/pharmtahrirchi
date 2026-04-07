@@ -44,12 +44,34 @@ const WORD_COLORS: Record<string, string> = {
 const SEV_LABELS: Record<string, string> = { high: 'юқори', medium: 'ўртача', low: 'паст' }
 
 function detectLang(text: string): Lang {
-  if (!text) return 'uz-lat'
+  if (!text || text.length < 3) return 'uz-lat'
+  // Count cyrillic vs latin
   const cyr = (text.match(/[а-яА-ЯёЁўғқҳЎҒҚҲ]/g) || []).length
   const lat = (text.match(/[a-zA-Z]/g) || []).length
-  const ruIndic = /[ыэъёЁ]|(?:что|это|как|так)/i.test(text)
-  if (cyr > lat) return ruIndic ? 'ru' : 'uz-cyr'
-  if (/\b(the|and|of|in|is|was|has|have)\b/i.test(text)) return 'en'
+  // Russian-specific indicators (letters and stop words not in Uzbek Cyrillic)
+  const ruIndic = /[ыэъЫЭЪ]/.test(text) ||
+    /\b(что|это|как|так|для|при|или|если|есть|уже|был|была|более|менее|который|однако|таким|образом|самый|своих|свое)\b/i.test(text)
+  // Uzbek Cyrillic indicators (special letters)
+  const uzCyrIndic = /[ўғқҳЎҒҚҲ]/.test(text) ||
+    /\b(билан|учун|керак|бўлади|ҳозирги|шунинг|шундай|каби|орқали)\b/i.test(text)
+  // English stop words
+  const enIndic = /\b(the|and|of|in|is|was|has|have|with|for|that|this|from|are|were|will|would|can|could|should)\b/i.test(text)
+  // Uzbek Latin indicators (special letters: o', g', 'ʻ)
+  const uzLatIndic = /[ʻ']/.test(text) ||
+    /\b(bilan|uchun|kerak|bo'ladi|hozirgi|shuning|shunday|kabi|orqali|bo'lib|qilib)\b/i.test(text)
+
+  // Cyrillic — decide between Russian and Uzbek Cyrillic
+  if (cyr > lat * 0.5) {
+    if (uzCyrIndic && !ruIndic) return 'uz-cyr'
+    if (ruIndic) return 'ru'
+    if (uzCyrIndic) return 'uz-cyr'
+    // Default Cyrillic without indicators → Russian (more common)
+    return 'ru'
+  }
+  // Latin
+  if (enIndic && !uzLatIndic) return 'en'
+  if (uzLatIndic) return 'uz-lat'
+  // Default Latin → Uzbek Latin
   return 'uz-lat'
 }
 
@@ -87,6 +109,33 @@ export default function TilshunosPage() {
   const [sourceText, setSourceText] = useState('')
   const [targetText, setTargetText] = useState('')
   const [translating, setTranslating] = useState(false)
+
+  // Auto-detect source language when source text changes
+  useEffect(() => {
+    if (sourceText && sourceText.length > 5) {
+      const d = detectLang(sourceText)
+      if (d !== sourceLang) {
+        setSourceLang(d)
+        // Auto-pick a sensible target if same as source
+        if (d === targetLang) {
+          // If source is Uzbek (any script) → target English by default
+          if (d.startsWith('uz')) setTargetLang('en')
+          // If source is English → target Uzbek Latin
+          else if (d === 'en') setTargetLang('uz-lat')
+          // If source is Russian → target Uzbek Latin
+          else if (d === 'ru') setTargetLang('uz-lat')
+        }
+      }
+    }
+  }, [sourceText])
+
+  // Auto-detect target language when target text changes (for editing)
+  useEffect(() => {
+    if (targetText && targetText.length > 5) {
+      const d = detectLang(targetText)
+      if (d !== targetLang) setTargetLang(d)
+    }
+  }, [targetText])
 
   // Original snapshots for self-learning diff
   const [originalText, setOriginalText] = useState('')
