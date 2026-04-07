@@ -459,8 +459,14 @@ export default function TilshunosPage() {
               <button onClick={openSynonymsForSelection} style={toolbarBtn}>Синонимлар</button>
               <button onClick={addWordToDictionary} style={toolbarBtn}><BookPlus size={13} /> Луғатга қўшиш</button>
 
+              {result && (
+                <button onClick={() => { setResult(null); setClassified(null); setPopup(null) }}
+                  style={{ ...toolbarBtn, marginLeft: 'auto', background: '#FEF3C7', color: '#92400E', borderColor: '#FCD34D' }}>
+                  ✎ Қайта таҳрир
+                </button>
+              )}
               <button onClick={runCheck} disabled={loading || !text.trim()}
-                style={{ ...toolbarBtn, marginLeft: 'auto', background: 'linear-gradient(135deg,#10B981,#059669)', color: 'white', border: 'none', padding: '8px 18px' }}>
+                style={{ ...toolbarBtn, marginLeft: result ? 0 : 'auto', background: 'linear-gradient(135deg,#10B981,#059669)', color: 'white', border: 'none', padding: '8px 18px' }}>
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Синов олиб бориш
               </button>
             </div>
@@ -482,39 +488,34 @@ export default function TilshunosPage() {
                 />
               ) : (
                 <div
-                  onClick={(e) => {
-                    if ((e.target as HTMLElement).tagName !== 'SPAN') {
-                      // Clicked empty area → return to editable textarea
-                      setResult(null)
-                      setClassified(null)
-                    }
-                  }}
                   style={{
-                    width: '100%', flex: 1, minHeight: 400, padding: 14,
+                    width: '100%', padding: 14,
                     border: '1.5px solid var(--border)', borderRadius: 10,
                     fontSize: '0.95rem', fontFamily: 'inherit',
                     background: 'var(--bg-secondary)', lineHeight: 1.85,
-                    cursor: 'text',
+                    cursor: 'default',
                     overflow: 'auto',
                   }}
                 >
                   {renderAnnotated()}
-                  <div style={{ marginTop: 16, paddingTop: 10, borderTop: '1px dashed #D1D5DB', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                    💡 Хато устида босинг — тўғри шакл таклиф қилинади. Бўш жой устида босинг — қайта таҳрир қилиш.
-                  </div>
                 </div>
               )}
 
-              {/* Color legend */}
+              {/* Tip + Color legend (compact) */}
               {(result || classified) && (
-                <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                  <LegendDot color="#DC2626" label="Имло хато" />
-                  <LegendDot color="#EA580C" label="Грамматика" />
-                  <LegendDot color="#16A34A" label="Морфология" />
-                  <LegendDot color="#1E40AF" label="Луғатда бор" />
-                  <LegendDot color="#0891B2" label="Изоҳли" />
-                  <LegendDot color="#F97316" label="Мунозарали" />
-                  <LegendDot color="#6366F1" label="Қисқартма" />
+                <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg-secondary)', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 6 }}>
+                    💡 Хато устида босинг — тўғри шакл таклиф қилинади. «Қайта таҳрир» тугмаси билан матнни тахрир қилишга қайтиш мумкин.
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                    <LegendDot color="#DC2626" label="Имло хато" />
+                    <LegendDot color="#EA580C" label="Грамматика" />
+                    <LegendDot color="#16A34A" label="Морфология" />
+                    <LegendDot color="#1E40AF" label="Луғатда бор" />
+                    <LegendDot color="#0891B2" label="Изоҳли" />
+                    <LegendDot color="#F97316" label="Мунозарали" />
+                    <LegendDot color="#6366F1" label="Қисқартма" />
+                  </div>
                 </div>
               )}
             </div>
