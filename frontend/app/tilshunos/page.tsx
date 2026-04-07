@@ -589,6 +589,28 @@ export default function TilshunosPage() {
               <button onClick={openSynonymsForSelection} style={toolbarBtn}>Синонимлар</button>
               <button onClick={addWordToDictionary} style={toolbarBtn}><BookPlus size={13} /> Луғатга қўшиш</button>
 
+              <button
+                onClick={async () => {
+                  if (!text.trim()) return
+                  setLoading(true)
+                  try {
+                    const r = await api.tilshunos.aiImprove(text, lang.startsWith('uz') ? 'uz' : lang)
+                    if (r.improved && r.improved !== text) {
+                      // Self-learning: diff old vs improved
+                      sendLearnDiff(text, r.improved, lang.startsWith('uz') ? 'uz' : lang, 'tilshunos_ai_improve')
+                      setText(r.improved)
+                      setResult(null); setClassified(null)
+                    }
+                  } catch (e: any) { alert('AI хатоси: ' + (e?.message || e)) }
+                  finally { setLoading(false) }
+                }}
+                disabled={loading || !text.trim()}
+                title="Mistral-7B-Instruct-Uz билан илмий таҳрир"
+                style={{ ...toolbarBtn, background: 'linear-gradient(135deg,#A78BFA,#7C3AED)', color: 'white', border: 'none' }}
+              >
+                <Wand2 size={13} /> AI Яхшилаш
+              </button>
+
               {result && (
                 <button onClick={() => { setResult(null); setClassified(null); setPopup(null) }}
                   style={{ ...toolbarBtn, marginLeft: 'auto', background: '#FEF3C7', color: '#92400E', borderColor: '#FCD34D' }}>

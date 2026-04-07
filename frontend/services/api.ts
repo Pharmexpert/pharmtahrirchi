@@ -568,7 +568,19 @@ export const tilshunos = {
     post<{ learned: number; pairs: Array<{ wrong: string; correct: string }> }>('/api/tilshunos/learn-diff', { original, corrected, lang, source }),
 
   translate: (text: string, source_lang: string, target_lang: string) =>
-    post<{ translated: string }>('/api/tilshunos/translate', { text, source_lang, target_lang }),
+    post<{ translated: string; engine?: string }>('/api/tilshunos/translate', { text, source_lang, target_lang }),
+
+  aiImprove: (text: string, lang = 'uz') =>
+    post<{ improved: string; engine?: string }>('/api/tilshunos/ai-improve', { text, lang }),
+
+  grammarScore: (text: string) =>
+    post<{ score: number }>('/api/tilshunos/grammar-score', { text }),
+
+  translationQuality: (source: string, target: string) =>
+    post<{ semantic_score: number; llm_note?: string }>('/api/tilshunos/translation-quality', { source, target }),
+
+  aiStatus: () =>
+    get<{ bert: boolean; mistral: { available: boolean; mode: string; model: string }; gemini: boolean; anthropic: boolean }>('/api/tilshunos/ai-status'),
 
   extractText: async (file: File): Promise<{ text: string }> => {
     const fd = new FormData()

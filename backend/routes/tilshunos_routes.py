@@ -14,6 +14,7 @@ User submits 4 text panels (3 languages + outcome) → backend returns
 unified analysis with categorized issues, suggestions, and confidence scores.
 """
 import logging
+import os
 import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -611,23 +612,125 @@ async def confirm_correction(payload: Dict[str, Any], current_user: Dict = Depen
 
 @router.post("/translate")
 async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """AI-translate text between EN/RU/UZ for Tilshunos translate panel."""
+    """AI-translate text. Prefers Mistral-7B-Instruct-Uz for Uzbek, falls back to Gemini/Claude."""
     text = (payload.get("text") or "").strip()
     src = payload.get("source_lang", "en")
     tgt = payload.get("target_lang", "uz")
     if not text:
         return {"translated": ""}
-    label = {"en": "English", "ru": "Russian", "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)"}
-    src_l = label.get(src, src)
-    tgt_l = label.get(tgt, tgt)
     try:
+        # Use Mistral if available (best Uzbek)
+        try:
+            import mistral_engine
+            if mistral_engine.is_available():
+                tr = await mistral_engine.translate(text, src, tgt)
+                if tr and len(tr.strip()) > 1:
+                    return {"translated": tr.strip(), "engine": mistral_engine.get_mode()}
+        except Exception as e:
+            logger.warning(f"[translate] Mistral path failed: {e}")
+        # Cloud fallback
         from routes.editor_routes import generate_ai_content
-        prompt = f"Translate the following {src_l} text to {tgt_l}. Return ONLY the translation, no explanations.\n\n{text}"
-        translated = await generate_ai_content(prompt)
-        return {"translated": (translated or "").strip()}
+        label = {"en": "English", "ru": "Russian", "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)"}
+        prompt = f"Translate the following {label.get(src, src)} text to {label.get(tgt, tgt)}. Return ONLY the translation, no explanations.\n\n{text}"
+        translated = await generate_ai_content(prompt, prefer="cloud")
+        return {"translated": (translated or "").strip(), "engine": "cloud"}
     except Exception as e:
         logger.exception("translate failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai-improve")
+async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """AI scientific edit (Mistral-7B-Instruct-Uz). Uzbek text → grammatically/stylistically polished."""
+    text = (payload.get("text") or "").strip()
+    lang = payload.get("lang", "uz")
+    if not text:
+        return {"improved": ""}
+    try:
+        import mistral_engine
+        if mistral_engine.is_available():
+            improved = await mistral_engine.improve_text(text, lang)
+            return {"improved": improved or text, "engine": mistral_engine.get_mode()}
+        from routes.editor_routes import generate_ai_content
+        prompt = (
+            "Сен профессионал ўзбек илмий муҳаррирсан. Берилган матнни имло, грамматика, синтаксис, "
+            "тиниш белгилари бўйича тузат. Структурани сақла. Фақат тузатилган матнни қайтар.\n\n" + text
+        )
+        out = await generate_ai_content(prompt, prefer="auto")
+        return {"improved": out or text, "engine": "cloud"}
+    except Exception as e:
+        logger.exception("ai-improve failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/grammar-score")
+async def grammar_score(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """BERT pseudo-perplexity grammar scorer. 0..1 = how natural the sentence sounds."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"score": 0.0}
+    try:
+        import bert_engine
+        score = bert_engine.engine.grammar_score(text)
+        return {"score": round(float(score), 4)}
+    except Exception as e:
+        logger.exception("grammar-score failed")
+        return {"score": 0.0, "error": str(e)}
+
+
+@router.post("/translation-quality")
+async def translation_quality(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Score translation quality using BERT sentence similarity + LLM critique."""
+    src = (payload.get("source") or "").strip()
+    tgt = (payload.get("target") or "").strip()
+    if not src or not tgt:
+        return {"semantic_score": 0.0, "llm_note": ""}
+    try:
+        import mistral_engine
+        if mistral_engine.is_available():
+            return await mistral_engine.score_translation(src, tgt)
+    except Exception:
+        pass
+    try:
+        import bert_engine
+        score = bert_engine.engine.sentence_similarity(src, tgt)
+        return {"semantic_score": round(float(score), 4), "llm_note": ""}
+    except Exception:
+        return {"semantic_score": 0.0, "llm_note": ""}
+
+
+@router.get("/ai-status")
+async def ai_status(current_user: Dict = Depends(get_current_user)):
+    """Report which AI engines are available."""
+    out = {"bert": False, "mistral": {"available": False, "mode": "unavailable"}, "gemini": False, "anthropic": False}
+    try:
+        import bert_engine
+        out["bert"] = bool(bert_engine.engine.initialized)
+    except Exception:
+        pass
+    try:
+        import mistral_engine
+        out["mistral"] = {"available": mistral_engine.is_available(), "mode": mistral_engine.get_mode(), "model": mistral_engine.MODEL_ID}
+    except Exception:
+        pass
+    out["gemini"] = bool(os.environ.get("GOOGLE_API_KEY"))
+    out["anthropic"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return out
+
+
+@router.post("/cluster-synonyms")
+async def cluster_synonyms(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Group related words via BERT embedding clustering."""
+    words = payload.get("words", [])
+    threshold = float(payload.get("threshold", 0.78))
+    if not words:
+        return {"clusters": []}
+    try:
+        import bert_engine
+        clusters = bert_engine.engine.cluster_words(words, threshold=threshold)
+        return {"clusters": clusters}
+    except Exception as e:
+        return {"clusters": [[w] for w in words], "error": str(e)}
 
 
 @router.post("/learn-diff")

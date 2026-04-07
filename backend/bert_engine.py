@@ -81,59 +81,216 @@ class BertEngine:
         except Exception as e:
             logger.error(f"[!] Error loading BERT model: {e}")
 
-    def predict_mask(self, text: str, top_k: int = 5):
-        """Predict the masked word in a sentence using BERT."""
+    # ───────────────────────────────────────────────────
+    # Helpers
+    # ───────────────────────────────────────────────────
+    def _normalize_to_latin(self, text: str) -> str:
+        """Tahrirchi BERT тренировкаси лотин ёзувида — Cyrillic'ни автоматик ўгирамиз."""
+        if not text:
+            return text
+        try:
+            import transliterate as tl
+            if any("\u0400" <= ch <= "\u04FF" for ch in text):
+                return tl.to_latin(text)
+        except Exception:
+            pass
+        return text
+
+    def _context_window(self, text: str, target_word: str, half_tokens: int = 64) -> str:
+        """Хато сўз атрофидан ±half_tokens ойнача ажратиш — BERT 512 чегарасига тушмайди."""
+        if not target_word:
+            return text
+        idx = text.find(target_word)
+        if idx < 0:
+            return text
+        # Approx by chars (1 token ≈ 4 chars). Take ±half_tokens*4 around the word
+        char_radius = half_tokens * 4
+        start = max(0, idx - char_radius)
+        end = min(len(text), idx + len(target_word) + char_radius)
+        return text[start:end]
+
+    # ───────────────────────────────────────────────────
+    # Mask prediction (with cross-script + window + Hunspell filter)
+    # ───────────────────────────────────────────────────
+    def predict_mask(self, text: str, top_k: int = 10, hunspell_filter: bool = False, lang: str = "uz", final_k: int = 5):
+        """Predict the masked word with optional Hunspell filtering and cross-script normalization."""
         if not self.initialized or not self.nlp:
             return []
-        
         try:
-            # Ensure text contains [MASK]
-            if "[MASK]" not in text:
+            normalized = self._normalize_to_latin(text)
+            if "[MASK]" not in normalized:
                 return []
-                
-            results = self.nlp(text, top_k=top_k)
-            return [res['token_str'] for res in results]
+            results = self.nlp(normalized, top_k=top_k)
+            tokens = []
+            for r in results:
+                t = r.get('token_str', '').strip().lstrip('##')
+                if not t or t in ('[UNK]', '[PAD]', '[SEP]', '[CLS]'):
+                    continue
+                tokens.append(t)
+
+            if hunspell_filter:
+                try:
+                    import spellcheck
+                    is_cyr = False  # we always normalized to latin
+                    filtered = [t for t in tokens if spellcheck.is_correct(t, is_cyrillic=is_cyr)]
+                    if filtered:
+                        tokens = filtered
+                except Exception:
+                    pass
+            return tokens[:final_k]
         except Exception as e:
             logger.error(f"[!] BERT Prediction Error: {e}")
             return []
 
+    def predict_in_context(self, full_text: str, wrong_word: str, top_k: int = 10, hunspell_filter: bool = True):
+        """Wrong word ўрнига [MASK] қўйиб, контекст ойначадан BERT'дан таклиф олиш."""
+        if not wrong_word:
+            return []
+        window = self._context_window(full_text, wrong_word, half_tokens=64)
+        masked = window.replace(wrong_word, "[MASK]", 1)
+        return self.predict_mask(masked, top_k=top_k, hunspell_filter=hunspell_filter)
+
+    # ───────────────────────────────────────────────────
+    # Embeddings (token + sentence)
+    # ───────────────────────────────────────────────────
     def get_embedding(self, text: str, as_numpy: bool = False):
-        """Get vector embedding for a text snippet."""
+        """Get [CLS] token embedding (cross-script normalized)."""
         if not self.initialized or not self.model or not self.tokenizer:
             return None
         try:
-            inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128)
+            normalized = self._normalize_to_latin(text)
+            inputs = self.tokenizer(normalized, return_tensors="pt", padding=True, truncation=True, max_length=128)
             with torch.no_grad():
-                # For quantized models, we need to handle the output slightly differently if needed
                 outputs = self.model.base_model(**inputs)
-                # Use [CLS] token embedding
                 embeddings = outputs.last_hidden_state[:, 0, :].squeeze()
-            
-            if as_numpy:
-                return embeddings.cpu().numpy()
-            return embeddings
+            return embeddings.cpu().numpy() if as_numpy else embeddings
         except Exception as e:
             logger.error(f"[!] Embedding Error: {e}")
             return None
 
+    def get_sentence_embedding(self, text: str, as_numpy: bool = False):
+        """Mean-pooled sentence embedding (better for sentence similarity / translation scoring)."""
+        if not self.initialized or not self.model or not self.tokenizer:
+            return None
+        try:
+            normalized = self._normalize_to_latin(text)
+            inputs = self.tokenizer(normalized, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            with torch.no_grad():
+                outputs = self.model.base_model(**inputs)
+                last_hidden = outputs.last_hidden_state  # (1, seq, dim)
+                mask = inputs["attention_mask"].unsqueeze(-1).float()
+                summed = (last_hidden * mask).sum(dim=1)
+                counts = mask.sum(dim=1).clamp(min=1)
+                mean_pooled = (summed / counts).squeeze()
+            return mean_pooled.cpu().numpy() if as_numpy else mean_pooled
+        except Exception as e:
+            logger.error(f"[!] Sentence Embedding Error: {e}")
+            return None
+
+    def sentence_similarity(self, a: str, b: str) -> float:
+        """Cosine similarity между двумя предложениями (mean-pooled embeddings)."""
+        ea = self.get_sentence_embedding(a)
+        eb = self.get_sentence_embedding(b)
+        if ea is None or eb is None:
+            return 0.0
+        return torch.nn.functional.cosine_similarity(ea.unsqueeze(0), eb.unsqueeze(0)).item()
+
     def cosine_similarity(self, a, b):
-        """Compute cosine similarity between two vectors."""
         if a is None or b is None: return 0.0
-        # Use torch's functional cosine similarity
-        return torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0)).item()
+        try:
+            return torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0)).item()
+        except Exception:
+            try:
+                import numpy as np
+                an, bn = np.array(a), np.array(b)
+                return float(np.dot(an, bn) / (np.linalg.norm(an) * np.linalg.norm(bn) + 1e-9))
+            except Exception:
+                return 0.0
+
+    # ───────────────────────────────────────────────────
+    # Pseudo-perplexity (sentence well-formedness scorer)
+    # ───────────────────────────────────────────────────
+    def pseudo_perplexity(self, text: str, max_tokens: int = 64) -> float:
+        """
+        BERT pseudo-perplexity. Pастроқ — гап табиийроқ.
+        Ҳар бир токенни алоҳида MASK қилиб, тўғри эҳтимолини олиб, ўртача -log хисобланади.
+        """
+        if not self.initialized or not self.model or not self.tokenizer:
+            return float('inf')
+        try:
+            import math
+            normalized = self._normalize_to_latin(text)
+            ids = self.tokenizer.encode(normalized, add_special_tokens=True)
+            if len(ids) > max_tokens:
+                ids = ids[:max_tokens]
+            mask_id = self.tokenizer.mask_token_id
+            if mask_id is None:
+                return float('inf')
+            log_probs = []
+            for i in range(1, len(ids) - 1):  # skip [CLS]/[SEP]
+                masked = ids.copy()
+                orig = masked[i]
+                masked[i] = mask_id
+                input_ids = torch.tensor([masked])
+                with torch.no_grad():
+                    out = self.model(input_ids=input_ids).logits
+                probs = torch.softmax(out[0, i], dim=-1)
+                p = float(probs[orig].item())
+                log_probs.append(math.log(max(p, 1e-12)))
+            if not log_probs:
+                return float('inf')
+            avg_neg_log = -sum(log_probs) / len(log_probs)
+            return math.exp(avg_neg_log)
+        except Exception as e:
+            logger.warning(f"[BERT] perplexity failed: {e}")
+            return float('inf')
+
+    def grammar_score(self, text: str) -> float:
+        """0.0–1.0: қанчалик гап табиий. 1.0 = идеал."""
+        ppl = self.pseudo_perplexity(text)
+        if ppl == float('inf'):
+            return 0.0
+        # Normalize: ppl ~10 → 0.95, ppl ~100 → 0.5, ppl ~1000 → 0.05
+        import math
+        return float(1.0 / (1.0 + math.log10(max(ppl, 1.0))))
 
     def get_context_suggestion(self, text: str, wrong_word: str):
-        """Suggest a correction for a word based on context."""
-        if not self.initialized or not self.nlp:
-            return None
-            
-        # Replace word with [MASK]
-        masked_text = text.replace(wrong_word, "[MASK]")
-        if "[MASK]" not in masked_text:
-            return None
-            
-        suggestions = self.predict_mask(masked_text)
+        suggestions = self.predict_in_context(text, wrong_word, top_k=10, hunspell_filter=True)
         return suggestions[0] if suggestions else None
+
+    # ───────────────────────────────────────────────────
+    # Semantic clustering (synonyms grouping)
+    # ───────────────────────────────────────────────────
+    def cluster_words(self, words: list, threshold: float = 0.78) -> list:
+        """
+        Сўзларни эмбединг ўхшашлиги бўйича кластерлаш (greedy).
+        Қайтаради: list[list[str]] — ҳар кластер ўз гуруҳи.
+        """
+        if not self.initialized or not words:
+            return [[w] for w in words]
+        try:
+            embs = []
+            for w in words:
+                e = self.get_embedding(w)
+                if e is not None:
+                    embs.append((w, e))
+            clusters: list = []
+            for w, e in embs:
+                placed = False
+                for c in clusters:
+                    sim = self.cosine_similarity(e, c['centroid'])
+                    if sim >= threshold:
+                        c['words'].append(w)
+                        # update centroid (running mean)
+                        c['centroid'] = (c['centroid'] * (len(c['words']) - 1) + e) / len(c['words'])
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append({'centroid': e, 'words': [w]})
+            return [c['words'] for c in clusters]
+        except Exception as e:
+            logger.warning(f"[BERT] clustering failed: {e}")
+            return [[w] for w in words]
 
 # Global instance
 engine = BertEngine()

@@ -41,13 +41,36 @@ def get_client():
     return get_gemini() or (True if get_anthropic() else None)
 
 
-async def generate_ai_content(prompt: str) -> str:
+async def generate_ai_content(prompt: str, prefer: str = "auto") -> str:
     """
-    Dual-AI content generation:
-      - Primary: Google Gemini 2.0 Flash
-      - Fallback: Anthropic Claude (claude-3-5-haiku)
-    Returns the text response or raises if both fail.
+    Multi-AI content generation. Provider order:
+      0. Mistral-7B-Instruct-Uz (if MISTRAL available — best Uzbek)
+      1. Google Gemini 2.0 Flash
+      2. Anthropic Claude (fallback)
+
+    `prefer`:
+      - "auto"     — try Mistral first if available, else cloud
+      - "mistral"  — force Mistral, fallback to cloud
+      - "cloud"    — skip Mistral, use Gemini/Claude only
+      - "uzbek"    — same as "mistral" (best Uzbek-aware)
     """
+    # Try Mistral (Uzbek-optimized) first when available and preferred
+    try:
+        import mistral_engine
+        if mistral_engine.is_available() and prefer in ("auto", "mistral", "uzbek"):
+            try:
+                txt = await mistral_engine.generate_async(prompt, max_tokens=2048, temperature=0.25)
+                if txt and len(txt.strip()) > 5:
+                    try:
+                        mistral_engine.learn_record(prompt, txt, kind="generate")
+                    except Exception:
+                        pass
+                    return txt
+            except Exception as e:
+                logger.warning(f"[AI] Mistral failed: {e} — falling back to cloud")
+    except Exception:
+        pass
+
     gemini = get_gemini()
     if gemini:
         try:
