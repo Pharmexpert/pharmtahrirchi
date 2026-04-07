@@ -28,7 +28,8 @@ log = logging.getLogger()
 
 DEST = os.getenv("MISTRAL_GGUF_PATH", "/app/data/mistral-7b-instruct-uz.gguf")
 REPO = os.getenv("MISTRAL_GGUF_REPO", "behbudiy/Mistral-7B-Instruct-Uz-GGUF")
-FILE = os.getenv("MISTRAL_GGUF_FILE", "mistral-7b-instruct-uz.Q4_K_M.gguf")
+# Default Q8_0 for Pro plan (best quality, ~7.7GB) — change to Q4_K_M for 4.4GB
+FILE = os.getenv("MISTRAL_GGUF_FILE", "mistral-7b-instruct-uz.Q8_0.gguf")
 TOKEN = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 
 

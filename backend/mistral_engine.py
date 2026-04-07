@@ -44,8 +44,13 @@ ENDPOINT_KEY = os.getenv("MISTRAL_API_KEY") or HF_TOKEN
 LOCAL_MODE = os.getenv("MISTRAL_LOCAL") == "1"
 GGUF_PATH = os.getenv("MISTRAL_GGUF_PATH", "/app/data/mistral-7b-instruct-uz.gguf")
 
+FULL_HF_MODE = os.getenv("MISTRAL_FULL_HF") == "1"  # Use transformers + full HF model (no GGUF)
+
 _local_llm = None
 _local_lock = None
+_hf_model = None
+_hf_tokenizer = None
+_hf_lock = None
 
 
 def _get_local_llm():
@@ -77,7 +82,41 @@ def _get_local_llm():
     return _local_llm
 
 
+def _get_hf_model():
+    """Lazy-load full HF transformers model (~14GB RAM)."""
+    global _hf_model, _hf_tokenizer, _hf_lock
+    if not FULL_HF_MODE:
+        return None, None
+    if _hf_model is not None:
+        return _hf_model, _hf_tokenizer
+    try:
+        import threading
+        if _hf_lock is None:
+            _hf_lock = threading.Lock()
+        with _hf_lock:
+            if _hf_model is None:
+                import torch
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+                logger.info(f"[Mistral] Loading full HF model: {MODEL_ID} (this can take 3-5 min and ~14GB RAM)")
+                _hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
+                _hf_model = AutoModelForCausalLM.from_pretrained(
+                    MODEL_ID,
+                    token=HF_TOKEN,
+                    torch_dtype=torch.float16,
+                    device_map="auto" if torch.cuda.is_available() else "cpu",
+                    low_cpu_mem_usage=True,
+                )
+                _hf_model.eval()
+                logger.info("[Mistral] Full HF model READY")
+    except Exception as e:
+        logger.error(f"[Mistral] Full HF model load failed: {e}")
+        return None, None
+    return _hf_model, _hf_tokenizer
+
+
 def is_available() -> bool:
+    if FULL_HF_MODE and HF_TOKEN:
+        return True
     if LOCAL_MODE:
         return os.path.exists(GGUF_PATH)
     if ENDPOINT_URL and ENDPOINT_KEY:
@@ -88,6 +127,8 @@ def is_available() -> bool:
 
 
 def get_mode() -> str:
+    if FULL_HF_MODE and HF_TOKEN:
+        return "full_hf"
     if LOCAL_MODE and os.path.exists(GGUF_PATH):
         return "local_gguf"
     if ENDPOINT_URL and ENDPOINT_KEY:
@@ -120,6 +161,32 @@ def chat(messages: List[Dict[str, str]], max_tokens: int = 512, temperature: flo
     """Universal chat → returns assistant text."""
     mode = get_mode()
     prompt = _build_prompt(messages)
+
+    if mode == "full_hf":
+        model, tokenizer = _get_hf_model()
+        if not model or not tokenizer:
+            return ""
+        try:
+            import torch
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
+            if torch.cuda.is_available():
+                inputs = {k: v.cuda() for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=max_tokens,
+                    temperature=temperature,
+                    do_sample=temperature > 0,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
+            full = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            # Extract response (after last [/INST])
+            if "[/INST]" in full:
+                return full.split("[/INST]")[-1].strip()
+            return full[len(prompt):].strip()
+        except Exception as e:
+            logger.error(f"[Mistral full HF] {e}")
+            return ""
 
     if mode == "local_gguf":
         llm = _get_local_llm()
