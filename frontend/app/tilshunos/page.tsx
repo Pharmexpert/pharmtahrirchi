@@ -115,20 +115,28 @@ export default function TilshunosPage() {
   const [aiEngines, setAiEngines] = useState<Record<string, any> | null>(null)
   const [entities, setEntities] = useState<Array<{ text: string; from: number; to: number; type: string; score?: number }>>([])
   const [showEntities, setShowEntities] = useState(true)
+  const [linguistic, setLinguistic] = useState<{ annotated: any[]; disputed: any[]; abbreviations: any[] }>({ annotated: [], disputed: [], abbreviations: [] })
+  const [linguisticPopup, setLinguisticPopup] = useState<{ data: any; type: string; x: number; y: number } | null>(null)
 
   useEffect(() => {
     api.tilshunos.rulesStats().then(setStats).catch(() => {})
     api.tilshunos.publicAiEngines().then(r => setAiEngines(r.engines || null)).catch(() => {})
   }, [])
 
-  // Auto-extract entities when text is set + result available
+  // Auto-extract entities + linguistic when text is set
   useEffect(() => {
     if (!text || text.length < 10 || !showEntities) {
       setEntities([])
+      setLinguistic({ annotated: [], disputed: [], abbreviations: [] })
       return
     }
     const t = setTimeout(() => {
       api.tilshunos.extractEntities(text).then(r => setEntities(r.entities || [])).catch(() => {})
+      api.tilshunos.extractLinguistic(text).then(r => setLinguistic({
+        annotated: r.annotated || [],
+        disputed: r.disputed || [],
+        abbreviations: r.abbreviations || [],
+      })).catch(() => {})
     }, 800)
     return () => clearTimeout(t)
   }, [text, showEntities])
@@ -375,6 +383,21 @@ export default function TilshunosPage() {
       }
     }
 
+    // Linguistic words: annotated (purple), disputed (red), abbreviations (green)
+    const linguisticItems: Array<{ from: number; to: number; type: 'annotated' | 'disputed' | 'abbreviations'; data: any }> = []
+    for (const item of linguistic.annotated) linguisticItems.push({ from: item.from, to: item.to, type: 'annotated', data: item.data })
+    for (const item of linguistic.disputed) linguisticItems.push({ from: item.from, to: item.to, type: 'disputed', data: item.data })
+    for (const item of linguistic.abbreviations) linguisticItems.push({ from: item.from, to: item.to, type: 'abbreviations', data: item.data })
+    for (const item of linguisticItems) {
+      const overlap = spans.some(s => (item.from >= s.from && item.from < s.to) || (item.to > s.from && item.to <= s.to))
+      if (!overlap) {
+        spans.push({ from: item.from, to: item.to, entityType: `LING_${item.type}` })
+        // Save data on a side map for popup
+        ;(spans[spans.length - 1] as any).linguisticData = item.data
+        ;(spans[spans.length - 1] as any).linguisticType = item.type
+      }
+    }
+
     spans.sort((a, b) => a.from - b.from || a.to - b.to)
 
     const parts: React.ReactNode[] = []
@@ -427,11 +450,29 @@ export default function TilshunosPage() {
           LOC: '#DC2626',      // red — жойлар
           ORG: '#D97706',      // orange — компании
           MISC: '#6B7280',     // gray — бошқа
+          LING_annotated: '#7C3AED',     // purple — изоҳли (siyohrang)
+          LING_disputed: '#DC2626',      // red — мунозарали
+          LING_abbreviations: '#16A34A', // green — қисқартмалар
         }
         const color = ENTITY_COLORS[s.entityType] || ENTITY_COLORS.MISC
+        const isLinguistic = s.entityType.startsWith('LING_')
+        const linguisticData = (s as any).linguisticData
+        const linguisticType = (s as any).linguisticType
+        const labelMap: Record<string, string> = {
+          LING_annotated: 'изоҳли',
+          LING_disputed: 'мунозарали',
+          LING_abbreviations: 'қисқартма',
+        }
         parts.push(
           <span key={`ent${i}`}
-            title={`${s.entityType}: ${content}`}
+            title={isLinguistic ? `${labelMap[s.entityType]}: ${content}` : `${s.entityType}: ${content}`}
+            onClick={(e) => {
+              if (isLinguistic && linguisticData) {
+                e.stopPropagation()
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setLinguisticPopup({ data: linguisticData, type: linguisticType, x: rect.left, y: rect.bottom + 6 })
+              }
+            }}
             style={{
               background: `${color}22`,
               color,
@@ -440,8 +481,9 @@ export default function TilshunosPage() {
               borderRadius: 4,
               border: `1px solid ${color}66`,
               fontSize: '0.94em',
+              cursor: isLinguistic ? 'pointer' : 'default',
             }}
-          >{content}<sub style={{ fontSize: '0.55em', marginLeft: 2, opacity: 0.7 }}>{s.entityType}</sub></span>
+          >{content}<sub style={{ fontSize: '0.55em', marginLeft: 2, opacity: 0.7 }}>{isLinguistic ? labelMap[s.entityType].toUpperCase() : s.entityType}</sub></span>
         )
       }
       cursor = Math.max(cursor, s.to)
@@ -1020,6 +1062,47 @@ export default function TilshunosPage() {
                     color: '#6B21A8', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer',
                   }}>{opt}</button>
               ))
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Linguistic info popup (annotated/disputed/abbreviation) */}
+      {linguisticPopup && (
+        <>
+          <div onClick={() => setLinguisticPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
+          <div style={{
+            position: 'fixed',
+            left: Math.min(linguisticPopup.x, window.innerWidth - 380),
+            top: Math.min(linguisticPopup.y, window.innerHeight - 300),
+            background: 'white', border: '1.5px solid var(--border)', borderRadius: 10,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)', zIndex: 100, minWidth: 340, maxWidth: 420, padding: 14,
+          }}>
+            <div style={{
+              display: 'inline-block', padding: '3px 10px', borderRadius: 6,
+              background: linguisticPopup.type === 'annotated' ? '#7C3AED' : linguisticPopup.type === 'disputed' ? '#DC2626' : '#16A34A',
+              color: 'white', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
+              marginBottom: 8,
+            }}>
+              {linguisticPopup.type === 'annotated' ? 'Изоҳли' : linguisticPopup.type === 'disputed' ? 'Мунозарали' : 'Қисқартма'}
+            </div>
+            {linguisticPopup.data && (
+              <div style={{ fontSize: '0.85rem', color: '#374151' }}>
+                {(linguisticPopup.data.uz || linguisticPopup.data.word) && (
+                  <div style={{ marginBottom: 6 }}><strong>UZ:</strong> {linguisticPopup.data.uz || linguisticPopup.data.word}</div>
+                )}
+                {linguisticPopup.data.ru && (
+                  <div style={{ marginBottom: 6 }}><strong>RU:</strong> {linguisticPopup.data.ru}</div>
+                )}
+                {linguisticPopup.data.en && (
+                  <div style={{ marginBottom: 6 }}><strong>EN:</strong> {linguisticPopup.data.en}</div>
+                )}
+                {(linguisticPopup.data.definition || linguisticPopup.data.full_form) && (
+                  <div style={{ marginTop: 8, padding: 8, background: '#F9FAFB', borderRadius: 6, fontSize: '0.78rem', color: '#475569', borderLeft: '3px solid #E5E7EB' }}>
+                    {linguisticPopup.data.definition || linguisticPopup.data.full_form}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </>

@@ -613,6 +613,15 @@ export const tilshunos = {
   extractEntities: (text: string) =>
     post<{ entities: Array<{ text: string; from: number; to: number; type: string; score?: number }>; stats: Record<string, number> }>('/api/tilshunos/extract-entities', { text }),
 
+  extractLinguistic: (text: string) =>
+    post<{ annotated: any[]; disputed: any[]; abbreviations: any[] }>('/api/tilshunos/extract-linguistic', { text }),
+
+  learnLinguistic: (category: 'annotated' | 'disputed' | 'abbreviations', items: any[]) =>
+    post<{ success: boolean; added?: number; error?: string }>('/api/tilshunos/learn-linguistic', { category, items }),
+
+  decomposeTerm: (word: string) =>
+    post<{ found: boolean; prefix?: string; root?: string; suffix?: string; meaning?: string; prefix_meaning?: string; suffix_meaning?: string }>('/api/tilshunos/decompose-term', { word }),
+
   trainingLogExport: (kind?: string, limit = 10000) => {
     const qs = new URLSearchParams()
     if (kind) qs.set('kind', kind)
