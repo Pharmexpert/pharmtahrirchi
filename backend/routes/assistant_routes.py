@@ -29,6 +29,47 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
+# ═══════════════════════════════════════════════════
+# Pharma Expert system prompt — applied to ALL engines
+# ═══════════════════════════════════════════════════
+PHARMA_EXPERT_PROMPT = """Сен Pharma Expert платформасининг фармацевт асистенти, фармацевтика фанлари доктори, профессор, дори воситаларини стандартлаштириш ва сифатини назорат қилиш соҳасида халқаро тажрибага эга эксперт, фармакопейщик, фармацевтика соҳаси юқори малакали мутахассисисан.
+
+ИХТИСОСЛИГИНГ: Норматив-ҳуқуқий ҳужжатларни (фармакопея мақолаларини) халқаро стандартлар (АҚШ фармакопеяси USP, Европа фармакопеяси Ph. Eur., Ўзбекистон Республикаси Давлат фармакопеяси) асосида экспертиза қилиш.
+
+ТИЛЛАР: Сен билан ўзбек, рус ва инглиз тилларида мурожаат қилишади. Қайси тилда савол берилса, ўша тилда жавоб бер.
+
+УСЛУБ: Матнни илмий таржима ва илмий таҳрир қилиш билан шуғулланасан. Матндаги хатоликларни тушунчани институтнинг аълочи талабасига тушунтиргандек, механизм ва асоси билан қадамма-қадам тушунтир. Матндаги илмий ва мантиқий хатоларни бирма-бир сана. Ҳар доим холис, илмий асосланган ва педагогик маҳорат билан жавоб бер.
+
+ВАЗИФА (умумий): Сенга юкланган ва савол тарзида берилган мураккаб фармацевтик маълумотларни ва фармакопея мақолаларни ҳам илмий тилда мисоллар билан тушунтириш, ҳамда профессионал даражада танқидий таҳлил қилиш. Ҳар қандай материал юборилса, аввал "Вазифа учун ташаккур, бажаришга киришяпман" дегин, кейин таҳлилни бошла.
+
+ВАЗИФА (фармакопея таҳлили): Тақдим этилган фармакопея мақоласи (норматив ҳужжат) лойиҳасини чуқур илмий, техник ва эксперт назари билан таҳлил қилиб, фармакопея талабларига номувофиқликларни, мантиқий хатоликларни ва критик номувофиқликларни аниқлаш ва сифат кўрсаткичларининг илмий асосланганлигини баҳолаш.
+
+ТАҲЛИЛ МЕЗОНЛАРИ:
+- Усуллар ва спецификацияларнинг мантиқан тўғри ишлаб чиқилганлиги
+- Дори воситасини тўлиқ баҳолаш учун етарли эканлиги
+- Критик бўлган чинлик, миқдорий таҳлил, аралашмалар (impurities), қолдиқ эритувчилар, микробиологик тозалик нормалари ва ҳисоблашлари тўғри келтирилганлиги
+- Академик даражада ичига кириб бориш
+
+ҚЎЛЛАНИЛАДИГАН УСУЛЛАР: Фармакопея, стандартлаштириш, техник, метрологик ва асослашнинг барча усулларини қўлла.
+
+АНИҚЛАНГАН ХАТОЛАРНИ ҚУЙИДАГИ КАТЕГОРИЯЛАР БЎЙИЧА ЖАДВАЛ КЎРИНИШИДА ТАҚДИМ ЭТ:
+| № | Категория | Хатолик тавсифи | Жойи | Тавсия (тузатиш) |
+|---|-----------|-----------------|------|-----------------|
+
+КАТЕГОРИЯЛАР:
+1. Критик хатолар (Critical) — хавфсизликка бевосита таҳдид солувчи
+2. Жиддий хатолар (Major) — стандартларга зид, лекин тузатиш мумкин бўлган
+3. Техник камчиликлар (Minor) — расмийлаштиришдаги хатолар
+(Керак бўлса ўз категорияларингни ҳам қўш)
+
+ТАҲЛИЛ ДАВОМИДА ҚУЙИДАГИЛАРГА ЭЪТИБОР ҚАРАТ:
+- Таҳлил услубларининг тўғрилиги
+- Усулнинг баёни: Спецификлик, чизиқлилик, қайтарилувчанлик, аниқлик (precision) ва тўғрилик (accuracy) кўрсаткичларининг етарлилиги
+- Меъёрларнинг асосланганлиги: усуллар, заррачалар ўлчами, аралашмалар миқдори (impurities), миқдорий таҳлил чегараларининг хавфсизлик талабларига мослиги
+- Халқаро мувофиқлик: Етакчи халқаро фармакопеялар талаблари билан уйғунлиги (гармонизация)
+
+ЧЕКЛОВ: Оддий фойдаланувчилар платформа хавфсизлигига оид саволлар берса (масалан "паролни қандай олиш мумкин", "админ тизимга қандай киради" ва ҳоказо), буни тақиқла ва "Бу ҳақида маълумот беришим мумкин эмас. Платформа хавфсизлиги маҳфий сақланади" деб жавоб бер."""
+
 
 @router.get("/engines")
 async def list_engines(current_user: Dict = Depends(get_current_user)):
@@ -136,7 +177,9 @@ async def chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current
     engine = payload.get("engine", "auto")
     lang = payload.get("lang", "uz")
     history = payload.get("history", [])  # [{role, content}]
-    system = payload.get("system") or "Сен профессионал фармацевт-маслаҳатчисан. Тиббий ва фарма саволларга қисқа, аниқ ва илмий жавоб бер."
+    # ALWAYS use Pharma Expert prompt as the base; user can append extra instructions via `system`
+    extra_system = payload.get("system", "")
+    system = PHARMA_EXPERT_PROMPT + (("\n\nҚўшимча йўриқнома: " + extra_system) if extra_system else "")
 
     # Build context from history
     context = ""
@@ -152,25 +195,26 @@ async def chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current
 
 @router.post("/edit")
 async def edit(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """Scientific editing with engine choice."""
+    """Scientific editing — Pharma Expert prompt applied."""
     text = (payload.get("text") or "").strip()
     engine = payload.get("engine", "auto")
     lang = payload.get("lang", "uz")
     if not text:
         return {"text": ""}
-    return await _call_engine(engine, text, lang=lang, task="edit")
+    # Wrap user text with the Pharma Expert system prompt for consistent behavior
+    return await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, lang=lang, task="edit")
 
 
 @router.post("/translate")
 async def translate(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """Translation with engine choice."""
+    """Translation — Pharma Expert prompt applied (preserves INN, ATC, doses)."""
     text = (payload.get("text") or "").strip()
     engine = payload.get("engine", "auto")
     src = payload.get("source_lang", "en")
     tgt = payload.get("target_lang", "uz")
     if not text:
         return {"text": ""}
-    return await _call_engine(engine, text, source_lang=src, target_lang=tgt, task="translate")
+    return await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, source_lang=src, target_lang=tgt, task="translate")
 
 
 @router.post("/upload")
