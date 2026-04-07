@@ -292,17 +292,68 @@ Rules:
 
 @router.post("/api/improve-row")
 async def improve_row(payload: Dict[str, Any]):
+    """
+    Multi-engine row improvement:
+      - uz → Llama 3.1 (or Mistral fallback) + Sayqallash
+      - ru → sage-fredt5-large + Sayqallash
+      - en → Llama 3.1 (or Mistral) for grammar
+    Sayqallash always runs as a final dictionary-grounded pass.
+    """
     from routes.sayqallash_routes import sayqallash
     target_lang = payload.get("target_lang", "uz")
     text = payload.get(f"{target_lang}_proposed", "") or payload.get(f"{target_lang}_v1", "")
     en_text = payload.get("en", "")
 
-    sayqallash_res = await sayqallash({"text": text, "lang": target_lang, "context_en": en_text})
+    if not text:
+        return {f"{target_lang}_v2": "", "annotations": [], "rationale": "Empty input"}
+
+    ai_text = text
+    engine_used = "sayqallash_only"
+
+    # 1. Language-specific AI improver
+    if target_lang == "ru":
+        try:
+            import russian_engine
+            if russian_engine.is_available():
+                ai_text = await russian_engine.improve(text)
+                engine_used = "russian_" + russian_engine.get_mode()
+        except Exception:
+            pass
+    else:
+        # Uzbek/English → Llama 3.1 first, Mistral fallback
+        try:
+            import llama_engine
+            if llama_engine.is_available():
+                ai_text = await llama_engine.improve_text(text, target_lang)
+                if ai_text and ai_text != text:
+                    llama_engine.learn_record(text, ai_text, kind=f"llama_improve_{target_lang}")
+                    engine_used = "llama_" + llama_engine.get_mode()
+        except Exception:
+            pass
+        if ai_text == text or not ai_text:
+            try:
+                import mistral_engine
+                if mistral_engine.is_available():
+                    ai_text = await mistral_engine.improve_text(text, target_lang)
+                    if ai_text and ai_text != text:
+                        engine_used = "mistral_" + mistral_engine.get_mode()
+            except Exception:
+                pass
+
+    # 2. Final pass: Sayqallash (dictionary-grounded corrections)
+    try:
+        sayqallash_res = await sayqallash({"text": ai_text or text, "lang": target_lang, "context_en": en_text})
+        final_text = sayqallash_res.get("corrected_text", ai_text or text)
+        annotations = sayqallash_res.get("annotations", [])
+    except Exception:
+        final_text = ai_text or text
+        annotations = []
 
     return {
-        f"{target_lang}_v2": sayqallash_res["corrected_text"],
-        "annotations": sayqallash_res["annotations"],
-        "rationale": "Sayqallash алгоритми (3-босқичли) асосида тузатилди."
+        f"{target_lang}_v2": final_text,
+        "annotations": annotations,
+        "rationale": f"Engine: {engine_used} → Sayqallash → Final.",
+        "engine": engine_used,
     }
 
 
