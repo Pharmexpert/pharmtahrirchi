@@ -33,10 +33,23 @@ TOKEN = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 
 
 def main():
+    # Skip entirely if local mode is not enabled — saves boot time
+    if os.getenv("MISTRAL_LOCAL") != "1":
+        log.info("MISTRAL_LOCAL != 1 — skipping local GGUF download (using cloud/HF API instead)")
+        return 0
+
     if os.path.exists(DEST):
         size_mb = os.path.getsize(DEST) / (1024 * 1024)
-        log.info(f"✓ Model already exists at {DEST} ({size_mb:.1f} MB)")
-        return 0
+        if size_mb > 100:  # sanity check — full file should be GBs
+            log.info(f"✓ Model already exists at {DEST} ({size_mb:.1f} MB)")
+            return 0
+        else:
+            log.warning(f"Existing file at {DEST} is too small ({size_mb:.1f} MB) — re-downloading")
+            os.remove(DEST)
+
+    if not TOKEN:
+        log.error("HF_TOKEN not set — cannot download gated model. Set HF_TOKEN env var.")
+        return 1
 
     os.makedirs(os.path.dirname(DEST), exist_ok=True)
 
