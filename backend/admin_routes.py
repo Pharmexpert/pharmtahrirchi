@@ -236,6 +236,143 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     db.update_user_role(user_id, role)
     return {"success": True}
 
+@router.post("/uzbek-rules/seed")
+async def seed_uzbek_rules(current_user: dict = Depends(get_admin_user)):
+    """Import Uzbek rules from 'Ona tili' book (M.Hamroyev et al., 2007)."""
+    try:
+        import seed_uzbek_rules_from_book
+        result = seed_uzbek_rules_from_book.main()
+        return {"success": True, **(result or {})}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/monitoring/overview")
+async def monitoring_overview(period: str = "daily", current_user: dict = Depends(get_admin_user)):
+    """
+    Activity monitoring: daily/weekly/monthly.
+    Returns user activity, AI usage, sayqallash growth, document edits.
+    """
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+
+        # Period filter
+        period_clause = {
+            "daily": "datetime('now', '-1 day')",
+            "weekly": "datetime('now', '-7 days')",
+            "monthly": "datetime('now', '-30 days')",
+        }.get(period, "datetime('now', '-1 day')")
+
+        out: Dict[str, Any] = {"period": period}
+
+        # 1. Total counts
+        try:
+            cur.execute("SELECT COUNT(*) FROM users WHERE status = 'approved'")
+            out["users_total"] = cur.fetchone()[0]
+        except Exception:
+            out["users_total"] = 0
+        try:
+            cur.execute(f"SELECT COUNT(DISTINCT user_id) FROM paragraphs_dashboard WHERE created_at >= {period_clause}")
+            out["users_active"] = cur.fetchone()[0]
+        except Exception:
+            out["users_active"] = 0
+
+        # 2. Sayqallash growth
+        try:
+            cur.execute("SELECT COUNT(*) FROM sayqallash_rules")
+            out["sayqallash_total"] = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*) FROM sayqallash_rules WHERE created_at >= {period_clause}")
+            out["sayqallash_new"] = cur.fetchone()[0]
+        except Exception:
+            out["sayqallash_total"] = 0
+            out["sayqallash_new"] = 0
+
+        # 3. AI usage (llm_training_log)
+        try:
+            cur.execute(f"SELECT kind, COUNT(*) FROM llm_training_log WHERE created_at >= {period_clause} GROUP BY kind")
+            out["ai_usage"] = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute(f"SELECT COUNT(*) FROM llm_training_log WHERE created_at >= {period_clause}")
+            out["ai_calls_total"] = cur.fetchone()[0]
+        except Exception:
+            out["ai_usage"] = {}
+            out["ai_calls_total"] = 0
+
+        # 4. Document/row edits
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM paragraphs_dashboard WHERE created_at >= {period_clause}")
+            out["edits_total"] = cur.fetchone()[0]
+        except Exception:
+            out["edits_total"] = 0
+
+        # 5. Per-user activity (top 10)
+        try:
+            cur.execute(f"""
+                SELECT user_id, user_name, COUNT(*) as cnt
+                FROM paragraphs_dashboard
+                WHERE created_at >= {period_clause}
+                GROUP BY user_id
+                ORDER BY cnt DESC LIMIT 10
+            """)
+            out["top_users"] = [{"user_id": r[0], "user_name": r[1], "count": r[2]} for r in cur.fetchall()]
+        except Exception:
+            out["top_users"] = []
+
+        # 6. Daily breakdown for chart (last 30 days)
+        try:
+            cur.execute("""
+                SELECT date(created_at) as day, COUNT(*) as cnt
+                FROM paragraphs_dashboard
+                WHERE created_at >= datetime('now', '-30 days')
+                GROUP BY day ORDER BY day
+            """)
+            out["daily_chart"] = [{"date": r[0], "count": r[1]} for r in cur.fetchall()]
+        except Exception:
+            out["daily_chart"] = []
+
+        # 7. AI usage daily chart
+        try:
+            cur.execute("""
+                SELECT date(created_at) as day, COUNT(*) as cnt
+                FROM llm_training_log
+                WHERE created_at >= datetime('now', '-30 days')
+                GROUP BY day ORDER BY day
+            """)
+            out["ai_chart"] = [{"date": r[0], "count": r[1]} for r in cur.fetchall()]
+        except Exception:
+            out["ai_chart"] = []
+
+        # 8. Pharma DB stats
+        try:
+            cur.execute("SELECT COUNT(*) FROM drugs")
+            out["drugs_total"] = cur.fetchone()[0]
+        except Exception:
+            out["drugs_total"] = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM medical_terms")
+            out["terms_total"] = cur.fetchone()[0]
+        except Exception:
+            out["terms_total"] = 0
+
+        # 9. Projects/alignments stats
+        try:
+            cur.execute("SELECT COUNT(DISTINCT text_id) FROM alignments")
+            out["projects_total"] = cur.fetchone()[0]
+        except Exception:
+            out["projects_total"] = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM alignments")
+            out["alignments_total"] = cur.fetchone()[0]
+        except Exception:
+            out["alignments_total"] = 0
+
+        conn.close()
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/drugs/seed")
 async def seed_drugs(current_user: dict = Depends(get_admin_user)):
     """One-time seed: import 80+ standard pharmaceutical INNs."""

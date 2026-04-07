@@ -347,6 +347,25 @@ export const admin = {
   drugs: (q = '', limit = 100) => get<{ drugs: any[]; total: number }>(`/api/admin/drugs?q=${encodeURIComponent(q)}&limit=${limit}`),
   addDrug: (drug: any) => post<{ success: boolean; id?: number; error?: string }>('/api/admin/drugs', drug),
   seedDrugs: () => post<{ success: boolean; inserted?: number }>('/api/admin/drugs/seed', {}),
+  seedUzbekRules: () => post<{ success: boolean; spelling_rules_inserted?: number; sayqallash_total?: number; definitions_added?: number; suffixes_added?: number }>('/api/admin/uzbek-rules/seed', {}),
+  monitoring: (period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
+    get<{
+      period: string
+      users_total: number
+      users_active: number
+      sayqallash_total: number
+      sayqallash_new: number
+      ai_calls_total: number
+      ai_usage: Record<string, number>
+      edits_total: number
+      top_users: Array<{ user_id: string; user_name: string; count: number }>
+      daily_chart: Array<{ date: string; count: number }>
+      ai_chart: Array<{ date: string; count: number }>
+      drugs_total: number
+      terms_total: number
+      projects_total: number
+      alignments_total: number
+    }>(`/api/admin/monitoring/overview?period=${period}`),
   medicalTerms: (q = '', limit = 100) => get<{ terms: any[]; total: number }>(`/api/admin/medical-terms?q=${encodeURIComponent(q)}&limit=${limit}`),
   addMedicalTerm: (term: any) => post<{ success: boolean; id?: number; error?: string }>('/api/admin/medical-terms', term),
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
