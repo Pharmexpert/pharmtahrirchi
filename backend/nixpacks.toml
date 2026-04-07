@@ -1,0 +1,12 @@
+# Nixpacks config for Railway — adds build tools needed by llama-cpp-python
+[phases.setup]
+nixPkgs = ["python311", "gcc", "cmake", "pkg-config", "openblas"]
+
+[phases.install]
+cmds = [
+  "pip install --upgrade pip",
+  "CMAKE_ARGS='-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS' pip install -r requirements.txt"
+]
+
+[start]
+cmd = "python scripts/download_mistral.py || true; uvicorn main:app --host 0.0.0.0 --port $PORT"
