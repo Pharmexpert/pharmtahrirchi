@@ -89,6 +89,31 @@ export default function AdminPage() {
     } catch (_e) {}
   }
 
+  const handleToggleBlock = async (userId: string, current: number) => {
+    try {
+      const blocked = !current
+      await api.admin.blockUser(userId, blocked)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_blocked: blocked ? 1 : 0 } : u))
+    } catch (_e) {}
+  }
+
+  const [activityModal, setActivityModal] = useState<{ user: any; activity: any[] } | null>(null)
+  const openActivity = async (u: any) => {
+    try {
+      const r = await api.admin.userActivity(u.id, 200)
+      setActivityModal({ user: r.user || u, activity: r.activity || [] })
+    } catch (_e) {
+      setActivityModal({ user: u, activity: [] })
+    }
+  }
+  const fmtDate = (s?: string) => {
+    if (!s) return '—'
+    try {
+      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z')
+      return d.toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    } catch (_e) { return s }
+  }
+
   const [newRule, setNewRule] = useState({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang: 'uz', context: '' })
 
   const handleDeleteRule = async (id: number) => {
@@ -127,8 +152,45 @@ export default function AdminPage() {
     </div>
   )
 
+  const ActivityModal = () => activityModal && (
+    <div onClick={() => setActivityModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 24, width: 'min(720px, 92vw)', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>{activityModal.user?.name || 'Foydalanuvchi'} — фаолият</h3>
+          <button onClick={() => setActivityModal(null)} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6B7280' }}>×</button>
+        </div>
+        <div style={{ fontSize: '0.85rem', color: '#6B7280', marginBottom: 14 }}>
+          📧 {activityModal.user?.email} · Охирги кириш: <strong>{fmtDate(activityModal.user?.last_login)}</strong>
+        </div>
+        {activityModal.activity.length === 0 ? (
+          <div style={{ padding: 30, textAlign: 'center', color: '#9CA3AF' }}>Фаолият тарихи топилмади</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                <th style={{ padding: 10, textAlign: 'left' }}>Вақт</th>
+                <th style={{ padding: 10, textAlign: 'left' }}>Амал</th>
+                <th style={{ padding: 10, textAlign: 'left' }}>Изоҳ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activityModal.activity.map((a, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: 10, color: '#475569', whiteSpace: 'nowrap' }}>{fmtDate(a.ts || a.created_at)}</td>
+                  <td style={{ padding: 10, fontWeight: 600 }}>{a.action_type || '—'}</td>
+                  <td style={{ padding: 10, color: '#64748B' }}>{a.details || a.paragraph_id || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="animate-fadeIn" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '100px' }}>
+      <ActivityModal />
       {/* Header */}
       <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -333,7 +395,9 @@ export default function AdminPage() {
               <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
                 <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Foydalanuvchi</th>
                 <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</th>
+                <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Holat</th>
                 <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rol</th>
+                <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Cheklash</th>
                 <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Amallar</th>
               </tr>
             </thead>
@@ -363,6 +427,25 @@ export default function AdminPage() {
                       {u.status === 'approved' ? <CheckCircle2 size={13} /> : u.status === 'rejected' ? <AlertCircle size={13} /> : <Clock size={13} />}
                       {u.status || 'pending'}
                     </span>
+                  </td>
+                  <td style={{ padding: '20px 24px' }}>
+                    <button
+                      onClick={() => openActivity(u)}
+                      title="Фаолият тарихини кўриш"
+                      style={{
+                        background: 'transparent',
+                        border: '1px dashed var(--border)',
+                        borderRadius: 8,
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        color: 'var(--text-secondary)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <Clock size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                      {fmtDate(u.last_login)}
+                    </button>
                   </td>
                   <td style={{ padding: '20px 24px' }}>
                     <div style={{ position: 'relative' }}>
@@ -400,6 +483,20 @@ export default function AdminPage() {
                         {u.can_edit_db ? '✓ DB edit' : '✕ DB edit'}
                       </button>
                     </div>
+                  </td>
+                  <td style={{ padding: '20px 24px', textAlign: 'center' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: u.id === currentUser?.id ? 'not-allowed' : 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!u.is_blocked}
+                        disabled={u.id === currentUser?.id}
+                        onChange={() => handleToggleBlock(u.id, u.is_blocked || 0)}
+                        style={{ width: 18, height: 18, cursor: u.id === currentUser?.id ? 'not-allowed' : 'pointer', accentColor: '#DC2626' }}
+                      />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: u.is_blocked ? '#DC2626' : 'var(--text-muted)' }}>
+                        {u.is_blocked ? 'Cheklangan' : 'Faol'}
+                      </span>
+                    </label>
                   </td>
                   <td style={{ padding: '20px 24px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

@@ -339,6 +339,10 @@ export const admin = {
     post<{ success: boolean }>('/api/admin/role', { user_id, role }),
   canEditDb: (userId: string, can_edit: boolean) =>
     post<{ success: boolean; can_edit_db: number }>('/api/admin/can-edit-db', { userId, can_edit }),
+  blockUser: (userId: string, blocked: boolean) =>
+    post<{ success: boolean; is_blocked: number }>('/api/admin/users/block', { userId, blocked }),
+  userActivity: (userId: string, limit = 100) =>
+    get<{ user: any; activity: any[] }>(`/api/admin/users/${encodeURIComponent(userId)}/activity?limit=${limit}`),
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
   updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),

@@ -236,6 +236,51 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     db.update_user_role(user_id, role)
     return {"success": True}
 
+@router.post("/users/block")
+async def toggle_block_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Block or unblock a user from logging in (Admin only)."""
+    user_id = payload.get("userId")
+    blocked = 1 if payload.get("blocked") else 0
+    conn = db.connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    cur.execute("UPDATE users SET is_blocked = ? WHERE id = ?", (blocked, user_id))
+    conn.commit()
+    conn.close()
+    return {"success": True, "is_blocked": blocked}
+
+
+@router.get("/users/{user_id}/activity")
+async def get_user_activity(user_id: str, limit: int = 100, current_user: dict = Depends(get_admin_user)):
+    """Return activity timeline for a specific user."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        rows: list = []
+        # paragraphs_dashboard acts as audit trail
+        try:
+            cur.execute("""
+                SELECT created_at as ts, action_type, paragraph_id, user_id, user_name, details
+                FROM paragraphs_dashboard
+                WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT ?
+            """, (user_id, limit))
+            rows = [dict(r) for r in cur.fetchall()]
+        except Exception:
+            pass
+        # Also include last_login
+        cur.execute("SELECT name, email, last_login, created_at FROM users WHERE id = ?", (user_id,))
+        u = cur.fetchone()
+        conn.close()
+        return {"user": dict(u) if u else None, "activity": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/can-edit-db")
 async def toggle_can_edit_db(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
     """Grant or revoke DB edit permission for a user (Admin only)."""

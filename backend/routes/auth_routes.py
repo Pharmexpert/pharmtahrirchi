@@ -80,6 +80,8 @@ async def login_api(payload: Dict[str, Any]):
     if user["email"] != "texnopharm@gmail.com" and user["status"] != "approved":
         detail = "Ҳисобингиз ҳали тасдиқланмаган" if user["status"] == "pending" else "Ҳисобингиз рад этилган"
         raise HTTPException(status_code=403, detail=detail)
+    if user.get("is_blocked"):
+        raise HTTPException(status_code=403, detail="Ҳисобингиз администратор томонидан чекланган")
     db.update_user_login(user["id"])
     token = create_access_token({"userId": user["id"], "email": user["email"], "role": user["role"], "name": user["name"]})
     return {"success": True, "token": token, "user": user}
