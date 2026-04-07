@@ -97,6 +97,8 @@ async def list_engines(current_user: Dict = Depends(get_current_user)):
     add("mistral", "Mistral 7B Uzbek", "mistral_engine", ["uz", "en"], ["chat", "edit", "translate"])
     add("russian", "Sage FRED-T5 Russian", "russian_engine", ["ru"], ["edit"])
     add("nllb", "NLLB-200 Multilingual", "translator_engine", ["en", "ru", "uz"], ["translate"])
+    engines.append({"key": "gemini", "label": "Google Gemini 2.0 Flash", "available": bool(os.getenv("GOOGLE_API_KEY")), "mode": "cloud", "model": "gemini-2.0-flash", "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate", "vision"]})
+    engines.append({"key": "anthropic", "label": "Anthropic Claude Haiku", "available": bool(os.getenv("ANTHROPIC_API_KEY")), "mode": "cloud", "model": "claude-haiku-4-5", "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate", "vision"]})
     engines.append({"key": "auto", "label": "Авто (энг яхшиси)", "available": True, "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate"]})
     return {"engines": engines}
 
@@ -153,13 +155,29 @@ async def _call_engine(engine: str, prompt: str, system: Optional[str] = None, l
                 return {"text": txt.strip(), "engine": "nllb_" + translator_engine.get_mode()}
             return {"text": "NLLB бўш жавоб қайтарди.", "engine": "nllb_empty", "error": "empty_response"}
 
+        if engine in ("gemini", "anthropic"):
+            from routes.editor_routes import generate_ai_content
+            if task == "edit":
+                p = (system + "\n\n" if system else "") + f"Қуйидаги матнни тузат:\n\n{prompt}"
+            elif task == "translate":
+                p = (system + "\n\n" if system else "") + f"Translate from {source_lang} to {target_lang}:\n\n{prompt}"
+            else:
+                p = (system + "\n\n" if system else "") + prompt
+            try:
+                txt = await generate_ai_content(p, prefer="cloud")
+                if txt and txt.strip():
+                    return {"text": txt.strip(), "engine": engine}
+            except Exception as e:
+                return {"text": f"{engine} хато: {e}", "engine": engine, "error": str(e)}
+            return {"text": f"{engine} бўш жавоб", "engine": engine, "error": "empty_response"}
+
         if engine == "auto":
-            # Try Llama → Mistral → Russian (for ru) → NLLB (for translate)
-            for fallback_engine in ("llama", "mistral"):
+            # Try local first, then cloud as fallback
+            for fallback_engine in ("llama", "mistral", "gemini", "anthropic"):
                 r = await _call_engine(fallback_engine, prompt, system=system, lang=lang, task=task, source_lang=source_lang, target_lang=target_lang)
                 if r.get("text") and not r.get("error"):
                     return r
-            return {"text": "Барча локал engine'лар бўш жавоб қайтарди. Моделлар ҳали юкланмоқда — 3-5 минут кутинг ва қайта уриниб кўринг.", "engine": "all_empty", "error": "all_failed"}
+            return {"text": "Барча engine'лар бўш жавоб қайтарди.", "engine": "all_empty", "error": "all_failed"}
 
         return {"text": f"Номаълум engine: {engine}", "engine": engine, "error": "unknown_engine"}
 

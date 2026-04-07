@@ -899,6 +899,110 @@ async def export_training_log(kind: str = None, limit: int = 10000, current_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/extract-linguistic")
+async def extract_linguistic(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """
+    Find annotated/disputed/abbreviation words in text.
+    Returns spans + 3-language metadata for highlighting + popups.
+    """
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"annotated": [], "disputed": [], "abbreviations": []}
+    out = {"annotated": [], "disputed": [], "abbreviations": []}
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        # Build word list from text (lowercase, dedupe)
+        import re as _re
+        words = set()
+        for m in _re.finditer(r"[\w'\u2019\u02bb\u02bc\u2018-]+", text, _re.UNICODE):
+            words.add(m.group(0).lower())
+
+        for table, key in (("annotated_words", "annotated"), ("disputed_words", "disputed"), ("abbreviations", "abbreviations")):
+            try:
+                cur.execute(f"SELECT * FROM {table}")
+                cols = [d[0] for d in cur.description]
+                for row in cur.fetchall():
+                    row_dict = dict(zip(cols, row))
+                    # Try common word fields
+                    word_val = None
+                    for f in ("uz", "word", "short_form", "abbreviation", "uz_lat", "term"):
+                        if row_dict.get(f):
+                            word_val = row_dict[f].lower()
+                            break
+                    if not word_val:
+                        continue
+                    if word_val in words:
+                        # Find positions
+                        for m in _re.finditer(r"\b" + _re.escape(word_val) + r"\b", text, _re.IGNORECASE):
+                            out[key].append({
+                                "from": m.start(),
+                                "to": m.end(),
+                                "text": m.group(0),
+                                "data": row_dict,
+                            })
+            except Exception as e:
+                logger.warning(f"[extract-linguistic] {table}: {e}")
+        conn.close()
+    except Exception as e:
+        logger.exception("extract-linguistic failed")
+    return out
+
+
+@router.post("/learn-linguistic")
+async def learn_linguistic(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """
+    Save user-confirmed annotated/disputed/abbreviation words to DB.
+    Payload: {"category": "annotated"|"disputed"|"abbreviations", "items": [{uz, ru, en, definition, ...}]}
+    """
+    category = payload.get("category", "")
+    items = payload.get("items", [])
+    table_map = {"annotated": "annotated_words", "disputed": "disputed_words", "abbreviations": "abbreviations"}
+    if category not in table_map:
+        return {"success": False, "error": "Invalid category"}
+    table = table_map[category]
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        # Ensure table exists with basic columns
+        cur.execute(f"CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY AUTOINCREMENT, uz TEXT, ru TEXT, en TEXT, definition TEXT, source TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        # Try to add missing columns if table existed with different schema
+        for col in ("uz", "ru", "en", "definition", "source"):
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+        added = 0
+        for item in items:
+            try:
+                cur.execute(
+                    f"INSERT INTO {table} (uz, ru, en, definition, source) VALUES (?, ?, ?, ?, ?)",
+                    (item.get("uz", ""), item.get("ru", ""), item.get("en", ""), item.get("definition", ""), item.get("source", "user"))
+                )
+                added += 1
+            except Exception as e:
+                logger.warning(f"[learn-linguistic] insert: {e}")
+        conn.commit()
+        conn.close()
+        return {"success": True, "added": added}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/decompose-term")
+async def decompose_medical_term(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Decompose a medical term into Greek/Latin morphemes."""
+    word = (payload.get("word") or "").strip()
+    if not word:
+        return {"found": False}
+    try:
+        import compound_morphology
+        return compound_morphology.decompose(word)
+    except Exception as e:
+        return {"found": False, "error": str(e)}
+
+
 @router.post("/extract-entities")
 async def extract_entities_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """Extract named entities (DRUG, DOSE, PERSON, LOC, ORG) from text."""
