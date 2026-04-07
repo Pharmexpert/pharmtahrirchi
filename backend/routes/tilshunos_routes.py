@@ -639,7 +639,18 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
             except Exception as e:
                 logger.warning(f"[translate] NLLB failed: {e}")
 
-        # 2. Mistral — best for Uzbek (no Russian) and other pairs
+        # 2. Llama 3.1 — preferred for non-Russian pairs (better instruction following)
+        try:
+            import llama_engine
+            if llama_engine.is_available():
+                tr = await llama_engine.translate(text, src, tgt)
+                if tr and len(tr.strip()) > 1:
+                    llama_engine.learn_record(text, tr, kind="llama_translate")
+                    return {"translated": tr.strip(), "engine": "llama_" + llama_engine.get_mode()}
+        except Exception as e:
+            logger.warning(f"[translate] Llama failed: {e}")
+
+        # 3. Mistral — fallback for Uzbek and other pairs
         try:
             import mistral_engine
             if mistral_engine.is_available():
@@ -681,6 +692,17 @@ async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_c
                         return {"improved": improved, "engine": "russian_" + russian_engine.get_mode()}
             except Exception as e:
                 logger.warning(f"[ai-improve] Russian engine failed: {e}")
+
+        # Try Llama 3.1 first (better than Mistral 7B)
+        try:
+            import llama_engine
+            if llama_engine.is_available():
+                improved = await llama_engine.improve_text(text, lang)
+                if improved and improved != text:
+                    llama_engine.learn_record(text, improved, kind="llama_improve")
+                    return {"improved": improved, "engine": "llama_" + llama_engine.get_mode()}
+        except Exception as e:
+            logger.warning(f"[ai-improve] Llama engine failed: {e}")
 
         import mistral_engine
         if mistral_engine.is_available():
@@ -740,6 +762,7 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     out = {
         "bert": False,
         "mistral": {"available": False, "mode": "unavailable"},
+        "llama": {"available": False, "mode": "unavailable"},
         "russian": {"available": False, "mode": "unavailable"},
         "nllb": {"available": False, "mode": "unavailable"},
         "gemini": False,
@@ -753,6 +776,11 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     try:
         import mistral_engine
         out["mistral"] = {"available": mistral_engine.is_available(), "mode": mistral_engine.get_mode(), "model": mistral_engine.MODEL_ID}
+    except Exception:
+        pass
+    try:
+        import llama_engine
+        out["llama"] = {"available": llama_engine.is_available(), "mode": llama_engine.get_mode(), "model": llama_engine.MODEL_ID}
     except Exception:
         pass
     try:
