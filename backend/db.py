@@ -92,6 +92,94 @@ class FaissIndexManager:
 
 faiss_manager = FaissIndexManager()
 
+
+# ═══════════════════════════════════════════════════
+# Phase 3: Tahrirchi Lexicon (8.7M words) semantic index
+# ═══════════════════════════════════════════════════
+
+class TahrirchiLexicon:
+    """Semantic search over 8.7M word lexicon using BERT embeddings + FAISS IVF."""
+
+    def __init__(self):
+        self.index = None
+        self.ids = None
+        self.loaded = False
+        self.dimension = 768
+
+    def load(self):
+        """Load pre-built FAISS index + IDs map from disk."""
+        if self.loaded:
+            return True
+        if not FAISS_AVAILABLE:
+            logger.warning("[TahrirchiLex] FAISS not available")
+            return False
+        if not (os.path.exists(TAHRIRCHI_FAISS_INDEX_PATH) and os.path.exists(TAHRIRCHI_FAISS_IDS_PATH)):
+            logger.warning(f"[TahrirchiLex] Index not found at {TAHRIRCHI_FAISS_INDEX_PATH}")
+            return False
+        try:
+            self.index = faiss.read_index(TAHRIRCHI_FAISS_INDEX_PATH)
+            with open(TAHRIRCHI_FAISS_IDS_PATH, "rb") as f:
+                self.ids = pickle.load(f)
+            self.loaded = True
+            logger.info(f"[TahrirchiLex] Loaded index with {self.index.ntotal:,} vectors")
+            return True
+        except Exception as e:
+            logger.error(f"[TahrirchiLex] Load error: {e}")
+            return False
+
+    def search_similar(self, word: str, k: int = 10, nprobe: int = 16) -> List[Dict[str, Any]]:
+        """Find k most semantically similar words in 8.7M lexicon."""
+        if not self.load():
+            return []
+        try:
+            import bert_engine
+            if not bert_engine.engine.initialized:
+                return []
+
+            emb = bert_engine.engine.get_embedding(word.strip().lower(), as_numpy=True)
+            if emb is None:
+                return []
+
+            # IVF search needs nprobe (trade-off accuracy vs speed)
+            if hasattr(self.index, "nprobe"):
+                self.index.nprobe = nprobe
+
+            v = emb.astype("float32").reshape(1, -1)
+            faiss.normalize_L2(v)
+            distances, indices = self.index.search(v, k)
+
+            # Map FAISS indices → word IDs → actual words from tahrirchi.db
+            results = []
+            if not os.path.exists(TAHRIRCHI_DB_PATH):
+                return []
+            conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+            cur = conn.cursor()
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx >= 0 and idx < len(self.ids):
+                    word_id = self.ids[idx]
+                    cur.execute(
+                        "SELECT word, frequency FROM dictionary WHERE id = ?",
+                        (word_id,)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        results.append({
+                            "word": row[0],
+                            "frequency": row[1] if row[1] is not None else 1,
+                            "similarity": float(dist),
+                        })
+            conn.close()
+            return results
+        except Exception as e:
+            logger.error(f"[TahrirchiLex] Search error: {e}")
+            return []
+
+    def is_ready(self) -> bool:
+        return self.loaded and self.index is not None
+
+
+tahrirchi_lexicon = TahrirchiLexicon()
+
 def init_faiss_index():
     if not FAISS_AVAILABLE: return
     logger.info("[*] Initializing memory-resident FAISS index...")
