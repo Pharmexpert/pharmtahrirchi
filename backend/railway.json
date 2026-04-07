@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python scripts/download_mistral.py || true; uvicorn main:app --host 0.0.0.0 --port $PORT",
+    "startCommand": "echo '[start] booting...'; python -u scripts/download_mistral.py || echo '[start] mistral skipped'; echo '[start] launching uvicorn'; exec python -u -m uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 600,
     "restartPolicyType": "ON_FAILURE",
