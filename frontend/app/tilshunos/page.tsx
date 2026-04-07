@@ -227,7 +227,35 @@ export default function TilshunosPage() {
   }
 
   const applyFix = async (issue: LinguisticIssue, suggestion: string) => {
-    const newText = text.substring(0, issue.from_index) + suggestion + text.substring(issue.to_index)
+    // Locate matched_text robustly (indices may be stale after contentEditable edits)
+    const matched = issue.matched_text
+    let from = issue.from_index
+    let to = issue.to_index
+    if (text.substring(from, to) !== matched) {
+      // Search near old position first, then full text
+      const near = text.indexOf(matched, Math.max(0, from - 50))
+      const idx = near >= 0 ? near : text.indexOf(matched)
+      if (idx >= 0) {
+        from = idx
+        to = idx + matched.length
+      } else {
+        alert('Сўз топилмади — янгидан "Синов олиб бориш"ни босинг')
+        setPopup(null)
+        return
+      }
+    }
+    // Preserve surrounding spaces — ensure suggestion does not stick to neighbors
+    const before = text.substring(0, from)
+    const after = text.substring(to)
+    let safeSugg = suggestion
+    if (before && !/\s$/.test(before) && !/^\s/.test(safeSugg) && !/^[.,;:!?)\]}»"']/.test(safeSugg)) {
+      // No space between previous char and suggestion — add one if previous is a word char
+      if (/\w/.test(before.slice(-1))) safeSugg = ' ' + safeSugg
+    }
+    if (after && !/^\s/.test(after) && !/\s$/.test(safeSugg) && !/[.,;:!?(\[{«"']$/.test(safeSugg)) {
+      if (/\w/.test(after.charAt(0))) safeSugg = safeSugg + ' '
+    }
+    const newText = before + safeSugg + after
     setText(newText)
     setPopup(null)
     // NOTE: do NOT clear result/classified — keep colored view stable while re-check runs
