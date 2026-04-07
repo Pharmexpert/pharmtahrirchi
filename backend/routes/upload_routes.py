@@ -171,18 +171,35 @@ async def preview_file(filename: str, current_user: Dict = Depends(get_current_u
 
 
 @router.post("/api/files/upload")
-async def upload_file_to_directory(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
+async def upload_file_to_directory(request: Request, file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not upload_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Жуда кўп юклаш. 1 дақиқа кутинг.")
+
+    # Extension whitelist (DOCX, PDF, XLSX, XLS)
+    ALLOWED_EXTENSIONS = {".docx", ".pdf", ".xlsx", ".xls"}
+    original_name = file.filename or "upload.bin"
+    file_ext = os.path.splitext(original_name)[1].lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Фақат DOCX, PDF, XLSX файллар қабул қилинади. Юборилган: {file_ext}")
+
+    # Size limit (50 MB)
+    MAX_FILE_SIZE = 50 * 1024 * 1024
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Файл ҳажми 50MB дан ошмаслиги керак")
+    file.file.seek(0)
+
     try:
         user_dir = _user_upload_dir(current_user)
-        original_name = file.filename or "upload.bin"
         # Sanitize filename for safe storage
         safe_basename = re.sub(r"[^A-Za-z0-9._\-]+", "_", original_name).strip("_") or "upload.bin"
         ts = int(datetime.utcnow().timestamp())
         safe_name = f"{ts}_{safe_basename}"
         file_path = os.path.join(user_dir, safe_name)
         with open(file_path, "wb") as buffer:
-            file.file.seek(0)
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(contents)
         # Register ownership in projects table so ownership checks work
         try:
             text_id = f"file_{ts}_{current_user.get('id','u')}"
