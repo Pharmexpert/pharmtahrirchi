@@ -27,6 +27,7 @@ from routes.morph_routes import router as morph_router
 from routes.grammar_routes import router as grammar_router
 from routes.learn_routes import router as learn_router
 from routes.nlp_admin_routes import router as nlp_admin_router
+from routes.tilshunos_routes import router as tilshunos_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -147,6 +148,7 @@ app.include_router(morph_router)
 app.include_router(grammar_router)
 app.include_router(learn_router)
 app.include_router(nlp_admin_router)
+app.include_router(tilshunos_router)
 
 
 if __name__ == "__main__":
