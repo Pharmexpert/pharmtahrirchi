@@ -343,7 +343,16 @@ class UzbekMorphologyAnalyzer:
 
         # Step 1: Direct dictionary lookup (whole word)
         if dic and dic.lookup(word_lower):
-            # Word itself is in dictionary, no decomposition needed
+            # Even though Hunspell accepts the word as a whole, try to decompose it
+            # heuristically so we can show stem + affixes to the user.
+            heuristic = self._heuristic_decompose(word_lower, script, dic)
+            if heuristic and len(heuristic.morphemes) > 1:
+                # Heuristic found at least one suffix → use richer breakdown
+                heuristic.source = "hunspell.direct+heuristic"
+                if heuristic.pos == "unknown":
+                    heuristic.pos = self._infer_pos_from_word(word_lower, dic)
+                return heuristic
+            # Otherwise, return as a single stem
             return MorphAnalysis(
                 word=word, stem=word_lower,
                 pos=self._infer_pos_from_word(word_lower, dic),
@@ -540,16 +549,27 @@ class UzbekMorphologyAnalyzer:
         return "unknown"
 
     def _infer_pos_from_suffixes(self, morphemes: List[Morpheme]) -> str:
-        """Infer POS based on which suffix categories are present."""
+        """Infer POS based on which suffix categories are present.
+
+        Noun markers (case/possessive/plural) are checked FIRST so that
+        e.g. 'kitobimiz' (1pl.possessive) → noun, not verb.
+        """
         suffixes = [m.gloss for m in morphemes if m.kind == "suffix"]
         text = " ".join(suffixes).lower()
-        if any(t in text for t in ["tense", "past", "progressive", "future", "habitual",
-                                   "negation", "imperative", "optative", "question",
-                                   "sg.", "pl.", "interrogative", "prohibitive"]):
-            return "verb"
-        if any(t in text for t in ["case", "accusative", "dative", "ablative",
-                                   "locative", "genitive", "plural", "possessive"]):
+
+        # NOUN markers — definite case markers
+        noun_markers = ["accusative", "dative", "ablative", "locative", "genitive",
+                        "plural", "possessive", "case"]
+        if any(t in text for t in noun_markers):
             return "noun"
+
+        # VERB markers — tense / mood / negation
+        verb_markers = ["tense", "past", "progressive", "future", "habitual",
+                        "present", "negation", "imperative", "optative", "question",
+                        "interrogative", "prohibitive", "converb", "dubitative"]
+        if any(t in text for t in verb_markers):
+            return "verb"
+
         return "unknown"
 
 
