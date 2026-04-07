@@ -23,23 +23,162 @@ TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(DATA_DIR, "tahri
 PHARMA_DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "pharma_editor.db"))
 DICT_COMPRESSED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictionary_data.csv.gz")
 
-def setup_tahrirchi_db():
-    """Rebuild tahrirchi.db from compressed dictionary data."""
-    if os.path.exists(TAHRIRCHI_DB_PATH):
-        conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM dictionary")
-        count = cursor.fetchone()[0]
-        conn.close()
-        if count > 1000:
-            logger.info(f"[+] tahrirchi.db already exists with {count:,} words. Skipping rebuild.")
+# Phase 1: Remote download URL for tahrirchi.db (GitHub Release)
+# Set TAHRIRCHI_DOWNLOAD_URL env var to override
+TAHRIRCHI_DOWNLOAD_URL = os.getenv(
+    "TAHRIRCHI_DOWNLOAD_URL",
+    "https://github.com/Pharmexpert/pharmtahrirchi/releases/download/v1-tahrirchi-lexicon/tahrirchi.db"
+)
+
+# Phase 3: Remote download URLs for pre-built FAISS lexicon index
+TAHRIRCHI_FAISS_INDEX_URL = os.getenv(
+    "TAHRIRCHI_FAISS_INDEX_URL",
+    "https://github.com/Pharmexpert/pharmtahrirchi/releases/download/v1-tahrirchi-faiss/tahrirchi_lexicon.index"
+)
+TAHRIRCHI_FAISS_IDS_URL = os.getenv(
+    "TAHRIRCHI_FAISS_IDS_URL",
+    "https://github.com/Pharmexpert/pharmtahrirchi/releases/download/v1-tahrirchi-faiss/tahrirchi_lexicon.ids"
+)
+
+
+def _download_file(url: str, dest: str, min_size_mb: float = 0.0) -> bool:
+    """Download file from URL to dest path with progress logging. Skip if dest already exists."""
+    if os.path.exists(dest):
+        size_mb = os.path.getsize(dest) / (1024 * 1024)
+        if size_mb >= min_size_mb:
+            logger.info(f"[+] {os.path.basename(dest)} already exists ({size_mb:.1f} MB). Skipping download.")
             return True
-    
-    if not os.path.exists(DICT_COMPRESSED):
-        logger.warning(f"[!] dictionary_data.csv.gz not found at {DICT_COMPRESSED}")
-        logger.info("[*] Creating empty tahrirchi.db with basic schema...")
-        create_empty_tahrirchi_db()
+        else:
+            logger.info(f"[*] {os.path.basename(dest)} exists but too small ({size_mb:.1f} MB < {min_size_mb}). Re-downloading.")
+
+    logger.info(f"[*] Downloading {url} → {dest}")
+    start = time.time()
+    try:
+        import urllib.request
+        import urllib.error
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+        # Stream download with progress
+        with urllib.request.urlopen(url, timeout=600) as response:
+            total_size = int(response.headers.get("Content-Length", 0))
+            chunk_size = 8 * 1024 * 1024  # 8 MB chunks
+            downloaded = 0
+            last_log = 0
+
+            with open(dest + ".tmp", "wb") as f:
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    # Log every 50 MB
+                    if downloaded - last_log >= 50 * 1024 * 1024:
+                        pct = (downloaded / total_size * 100) if total_size else 0
+                        logger.info(
+                            f"    ...{downloaded/(1024*1024):.0f} MB / "
+                            f"{total_size/(1024*1024):.0f} MB ({pct:.0f}%)"
+                        )
+                        last_log = downloaded
+
+        # Atomic rename
+        os.replace(dest + ".tmp", dest)
+        elapsed = time.time() - start
+        final_size_mb = os.path.getsize(dest) / (1024 * 1024)
+        logger.info(f"[+] Downloaded {final_size_mb:.1f} MB in {elapsed:.1f}s → {dest}")
         return True
+    except urllib.error.HTTPError as e:
+        logger.warning(f"[!] HTTP error downloading {url}: {e.code} {e.reason}")
+        if os.path.exists(dest + ".tmp"):
+            os.remove(dest + ".tmp")
+        return False
+    except Exception as e:
+        logger.error(f"[!] Download failed for {url}: {e}")
+        if os.path.exists(dest + ".tmp"):
+            os.remove(dest + ".tmp")
+        return False
+
+
+def setup_tahrirchi_db():
+    """Set up tahrirchi.db: check existing → download from GitHub Release → fallback to empty."""
+    if os.path.exists(TAHRIRCHI_DB_PATH):
+        try:
+            conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM dictionary")
+            count = cursor.fetchone()[0]
+            conn.close()
+            if count > 1000:
+                logger.info(f"[+] tahrirchi.db already exists with {count:,} words. Skipping download.")
+                # Also try to download FAISS index if missing
+                _try_download_faiss_lexicon()
+                return True
+            else:
+                logger.info(f"[*] tahrirchi.db exists but only has {count} words. Re-downloading.")
+                os.remove(TAHRIRCHI_DB_PATH)
+        except Exception as e:
+            logger.warning(f"[!] Error reading tahrirchi.db: {e}. Re-downloading.")
+            try:
+                os.remove(TAHRIRCHI_DB_PATH)
+            except Exception:
+                pass
+
+    # Try to download from GitHub Release (primary source)
+    if TAHRIRCHI_DOWNLOAD_URL:
+        logger.info("[*] Attempting to download tahrirchi.db from GitHub Release...")
+        if _download_file(TAHRIRCHI_DOWNLOAD_URL, TAHRIRCHI_DB_PATH, min_size_mb=100.0):
+            # Verify
+            try:
+                conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+                count = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
+                conn.close()
+                logger.info(f"[+] tahrirchi.db downloaded successfully: {count:,} words")
+                _try_download_faiss_lexicon()
+                return True
+            except Exception as e:
+                logger.error(f"[!] Downloaded tahrirchi.db is invalid: {e}")
+
+    # Fallback: rebuild from local CSV (legacy)
+    if os.path.exists(DICT_COMPRESSED):
+        logger.info(f"[*] Fallback: rebuilding tahrirchi.db from {DICT_COMPRESSED}...")
+        return _rebuild_from_csv()
+
+    # Last fallback: create empty
+    logger.warning("[!] No source available for tahrirchi.db. Creating empty schema.")
+    create_empty_tahrirchi_db()
+    return True
+
+
+def _try_download_faiss_lexicon():
+    """Download pre-built FAISS lexicon index if missing (Phase 3)."""
+    index_path = os.path.join(DATA_DIR, "tahrirchi_lexicon.index")
+    ids_path = os.path.join(DATA_DIR, "tahrirchi_lexicon.ids")
+
+    if os.path.exists(index_path) and os.path.exists(ids_path):
+        logger.info("[+] FAISS lexicon already present. Skipping.")
+        return
+
+    if TAHRIRCHI_FAISS_INDEX_URL:
+        logger.info("[*] Attempting to download pre-built FAISS lexicon index...")
+        idx_ok = _download_file(TAHRIRCHI_FAISS_INDEX_URL, index_path, min_size_mb=10.0)
+        ids_ok = _download_file(TAHRIRCHI_FAISS_IDS_URL, ids_path, min_size_mb=1.0)
+        if idx_ok and ids_ok:
+            logger.info("[+] FAISS lexicon downloaded successfully.")
+        else:
+            logger.warning("[!] FAISS lexicon download failed — semantic search will be unavailable.")
+            # Clean up partial files
+            for p in [index_path, ids_path]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+
+def _rebuild_from_csv():
+    """Legacy: rebuild tahrirchi.db from compressed CSV."""
     
     logger.info(f"[*] Rebuilding tahrirchi.db from {DICT_COMPRESSED}...")
     start = time.time()
