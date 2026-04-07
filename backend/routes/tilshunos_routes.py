@@ -798,6 +798,55 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     return out
 
 
+@router.post("/synonyms-fast")
+async def synonyms_fast(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """
+    Hybrid synonyms: fasttext (fast) + BERT cluster (semantic) + DB.
+    Falls back gracefully if fasttext unavailable.
+    """
+    word = (payload.get("word") or "").strip()
+    if not word:
+        return {"synonyms": []}
+    out: List[Dict[str, Any]] = []
+    # 1. fasttext
+    try:
+        import fasttext_engine
+        for w, score in fasttext_engine.find_synonyms(word, top_k=15):
+            out.append({"word": w, "score": round(score, 3), "source": "fasttext"})
+    except Exception:
+        pass
+    # 2. BERT cluster (if word in classified words)
+    try:
+        import bert_engine
+        if bert_engine.engine.initialized and not out:
+            # Use mask to find candidates
+            ctx = f"{word} ва [MASK] бир хил маънода."
+            preds = bert_engine.engine.predict_mask(ctx, top_k=10, hunspell_filter=True)
+            for w in preds:
+                if w.lower() != word.lower():
+                    out.append({"word": w, "score": 0.7, "source": "bert"})
+    except Exception:
+        pass
+    # 3. Synonyms DB fallback
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        cur.execute("SELECT synonym FROM synonyms WHERE word = ? LIMIT 20", (word,))
+        for r in cur.fetchall():
+            out.append({"word": r[0], "score": 1.0, "source": "db"})
+        conn.close()
+    except Exception:
+        pass
+    # Dedupe
+    seen = set()
+    final = []
+    for s in out:
+        if s["word"].lower() not in seen:
+            seen.add(s["word"].lower())
+            final.append(s)
+    return {"synonyms": final[:20]}
+
+
 @router.post("/normalize-drug")
 async def normalize_drug_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """Find canonical INN/brand for a drug name (cross-script + fuzzy)."""
