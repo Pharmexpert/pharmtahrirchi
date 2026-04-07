@@ -24,6 +24,7 @@ import linguistic_routes
 from routes import auth_routes, upload_routes, sayqallash_routes, editor_routes, projects_routes
 from routes.websocket_routes import router as websocket_router
 from routes.morph_routes import router as morph_router
+from routes.grammar_routes import router as grammar_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -116,6 +117,7 @@ app.include_router(editor_routes.router)
 app.include_router(projects_routes.router)
 app.include_router(websocket_router)
 app.include_router(morph_router)
+app.include_router(grammar_router)
 
 
 if __name__ == "__main__":
