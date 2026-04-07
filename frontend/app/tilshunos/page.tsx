@@ -728,6 +728,24 @@ export default function TilshunosPage() {
                 <Wand2 size={13} /> AI Яхшилаш
               </button>
 
+              {/* Linguistic extract buttons */}
+              <button
+                onClick={async () => {
+                  if (!text.trim()) return
+                  try {
+                    const r = await api.tilshunos.extractLinguistic(text)
+                    setLinguistic({ annotated: r.annotated || [], disputed: r.disputed || [], abbreviations: r.abbreviations || [] })
+                    const total = (r.annotated?.length || 0) + (r.disputed?.length || 0) + (r.abbreviations?.length || 0)
+                    alert(`Топилди: ${r.annotated?.length || 0} изоҳли, ${r.disputed?.length || 0} мунозарали, ${r.abbreviations?.length || 0} қисқартма`)
+                  } catch (e: any) { alert('Хато: ' + (e?.message || e)) }
+                }}
+                disabled={!text.trim()}
+                title="Изоҳли/мунозарали/қисқартмалар сўзларни матнда топиш"
+                style={{ ...toolbarBtn, background: '#F5F3FF', color: '#7C3AED', borderColor: '#C4B5FD' }}
+              >
+                🔍 Лингвистик аниқлаш
+              </button>
+
               {result && (
                 <button onClick={() => { setResult(null); setClassified(null); setPopup(null) }}
                   style={{ ...toolbarBtn, marginLeft: 'auto', background: '#FEF3C7', color: '#92400E', borderColor: '#FCD34D' }}>
