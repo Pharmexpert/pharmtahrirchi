@@ -473,6 +473,41 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_uz ON medical_terms(term_uz)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_ru ON medical_terms(term_ru)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_en ON medical_terms(term_en)')
+
+    # Document version history (git-style diffs per row)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS document_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text_id TEXT,
+        sentence_no INTEGER,
+        lang TEXT,
+        version INTEGER DEFAULT 1,
+        content TEXT,
+        author_id TEXT,
+        author_name TEXT,
+        action TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_docver_textid ON document_versions(text_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_docver_sentence ON document_versions(text_id, sentence_no)')
+
+    # Per-paragraph progress (workflow tracking)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS paragraph_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text_id TEXT,
+        sentence_no INTEGER,
+        status TEXT DEFAULT 'pending',
+        reviewer_id TEXT,
+        reviewer_name TEXT,
+        notes TEXT,
+        ai_score REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(text_id, sentence_no)
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_para_textid ON paragraph_progress(text_id)')
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:
