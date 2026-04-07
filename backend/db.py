@@ -428,6 +428,51 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
     except Exception: pass
+
+    # ═══════════════════════════════════════════════
+    # Pharma DB: drugs (INN, brand, ATC, doses)
+    # ═══════════════════════════════════════════════
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS drugs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        inn TEXT,
+        brand_name TEXT,
+        atc_code TEXT,
+        form TEXT,
+        dose TEXT,
+        manufacturer TEXT,
+        country TEXT,
+        registration_number TEXT,
+        category TEXT,
+        description TEXT,
+        lang TEXT DEFAULT 'uz',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(inn, brand_name, dose, lang)
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_drugs_inn ON drugs(inn)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_drugs_brand ON drugs(brand_name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_drugs_atc ON drugs(atc_code)')
+
+    # Medical terms (multilingual: term + ru + en + uz_lat + uz_cyr + definition)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS medical_terms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        term_uz TEXT,
+        term_ru TEXT,
+        term_en TEXT,
+        definition TEXT,
+        category TEXT,
+        synonyms TEXT,
+        atc_code TEXT,
+        source TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(term_uz, term_ru, term_en)
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_uz ON medical_terms(term_uz)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_ru ON medical_terms(term_ru)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_medterm_en ON medical_terms(term_en)')
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:

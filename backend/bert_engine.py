@@ -159,7 +159,7 @@ class BertEngine:
             logger.warning(f"[BERT single query] {e}")
             return []
 
-    def predict_mask(self, text: str, top_k: int = 10, hunspell_filter: bool = False, lang: str = "uz", final_k: int = 5):
+    def predict_mask(self, text: str, top_k: int = 15, hunspell_filter: bool = True, lang: str = "uz", final_k: int = 5):
         """
         Ensemble prediction: Tahrirchi BERT + UzBERT.
 

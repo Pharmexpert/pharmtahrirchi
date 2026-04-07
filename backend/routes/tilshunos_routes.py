@@ -798,6 +798,44 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     return out
 
 
+@router.get("/training-log/export")
+async def export_training_log(kind: str = None, limit: int = 10000, current_user: Dict = Depends(get_current_user)):
+    """
+    Export collected AI corrections as JSONL for fine-tuning.
+    Filter by kind: 'llama_improve', 'llama_translate', 'mistral_improve', 'russian_correct', etc.
+    """
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS llm_training_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT, prompt TEXT, response TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        if kind:
+            cur.execute("SELECT * FROM llm_training_log WHERE kind = ? ORDER BY created_at DESC LIMIT ?", (kind, limit))
+        else:
+            cur.execute("SELECT * FROM llm_training_log ORDER BY created_at DESC LIMIT ?", (limit,))
+        rows = [dict(r) for r in cur.fetchall()]
+        # Also include sayqallash rules as ground-truth pairs
+        cur.execute("SELECT wrong_form, correct_form, error_type, lang, frequency FROM sayqallash_rules ORDER BY frequency DESC LIMIT ?", (limit,))
+        rules = [{"kind": "sayqallash", "wrong": r[0], "correct": r[1], "error_type": r[2], "lang": r[3], "freq": r[4]} for r in cur.fetchall()]
+        conn.close()
+        return {
+            "training_log": rows,
+            "training_log_count": len(rows),
+            "sayqallash_rules": rules,
+            "sayqallash_count": len(rules),
+            "total": len(rows) + len(rules),
+        }
+    except Exception as e:
+        logger.exception("training-log/export failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/extract-entities")
 async def extract_entities_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """Extract named entities (DRUG, DOSE, PERSON, LOC, ORG) from text."""
