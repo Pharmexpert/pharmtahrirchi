@@ -427,7 +427,8 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                     onProposedChange={v => update(idx, 'ru_proposed', v)}
                     onImprove={() => improveRow(idx, 'ru')} onWordClick={handleWordClick}
                     onBlockDrop={handleBlockDrop} token={token || undefined}
-                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1} />
+                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1}
+                    terms={terms} />
 
                   <LangCell v1={row.uz_v1} proposed={row.uz_proposed} rowIdx={idx} lang="uz"
                     isMarker={row.type === 'marker'} isImproving={improvingRow?.idx === idx && improvingRow?.lang === 'uz'}
@@ -435,7 +436,8 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                     onProposedChange={v => update(idx, 'uz_proposed', v)}
                     onImprove={() => improveRow(idx, 'uz')} onWordClick={handleWordClick}
                     onBlockDrop={handleBlockDrop} token={token || undefined}
-                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1} />
+                    contextEn={row.en} contextRu={row.ru_proposed || row.ru_v1} contextUz={row.uz_proposed || row.uz_v1}
+                    terms={terms} />
 
                   <td style={{ padding: '7px 7px', verticalAlign: 'top', borderLeft: '1px solid #e9edf2' }}>
                     <textarea value={row.notes || ''} onChange={e => update(idx, 'notes', e.target.value)}

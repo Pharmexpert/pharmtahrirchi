@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
 import api from '../../services/api'
+import TermHighlighter, { type Term } from './TermHighlighter'
 
-export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token, contextEn, contextRu, contextUz }: {
+export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token, contextEn, contextRu, contextUz, terms }: {
   v1: string; proposed: string; rowIdx: number; lang: 'ru' | 'uz'; isMarker: boolean
   isImproving: boolean
   onV1Change: (v: string) => void
@@ -12,6 +13,7 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
   onBlockDrop?: (fromRow: number, fromField: string, toRow: number, toField: string) => void
   token?: string
   contextEn?: string; contextRu?: string; contextUz?: string
+  terms?: Term[]
 }) {
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const [dragOverField, setDragOverField] = useState<string | null>(null)
@@ -297,6 +299,12 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
             onClick={e => onWordClick(e as any, rowIdx, lang)} placeholder="Tasdiqlangan matn..."
             style={{ width: '100%', minHeight: 50, fontSize: '0.8rem', border: 'none', padding: '2px 4px', resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.45, boxSizing: 'border-box', background: 'transparent' }}
           />
+          {/* Linguistic terms preview (annotated/disputed/abbreviation highlighting) */}
+          {terms && terms.length > 0 && (proposed || v1) && (
+            <div style={{ marginTop: 4, padding: '4px 6px', background: '#FAFBFF', border: '1px dashed #E5E7EB', borderRadius: 5, fontSize: '0.75rem', lineHeight: 1.55 }}>
+              <TermHighlighter text={proposed || v1 || ''} terms={terms} />
+            </div>
+          )}
         </div>
       </div>
     </td>
