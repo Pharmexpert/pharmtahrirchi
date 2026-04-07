@@ -536,14 +536,25 @@ export default function TilshunosPage() {
                 />
               ) : (
                 <div
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => {
+                    const newText = (e.currentTarget as HTMLDivElement).innerText
+                    // Update text silently — do NOT re-render the annotated children (would lose cursor + colors)
+                    setText(newText)
+                  }}
                   style={{
-                    width: '100%', padding: 14,
+                    width: '100%', padding: 14, minHeight: 200,
                     border: '1.5px solid var(--border)', borderRadius: 10,
                     fontSize: '0.95rem', fontFamily: 'inherit',
                     background: 'var(--bg-secondary)', lineHeight: 1.85,
-                    cursor: 'default',
+                    cursor: 'text',
                     overflow: 'auto',
+                    outline: 'none',
+                    whiteSpace: 'pre-wrap',
                   }}
+                  // key based on result reference: re-mount only when a new check arrives, so during typing children stay stable
+                  key={result ? `r-${(result as any).timestamp || ''}-${(result as any).total || 0}-${(result as any).score || 0}` : 'no-r'}
                 >
                   {renderAnnotated()}
                 </div>
