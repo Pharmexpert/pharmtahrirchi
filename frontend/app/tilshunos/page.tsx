@@ -1109,6 +1109,69 @@ export default function TilshunosPage() {
                   </button>
                 ))
               })()}
+              {/* Custom user input */}
+              <div style={{ marginTop: 8, padding: 8, background: '#FFF7ED', border: '1.5px dashed #FB923C', borderRadius: 6 }}>
+                <div style={{ fontSize: '0.62rem', color: '#9A3412', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>✎ Ўз вариантингиз</div>
+                <input
+                  id="custom-fix-input"
+                  type="text"
+                  placeholder={popup.issue.matched_text}
+                  defaultValue={popup.issue.matched_text}
+                  autoFocus
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const customValue = (e.target as HTMLInputElement).value.trim()
+                      if (customValue && customValue !== popup.issue.matched_text) {
+                        // Save to sayqallash DB via /confirm endpoint
+                        try {
+                          await api.tilshunos.confirm({
+                            wrong: popup.issue.matched_text,
+                            correct: customValue,
+                            context: text.substring(Math.max(0, popup.issue.from_index - 50), Math.min(text.length, popup.issue.to_index + 50)),
+                            category: popup.issue.error_type,
+                            lang: lang.startsWith('uz') ? 'uz' : lang,
+                          })
+                        } catch (_) {}
+                        applyFix(popup.issue, customValue)
+                      }
+                    }
+                  }}
+                  style={{
+                    width: '100%', padding: '6px 10px', borderRadius: 5,
+                    border: '1.5px solid #FB923C', fontSize: '0.78rem',
+                    fontFamily: 'inherit', outline: 'none', background: 'white',
+                  }}
+                />
+                <button
+                  onClick={async () => {
+                    const input = document.getElementById('custom-fix-input') as HTMLInputElement | null
+                    const customValue = input?.value.trim() || ''
+                    if (customValue && customValue !== popup.issue.matched_text) {
+                      try {
+                        await api.tilshunos.confirm({
+                          wrong: popup.issue.matched_text,
+                          correct: customValue,
+                          context: text.substring(Math.max(0, popup.issue.from_index - 50), Math.min(text.length, popup.issue.to_index + 50)),
+                          category: popup.issue.error_type,
+                          lang: lang.startsWith('uz') ? 'uz' : lang,
+                        })
+                      } catch (_) {}
+                      applyFix(popup.issue, customValue)
+                    }
+                  }}
+                  style={{
+                    marginTop: 4, width: '100%', padding: '5px 10px',
+                    background: 'linear-gradient(135deg,#F97316,#EA580C)',
+                    color: 'white', border: 'none', borderRadius: 5,
+                    fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  ✓ Қабул қилиш ва базага сақлаш
+                </button>
+                <div style={{ marginTop: 4, fontSize: '0.6rem', color: '#9A3412' }}>
+                  💾 Қайта таҳлилда автоматик ишлатилади
+                </div>
+              </div>
             </div>
           </div>
         </>
