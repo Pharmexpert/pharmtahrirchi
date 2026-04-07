@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play } from 'lucide-react'
+import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 
@@ -440,6 +440,32 @@ export default function TilshunosPage() {
               </select>
 
               <button onClick={handlePaste} style={toolbarBtn}><ClipboardPaste size={13} /> Жойлаш</button>
+
+              <label style={{ ...toolbarBtn, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Upload size={13} /> Файлдан юклаш
+                <input
+                  type="file"
+                  accept=".txt,.md,.csv,text/plain"
+                  style={{ display: 'none' }}
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    const txt = await f.text()
+                    setText(txt)
+                    setResult(null)
+                    setClassified(null)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+
+              <button
+                onClick={() => { setText(''); setResult(null); setClassified(null); setPopup(null) }}
+                disabled={!text}
+                style={{ ...toolbarBtn, background: '#FEF2F2', color: '#DC2626', borderColor: '#FCA5A5', opacity: text ? 1 : 0.5 }}
+              >
+                <Trash2 size={13} /> Тозалаш
+              </button>
 
               {lang.startsWith('uz') && (
                 <>
