@@ -154,6 +154,10 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
     # Track which word spans already have issues to avoid duplicates
     seen_spans = set()  # (from_index, to_index)
 
+    # Uzbek-aware tokenizer: include straight apostrophe (') curly (\u2019)
+    # and ʻ (\u02bb) and ʼ (\u02bc) as part of words so "o'quvchilaga" stays whole.
+    UZ_WORD_RE = r"[\w'\u2019\u02bb\u02bc\u2018]+"
+
     # ───── 1. Per-word Hunspell spell check (Uzbek) ─────
     if lang == "uz":
         try:
@@ -161,8 +165,10 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
             # Detect script by checking any cyrillic character
             is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text)
 
-            for match in re.finditer(r"\w+", text, re.UNICODE):
+            for match in re.finditer(UZ_WORD_RE, text, re.UNICODE):
                 word = match.group()
+                # Strip surrounding apostrophes (not part of word) but keep inner ones
+                word = word.strip("'\u2019\u02bb\u02bc\u2018")
                 if len(word) < 2:
                     continue
                 # Skip digits / mixed
@@ -170,11 +176,34 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
                     continue
 
                 try:
-                    ok = spellcheck.is_correct(word, is_cyrillic=is_cyr)
+                    # Uzbek Hunspell dict uses ʻ (\u02bb modifier letter). Users often
+                    # type ' (straight) or ' (\u2019 curly). Try ALL apostrophe variants.
+                    variants = [word]
+                    normalized_straight = word.replace("\u2019", "'").replace("\u02bb", "'").replace("\u02bc", "'").replace("\u2018", "'")
+                    normalized_hunspell = word.replace("'", "\u02bb").replace("\u2019", "\u02bb").replace("\u02bc", "\u02bb").replace("\u2018", "\u02bb")
+                    if normalized_straight != word:
+                        variants.append(normalized_straight)
+                    if normalized_hunspell != word:
+                        variants.append(normalized_hunspell)
+
+                    ok = any(spellcheck.is_correct(v, is_cyrillic=is_cyr) for v in variants)
                     if ok:
                         continue
 
-                    suggestions = spellcheck.suggest(word, is_cyrillic=is_cyr, max_suggestions=5)
+                    # Try suggestions from all variants
+                    suggestions = []
+                    for v in variants:
+                        s = spellcheck.suggest(v, is_cyrillic=is_cyr, max_suggestions=5)
+                        suggestions.extend(s)
+                    # Dedupe while preserving order, convert all to straight apostrophe for UX
+                    seen = set()
+                    clean_suggestions = []
+                    for s in suggestions:
+                        s_clean = s.replace("\u02bb", "'").replace("\u2019", "'").replace("\u02bc", "'").replace("\u2018", "'")
+                        if s_clean not in seen and s_clean != normalized_straight:
+                            seen.add(s_clean)
+                            clean_suggestions.append(s_clean)
+                    suggestions = clean_suggestions[:5]
                     if not suggestions:
                         continue
 
@@ -332,6 +361,88 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
         "score": round(score, 3),
         "word_count": word_count,
     }
+
+
+@router.post("/classify")
+async def classify_words(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """
+    Classify every word in text by its source category.
+
+    Returns spans with one of:
+      - "unknown"    → not in any dict (red error)
+      - "annotated"  → in annotated_words table (teal #0891B2)
+      - "disputed"   → in disputed_words table (orange #F97316)
+      - "abbreviation" → in abbreviations table (indigo #6366F1)
+      - "known"      → in Hunspell dict (dark blue #1E40AF)
+    """
+    text = payload.get("text", "")
+    lang = payload.get("lang", "uz")
+
+    if not text:
+        return {"spans": [], "counts": {}}
+
+    # Load all "known-in-platform" word sets once
+    annotated_set = set()
+    disputed_set = set()
+    abbr_set = set()
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        for table, target in (("annotated_words", annotated_set),
+                              ("disputed_words", disputed_set),
+                              ("abbreviations", abbr_set)):
+            try:
+                cur.execute(f"SELECT * FROM {table}")
+                cols = [d[0] for d in cur.description]
+                for row in cur.fetchall():
+                    row_dict = dict(zip(cols, row))
+                    for key in ("uz", "ru", "en", "word", "short_form", "abbreviation"):
+                        val = row_dict.get(key)
+                        if val and isinstance(val, str):
+                            target.add(val.strip().lower())
+            except Exception:
+                pass
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[classify] db load failed: {e}")
+
+    # Tokenize
+    UZ_WORD_RE = r"[\w'\u2019\u02bb\u02bc\u2018]+"
+    import spellcheck
+
+    is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text)
+    spans = []
+    counts = {"known": 0, "annotated": 0, "disputed": 0, "abbreviation": 0, "unknown": 0}
+
+    for match in re.finditer(UZ_WORD_RE, text, re.UNICODE):
+        word_raw = match.group()
+        word = word_raw.strip("'\u2019\u02bb\u02bc\u2018")
+        if len(word) < 2:
+            continue
+        if any(ch.isdigit() for ch in word):
+            continue
+        wl = word.lower()
+        category = "unknown"
+        if wl in annotated_set:
+            category = "annotated"
+        elif wl in disputed_set:
+            category = "disputed"
+        elif wl in abbr_set:
+            category = "abbreviation"
+        else:
+            # Check Hunspell
+            variants = [word, word.replace("'", "\u02bb"), word.replace("\u2019", "\u02bb")]
+            if any(spellcheck.is_correct(v, is_cyrillic=is_cyr) for v in variants):
+                category = "known"
+        spans.append({
+            "from": match.start(),
+            "to": match.end(),
+            "word": word_raw,
+            "category": category,
+        })
+        counts[category] = counts.get(category, 0) + 1
+
+    return {"spans": spans, "counts": counts}
 
 
 @router.post("/improve")
