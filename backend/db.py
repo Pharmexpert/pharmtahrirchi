@@ -35,6 +35,10 @@ DATA_DIR = "/app/data" if IS_RAILWAY else BACKEND_DIR
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "pharma_editor.db"))
 TAHRIRCHI_DB_PATH = os.getenv("TAHRIRCHI_DB_PATH", os.path.join(DATA_DIR, "tahrirchi.db"))
 
+# Phase 3: FAISS lexicon index over tahrirchi 8.7M words
+TAHRIRCHI_FAISS_INDEX_PATH = os.getenv("TAHRIRCHI_FAISS_INDEX", os.path.join(DATA_DIR, "tahrirchi_lexicon.index"))
+TAHRIRCHI_FAISS_IDS_PATH = os.getenv("TAHRIRCHI_FAISS_IDS", os.path.join(DATA_DIR, "tahrirchi_lexicon.ids"))
+
 class FaissIndexManager:
     def __init__(self, dimension=768):
         self.dimension = dimension

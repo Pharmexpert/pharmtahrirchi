@@ -1,12 +1,31 @@
 import threading
 import time
 import os
-import torch
-from transformers import pipeline, AutoTokenizer, AutoModelForMaskedLM
 import logging
 
 # Configure logging
 logger = logging.getLogger("bert_engine")
+
+# ═══════════════════════════════════════════════════
+# PHASE 1: Persistent HuggingFace cache on Railway volume
+# Before importing torch/transformers — otherwise cache env is ignored
+# ═══════════════════════════════════════════════════
+_IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
+if _IS_RAILWAY:
+    _HF_CACHE = "/app/data/hf_cache"
+    os.makedirs(_HF_CACHE, exist_ok=True)
+    os.environ.setdefault("HF_HOME", _HF_CACHE)
+    os.environ.setdefault("TRANSFORMERS_CACHE", _HF_CACHE)
+    os.environ.setdefault("HF_HUB_CACHE", _HF_CACHE)
+    logger.info(f"[BERT] Using persistent HF cache at {_HF_CACHE}")
+
+# HF_TOKEN for higher rate limits (optional)
+if os.getenv("HF_TOKEN"):
+    os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", os.getenv("HF_TOKEN"))
+    logger.info("[BERT] HF_TOKEN detected — using authenticated requests")
+
+import torch
+from transformers import pipeline, AutoTokenizer, AutoModelForMaskedLM
 
 # Uzbek BERT model — uses env var, falls back to HuggingFace auto-download
 _default_local = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tahrirchi-bert-base")
