@@ -1982,3 +1982,235 @@ def update_source_lang(text_id: str, lang: str):
     cursor.execute("UPDATE projects SET source_lang = ? WHERE id = ?", (lang, text_id))
     conn.commit()
     conn.close()
+
+
+# ═══════════════════════════════════════════════════
+# Phase 5: Self-Learning Loop
+# learn_from_correction() — the heart of the self-improving system
+# ═══════════════════════════════════════════════════
+
+def learn_from_correction(
+    wrong: str,
+    correct: str,
+    user_id: str = "",
+    user_name: str = "",
+    context: str = "",
+    error_type: str = "S/Spelling",
+    lang: str = "uz",
+    source: str = "learned",
+) -> Dict[str, Any]:
+    """
+    Learn from user-accepted correction.
+
+    This single function drives the self-improving behaviour:
+      1. Insert or update rule in sayqallash_rules (with frequency++)
+      2. Compute BERT embedding (background-friendly)
+      3. Add to FAISS rule index
+      4. Add "correct" form to tahrirchi.db dictionary if missing
+      5. Log activity for analytics
+
+    Returns a dict with the outcome of each step.
+    """
+    wrong = (wrong or "").strip()
+    correct = (correct or "").strip()
+    if not wrong or not correct or wrong.lower() == correct.lower():
+        return {"success": False, "reason": "empty or identical inputs"}
+
+    result = {
+        "success": True,
+        "rule_id": None,
+        "rule_action": None,     # 'inserted' | 'updated'
+        "bert_indexed": False,
+        "faiss_added": False,
+        "lexicon_added": False,
+        "activity_logged": False,
+    }
+
+    conn = connect_db()
+    try:
+        cursor = conn.cursor()
+
+        # ───────────── Step 1: Upsert rule ─────────────
+        cursor.execute(
+            """
+            SELECT id, frequency FROM sayqallash_rules
+            WHERE wrong_form = ? AND correct_form = ? AND lang = ?
+            LIMIT 1
+            """,
+            (wrong, correct, lang),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            rule_id, freq = existing[0], existing[1] or 0
+            cursor.execute(
+                """
+                UPDATE sayqallash_rules
+                SET frequency = ?, modified_by = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (freq + 1, user_name or user_id, rule_id),
+            )
+            result["rule_id"] = rule_id
+            result["rule_action"] = "updated"
+        else:
+            cursor.execute(
+                """
+                INSERT INTO sayqallash_rules
+                  (wrong_form, correct_form, error_type, context, lang, source, frequency, modified_by)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (wrong, correct, error_type, (context or "")[:500], lang, source, user_name or user_id),
+            )
+            rule_id = cursor.lastrowid
+            result["rule_id"] = rule_id
+            result["rule_action"] = "inserted"
+        conn.commit()
+
+        # ───────────── Step 2: BERT embedding ─────────────
+        try:
+            import bert_engine
+            if bert_engine.engine.initialized:
+                emb = bert_engine.engine.get_embedding(wrong.lower(), as_numpy=True)
+                if emb is not None:
+                    emb_bytes = pickle.dumps(emb)
+                    cursor.execute(
+                        "UPDATE sayqallash_rules SET vector = ? WHERE id = ?",
+                        (emb_bytes, rule_id),
+                    )
+                    conn.commit()
+                    result["bert_indexed"] = True
+
+                    # ───────────── Step 3: FAISS index ─────────────
+                    try:
+                        faiss_manager.add_rule(rule_id, emb_bytes)
+                        result["faiss_added"] = True
+                    except Exception as e:
+                        logger.warning(f"[LEARN] FAISS add failed: {e}")
+        except Exception as e:
+            logger.warning(f"[LEARN] BERT embedding failed: {e}")
+
+        # ───────────── Step 4: Add to tahrirchi dictionary ─────────────
+        try:
+            if lang == "uz" and os.path.exists(TAHRIRCHI_DB_PATH):
+                dict_conn = sqlite3.connect(TAHRIRCHI_DB_PATH)
+                dict_cur = dict_conn.cursor()
+                dict_cur.execute(
+                    "SELECT id FROM dictionary WHERE word = ? LIMIT 1",
+                    (correct.lower(),),
+                )
+                if not dict_cur.fetchone():
+                    dict_cur.execute(
+                        """
+                        INSERT OR IGNORE INTO dictionary (word, frequency, source, is_confirmed)
+                        VALUES (?, 1, 'pharma_learned', 1)
+                        """,
+                        (correct.lower(),),
+                    )
+                    dict_conn.commit()
+                    result["lexicon_added"] = True
+                dict_conn.close()
+        except Exception as e:
+            logger.warning(f"[LEARN] Lexicon add failed: {e}")
+
+        # ───────────── Step 5: Activity log ─────────────
+        try:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS learning_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    user_name TEXT,
+                    wrong_form TEXT,
+                    correct_form TEXT,
+                    error_type TEXT,
+                    lang TEXT,
+                    source TEXT,
+                    context TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            cursor.execute(
+                """
+                INSERT INTO learning_log
+                  (user_id, user_name, wrong_form, correct_form, error_type, lang, source, context)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, user_name, wrong, correct, error_type, lang, source, (context or "")[:500]),
+            )
+            conn.commit()
+            result["activity_logged"] = True
+        except Exception as e:
+            logger.warning(f"[LEARN] Activity log failed: {e}")
+
+        logger.info(
+            f"[LEARN] {result['rule_action']} rule #{rule_id}: "
+            f"'{wrong}' → '{correct}' (user={user_name or user_id})"
+        )
+    except Exception as e:
+        logger.error(f"[LEARN] Fatal error: {e}")
+        result["success"] = False
+        result["error"] = str(e)
+    finally:
+        conn.close()
+
+    return result
+
+
+def get_learning_stats(since_days: int = 7) -> Dict[str, Any]:
+    """Return counts of learning actions within the last N days."""
+    conn = connect_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT, user_name TEXT,
+                wrong_form TEXT, correct_form TEXT,
+                error_type TEXT, lang TEXT, source TEXT, context TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        cursor.execute(
+            f"SELECT COUNT(*) FROM learning_log WHERE created_at > datetime('now', '-{int(since_days)} days')"
+        )
+        total_recent = cursor.fetchone()[0]
+
+        cursor.execute(
+            f"""
+            SELECT error_type, COUNT(*) as cnt FROM learning_log
+            WHERE created_at > datetime('now', '-{int(since_days)} days')
+            GROUP BY error_type ORDER BY cnt DESC
+            """
+        )
+        by_type = {row[0]: row[1] for row in cursor.fetchall()}
+
+        cursor.execute(
+            f"""
+            SELECT user_name, COUNT(*) as cnt FROM learning_log
+            WHERE created_at > datetime('now', '-{int(since_days)} days')
+            GROUP BY user_name ORDER BY cnt DESC LIMIT 10
+            """
+        )
+        top_users = [{"user": row[0] or "unknown", "count": row[1]} for row in cursor.fetchall()]
+
+        cursor.execute("SELECT COUNT(*) FROM sayqallash_rules WHERE source = 'learned'")
+        total_learned_rules = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM sayqallash_rules")
+        total_rules = cursor.fetchone()[0]
+
+        return {
+            "since_days": since_days,
+            "total_recent_actions": total_recent,
+            "by_error_type": by_type,
+            "top_users": top_users,
+            "total_learned_rules": total_learned_rules,
+            "total_rules": total_rules,
+            "learning_ratio": (total_learned_rules / total_rules * 100) if total_rules else 0.0,
+        }
+    finally:
+        conn.close()
