@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Brain, Send, Paperclip, Image as ImageIcon, Mic, Wand2, Languages, MessageSquare, Loader2, X, Bot, User as UserIcon, FileText, Sparkles } from 'lucide-react'
+import { Brain, Send, Paperclip, Image as ImageIcon, Mic, Wand2, Languages, MessageSquare, Loader2, X, Bot, User as UserIcon, FileText, Sparkles, Pill, BarChart3, CheckCircle2 } from 'lucide-react'
 import api from '../../services/api'
 import { useAuth } from '../../components/LoginGuard'
 
@@ -136,6 +136,48 @@ export default function AssistantPage() {
       e.preventDefault()
       sendMessage()
     }
+  }
+
+  const handleNormalizeDrug = async () => {
+    const word = input.trim() || prompt('Дори номини киритинг:') || ''
+    if (!word) return
+    setLoading(true)
+    try {
+      const r = await api.tilshunos.decomposeTerm(word)
+      const m = await fetch(`${api.API_BASE}/api/tilshunos/normalize-drug`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: word }) })
+      const norm = m.ok ? await m.json() : null
+      let response = `**💊 Дори таҳлили: "${word}"**\n\n`
+      if (norm?.best) {
+        response += `**Канон INN:** ${norm.best.inn}\n**Бренд:** ${norm.best.brand_name || '—'}\n**ATC код:** ${norm.best.atc_code || '—'}\n**Шакл:** ${norm.best.form || '—'}\n**Доза:** ${norm.best.dose || '—'}\n\n`
+      } else {
+        response += `_Базада топилмади_\n\n`
+      }
+      if (r.found) {
+        response += `**🧬 Морфема таҳлили:**\n`
+        if (r.prefix) response += `- Префикс: \`${r.prefix}\` — ${r.prefix_meaning}\n`
+        if (r.root) response += `- Ўзак: \`${r.root}\`\n`
+        if (r.suffix) response += `- Суффикс: \`${r.suffix}\` — ${r.suffix_meaning}\n`
+      }
+      setMessages(prev => [...prev, { role: 'user', content: word, ts: Date.now() }, { role: 'assistant', content: response, engine: 'drug_analyzer', ts: Date.now() }])
+      setInput('')
+    } catch (e: any) {
+      alert('Хато: ' + (e?.message || e))
+    } finally { setLoading(false) }
+  }
+
+  const handleGrammarScore = async () => {
+    const text = input.trim()
+    if (!text) return alert('Матн ёзинг')
+    setLoading(true)
+    try {
+      const r = await api.tilshunos.grammarScore(text)
+      const score = Math.round((r.score || 0) * 100)
+      const emoji = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴'
+      setMessages(prev => [...prev, { role: 'user', content: text, ts: Date.now() }, { role: 'assistant', content: `**${emoji} Грамматика баҳоси: ${score}/100**\n\nBERT pseudo-perplexity скори асосида.\n${score >= 80 ? 'Гап табиий ва грамматик жиҳатдан тўғри.' : score >= 50 ? 'Гап ўртача — тузатишлар қилиш мумкин.' : 'Гап мураккаб ёки грамматик хатолар бор.'}`, engine: 'bert_perplexity', ts: Date.now() }])
+      setInput('')
+    } catch (e: any) {
+      alert('Хато: ' + (e?.message || e))
+    } finally { setLoading(false) }
   }
 
   return (
@@ -301,6 +343,12 @@ export default function AssistantPage() {
         </button>
         <button onClick={() => audioInputRef.current?.click()} title="Аудио (mp3/wav/m4a, макс 50 МБ)" style={{ padding: 10, background: 'transparent', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
           <Mic size={20} />
+        </button>
+        <button onClick={handleNormalizeDrug} title="Дори INN/ATC + морфема таҳлили" style={{ padding: 10, background: 'transparent', border: 'none', cursor: 'pointer', color: '#7C3AED' }}>
+          <Pill size={20} />
+        </button>
+        <button onClick={handleGrammarScore} title="BERT грамматика баҳоси" style={{ padding: 10, background: 'transparent', border: 'none', cursor: 'pointer', color: '#16A34A' }}>
+          <CheckCircle2 size={20} />
         </button>
 
         <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.pdf,.docx" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); e.target.value = '' }} />
