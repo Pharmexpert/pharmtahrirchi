@@ -45,6 +45,30 @@ async def health_check():
     """Lightweight healthcheck for Railway."""
     return {"status": "ok"}
 
+
+@app.get("/api/ai-engines")
+async def public_ai_engines():
+    """Public read-only AI engines status (no auth)."""
+    out = {"engines": {}}
+    try:
+        import bert_engine
+        out["engines"]["bert"] = {"available": bool(bert_engine.engine.initialized)}
+    except Exception:
+        out["engines"]["bert"] = {"available": False}
+    for name, mod in [("mistral", "mistral_engine"), ("russian", "russian_engine"), ("nllb", "translator_engine")]:
+        try:
+            m = __import__(mod)
+            out["engines"][name] = {
+                "available": m.is_available(),
+                "mode": m.get_mode(),
+                "model": getattr(m, "MODEL_ID", "unknown"),
+            }
+        except Exception as e:
+            out["engines"][name] = {"available": False, "error": str(e)[:100]}
+    out["engines"]["gemini"] = {"available": bool(os.environ.get("GOOGLE_API_KEY"))}
+    out["engines"]["anthropic"] = {"available": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+    return out
+
 # ═══════════════════════════════════════════════════
 # Middleware: CORS & Security Headers
 # ═══════════════════════════════════════════════════
