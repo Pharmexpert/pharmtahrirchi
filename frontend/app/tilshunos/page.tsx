@@ -178,39 +178,31 @@ export default function TilshunosPage() {
   const applyFix = async (issue: LinguisticIssue, suggestion: string) => {
     const newText = text.substring(0, issue.from_index) + suggestion + text.substring(issue.to_index)
     setText(newText)
-    setResult(null)   // clear stale indices immediately
-    setClassified(null)
     setPopup(null)
+    // NOTE: do NOT clear result/classified — keep colored view stable while re-check runs
 
-    // Self-learning
+    const backendLang = lang.startsWith('uz') ? 'uz' : lang
+
+    // Self-learning (fire-and-forget, doesn't block UI)
+    api.tilshunos.confirm({
+      wrong: issue.matched_text,
+      correct: suggestion,
+      context: text.substring(Math.max(0, issue.from_index - 50), Math.min(text.length, issue.to_index + 50)),
+      category: issue.error_type,
+      lang: backendLang,
+    }).catch(() => {})
+
+    // Re-run check + classify in parallel, atomically swap when both done — no flicker
     try {
-      await api.tilshunos.confirm({
-        wrong: issue.matched_text,
-        correct: suggestion,
-        context: text.substring(Math.max(0, issue.from_index - 50), Math.min(text.length, issue.to_index + 50)),
-        category: issue.error_type,
-        lang: lang.startsWith('uz') ? 'uz' : lang,
-      })
+      const [checkRes, classifyRes] = await Promise.all([
+        api.tilshunos.check(newText, backendLang),
+        backendLang === 'uz'
+          ? api.tilshunos.classify(newText, 'uz')
+          : Promise.resolve({ spans: [], counts: {} } as any),
+      ])
+      setResult(checkRes)
+      setClassified(classifyRes.spans || [])
     } catch (_) {}
-
-    // Re-run check with fresh text after brief delay (so state updates)
-    setTimeout(() => {
-      // Use functional form to get latest text
-      setText(current => {
-        if (current === newText) {
-          // trigger check with new text
-          api.tilshunos.check(newText, lang.startsWith('uz') ? 'uz' : lang)
-            .then(r => setResult(r))
-            .catch(() => {})
-          if (lang.startsWith('uz')) {
-            api.tilshunos.classify(newText, 'uz')
-              .then(r => setClassified(r.spans || []))
-              .catch(() => {})
-          }
-        }
-        return current
-      })
-    }, 150)
   }
 
   // Render annotated text as HTML — words colored by classification + errors underlined
