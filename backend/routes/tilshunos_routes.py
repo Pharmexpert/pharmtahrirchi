@@ -612,20 +612,40 @@ async def confirm_correction(payload: Dict[str, Any], current_user: Dict = Depen
 
 @router.post("/translate")
 async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """AI-translate text. Prefers Mistral-7B-Instruct-Uz for Uzbek, falls back to Gemini/Claude."""
+    """AI-translate text. Routing:
+       - en/uz pair  → Mistral (best for Uzbek)
+       - any pair with Russian → NLLB-200 (best for ru ↔ {en,uz})
+       - fallback → Mistral or Gemini/Claude
+    """
     text = (payload.get("text") or "").strip()
     src = payload.get("source_lang", "en")
     tgt = payload.get("target_lang", "uz")
     if not text:
         return {"translated": ""}
+
+    base_src = "ru" if src == "ru" else ("uz" if src.startswith("uz") else "en")
+    base_tgt = "ru" if tgt == "ru" else ("uz" if tgt.startswith("uz") else "en")
+    needs_russian = "ru" in (base_src, base_tgt)
+
     try:
-        # Use Mistral if available (best Uzbek)
+        # 1. NLLB-200 — for any pair involving Russian
+        if needs_russian:
+            try:
+                import translator_engine
+                if translator_engine.is_available() and translator_engine.supports(src, tgt):
+                    tr = await translator_engine.translate_async(text, src, tgt)
+                    if tr and len(tr.strip()) > 1:
+                        return {"translated": tr.strip(), "engine": "nllb_" + translator_engine.get_mode()}
+            except Exception as e:
+                logger.warning(f"[translate] NLLB failed: {e}")
+
+        # 2. Mistral — best for Uzbek (no Russian) and other pairs
         try:
             import mistral_engine
             if mistral_engine.is_available():
                 tr = await mistral_engine.translate(text, src, tgt)
                 if tr and len(tr.strip()) > 1:
-                    return {"translated": tr.strip(), "engine": mistral_engine.get_mode()}
+                    return {"translated": tr.strip(), "engine": "mistral_" + mistral_engine.get_mode()}
         except Exception as e:
             logger.warning(f"[translate] Mistral path failed: {e}")
         # Cloud fallback
@@ -641,16 +661,31 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
 
 @router.post("/ai-improve")
 async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """AI scientific edit (Mistral-7B-Instruct-Uz). Uzbek text → grammatically/stylistically polished."""
+    """AI scientific edit. Routing by lang:
+       - ru → sage-fredt5-large (Russian-specific corrector)
+       - uz → Mistral-7B-Instruct-Uz
+       - en/other → Mistral / cloud
+    """
     text = (payload.get("text") or "").strip()
     lang = payload.get("lang", "uz")
     if not text:
         return {"improved": ""}
     try:
+        # Russian → use specialized Russian corrector
+        if lang == "ru" or lang.startswith("ru"):
+            try:
+                import russian_engine
+                if russian_engine.is_available():
+                    improved = await russian_engine.improve(text)
+                    if improved and improved != text:
+                        return {"improved": improved, "engine": "russian_" + russian_engine.get_mode()}
+            except Exception as e:
+                logger.warning(f"[ai-improve] Russian engine failed: {e}")
+
         import mistral_engine
         if mistral_engine.is_available():
             improved = await mistral_engine.improve_text(text, lang)
-            return {"improved": improved or text, "engine": mistral_engine.get_mode()}
+            return {"improved": improved or text, "engine": "mistral_" + mistral_engine.get_mode()}
         from routes.editor_routes import generate_ai_content
         prompt = (
             "Сен профессионал ўзбек илмий муҳаррирсан. Берилган матнни имло, грамматика, синтаксис, "
@@ -702,7 +737,14 @@ async def translation_quality(payload: Dict[str, Any], current_user: Dict = Depe
 @router.get("/ai-status")
 async def ai_status(current_user: Dict = Depends(get_current_user)):
     """Report which AI engines are available."""
-    out = {"bert": False, "mistral": {"available": False, "mode": "unavailable"}, "gemini": False, "anthropic": False}
+    out = {
+        "bert": False,
+        "mistral": {"available": False, "mode": "unavailable"},
+        "russian": {"available": False, "mode": "unavailable"},
+        "nllb": {"available": False, "mode": "unavailable"},
+        "gemini": False,
+        "anthropic": False,
+    }
     try:
         import bert_engine
         out["bert"] = bool(bert_engine.engine.initialized)
@@ -711,6 +753,16 @@ async def ai_status(current_user: Dict = Depends(get_current_user)):
     try:
         import mistral_engine
         out["mistral"] = {"available": mistral_engine.is_available(), "mode": mistral_engine.get_mode(), "model": mistral_engine.MODEL_ID}
+    except Exception:
+        pass
+    try:
+        import russian_engine
+        out["russian"] = {"available": russian_engine.is_available(), "mode": russian_engine.get_mode(), "model": russian_engine.MODEL_ID}
+    except Exception:
+        pass
+    try:
+        import translator_engine
+        out["nllb"] = {"available": translator_engine.is_available(), "mode": translator_engine.get_mode(), "model": translator_engine.MODEL_ID}
     except Exception:
         pass
     out["gemini"] = bool(os.environ.get("GOOGLE_API_KEY"))
