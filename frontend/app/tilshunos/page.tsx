@@ -117,6 +117,7 @@ export default function TilshunosPage() {
   const [showEntities, setShowEntities] = useState(true)
   const [linguistic, setLinguistic] = useState<{ annotated: any[]; disputed: any[]; abbreviations: any[] }>({ annotated: [], disputed: [], abbreviations: [] })
   const [linguisticPopup, setLinguisticPopup] = useState<{ data: any; type: string; x: number; y: number } | null>(null)
+  const [morphPopup, setMorphPopup] = useState<{ word: string; data: any; x: number; y: number } | null>(null)
 
   useEffect(() => {
     api.tilshunos.rulesStats().then(setStats).catch(() => {})
@@ -456,6 +457,7 @@ export default function TilshunosPage() {
         }
         const color = ENTITY_COLORS[s.entityType] || ENTITY_COLORS.MISC
         const isLinguistic = s.entityType.startsWith('LING_')
+        const isDrug = s.entityType === 'DRUG'
         const linguisticData = (s as any).linguisticData
         const linguisticType = (s as any).linguisticType
         const labelMap: Record<string, string> = {
@@ -465,12 +467,19 @@ export default function TilshunosPage() {
         }
         parts.push(
           <span key={`ent${i}`}
-            title={isLinguistic ? `${labelMap[s.entityType]}: ${content}` : `${s.entityType}: ${content}`}
-            onClick={(e) => {
+            title={isLinguistic ? `${labelMap[s.entityType]}: ${content}` : isDrug ? `DRUG: ${content} (босинг — морфема таҳлили)` : `${s.entityType}: ${content}`}
+            onClick={async (e) => {
               if (isLinguistic && linguisticData) {
                 e.stopPropagation()
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                 setLinguisticPopup({ data: linguisticData, type: linguisticType, x: rect.left, y: rect.bottom + 6 })
+              } else if (isDrug) {
+                e.stopPropagation()
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                try {
+                  const morph = await api.tilshunos.decomposeTerm(content)
+                  setMorphPopup({ word: content, data: morph, x: rect.left, y: rect.bottom + 6 })
+                } catch (_) {}
               }
             }}
             style={{
@@ -481,7 +490,7 @@ export default function TilshunosPage() {
               borderRadius: 4,
               border: `1px solid ${color}66`,
               fontSize: '0.94em',
-              cursor: isLinguistic ? 'pointer' : 'default',
+              cursor: (isLinguistic || isDrug) ? 'pointer' : 'default',
             }}
           >{content}<sub style={{ fontSize: '0.55em', marginLeft: 2, opacity: 0.7 }}>{isLinguistic ? labelMap[s.entityType].toUpperCase() : s.entityType}</sub></span>
         )
@@ -1080,6 +1089,53 @@ export default function TilshunosPage() {
                     color: '#6B21A8', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer',
                   }}>{opt}</button>
               ))
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Morphology popup for DRUG entities (Greek/Latin decomposition) */}
+      {morphPopup && (
+        <>
+          <div onClick={() => setMorphPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
+          <div style={{
+            position: 'fixed',
+            left: Math.min(morphPopup.x, window.innerWidth - 380),
+            top: Math.min(morphPopup.y, window.innerHeight - 250),
+            background: 'white', border: '2px solid #7C3AED', borderRadius: 12,
+            boxShadow: '0 12px 48px rgba(0,0,0,0.25)', zIndex: 100, minWidth: 320, maxWidth: 400, padding: 16,
+          }}>
+            <div style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 6, background: '#7C3AED', color: 'white', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 }}>
+              💊 Морфема таҳлили
+            </div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#5B21B6', marginBottom: 10 }}>{morphPopup.word}</div>
+            {morphPopup.data?.found ? (
+              <div style={{ fontSize: '0.82rem', lineHeight: 1.7 }}>
+                {morphPopup.data.prefix && (
+                  <div style={{ marginBottom: 6 }}>
+                    <strong style={{ color: '#7C3AED' }}>Префикс:</strong> <code style={{ background: '#F3E8FF', padding: '1px 6px', borderRadius: 3 }}>{morphPopup.data.prefix}</code>
+                    <div style={{ fontSize: '0.75rem', color: '#6B7280', marginLeft: 4 }}>{morphPopup.data.prefix_meaning}</div>
+                  </div>
+                )}
+                {morphPopup.data.root && (
+                  <div style={{ marginBottom: 6 }}>
+                    <strong style={{ color: '#16A34A' }}>Ўзак:</strong> <code style={{ background: '#DCFCE7', padding: '1px 6px', borderRadius: 3 }}>{morphPopup.data.root}</code>
+                  </div>
+                )}
+                {morphPopup.data.suffix && (
+                  <div style={{ marginBottom: 6 }}>
+                    <strong style={{ color: '#0891B2' }}>Суффикс:</strong> <code style={{ background: '#CFFAFE', padding: '1px 6px', borderRadius: 3 }}>{morphPopup.data.suffix}</code>
+                    <div style={{ fontSize: '0.75rem', color: '#6B7280', marginLeft: 4 }}>{morphPopup.data.suffix_meaning}</div>
+                  </div>
+                )}
+                {morphPopup.data.meaning && (
+                  <div style={{ marginTop: 10, padding: 8, background: '#F9FAFB', borderRadius: 6, fontSize: '0.75rem', color: '#475569', fontStyle: 'italic', borderLeft: '3px solid #7C3AED' }}>
+                    {morphPopup.data.meaning}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.85rem', color: '#9CA3AF' }}>Морфемалари аниқланмади</div>
             )}
           </div>
         </>

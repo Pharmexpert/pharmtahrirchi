@@ -508,6 +508,48 @@ def init_db():
     )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_para_textid ON paragraph_progress(text_id)')
+
+    # Style guide rules (pharma writing standards)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS style_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id TEXT UNIQUE,
+        category TEXT,
+        description TEXT,
+        pattern TEXT,
+        suggestion TEXT,
+        severity TEXT DEFAULT 'should',
+        examples TEXT,
+        source TEXT,
+        lang TEXT DEFAULT 'uz',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_style_cat ON style_rules(category)')
+
+    # Seed initial style rules if empty
+    cursor.execute("SELECT COUNT(*) FROM style_rules")
+    if cursor.fetchone()[0] == 0:
+        SEED_STYLE_RULES = [
+            ("STYLE-001", "format", "Дозалар бирлик орқали ёзилиши керак", r"\d+\s*(mg|ml|mcg|μg|IU|МЕ)", "{number} {unit}", "must", "500mg → 500 mg", "ICH"),
+            ("STYLE-002", "format", "ATC код тўғри форматда (бир ҳарф + 2 рақам + 2 ҳарф + 2 рақам)", r"[A-Z]\d{2}[A-Z]{2}\d{2}", "ATC: {code}", "must", "N02BE01", "ATC/WHO"),
+            ("STYLE-003", "abbreviation", "INN биринчи марта ишлатилганда тўлиқ ёзилиши керак", "", "Use full INN on first mention", "should", "Paracetamol (PCT)", "USP"),
+            ("STYLE-004", "punctuation", "Гап охирида нуқта қўйиш", r"[^.!?\s]$", "Add period", "should", "матн → матн.", "general"),
+            ("STYLE-005", "format", "Сонлар + бирлик орасида бўшлиқ", r"\d+(?:mg|g|ml)", "{number} {unit}", "should", "500mg → 500 mg", "SI"),
+            ("STYLE-006", "terminology", "Чет тил терминлар изоҳ билан", "", "Add explanation in parentheses", "may", "bioavailability (биодоступлик)", "Pharma style"),
+            ("STYLE-007", "format", "Қисқартмалар бош ҳарф билан ёзилиши", r"\b[a-z]{2,5}\b", "Use uppercase for abbreviations", "should", "atc → ATC", "general"),
+            ("STYLE-008", "punctuation", "Иккита бўшлиқ ёзилмаслиги керак", r"  ", " ", "should", "ишла  ди → ишлади", "general"),
+            ("STYLE-009", "format", "Жадвалларда сарлавҳа бош ҳарф билан", "", "Capitalize table headers", "should", "ном → Ном", "Pharma style"),
+            ("STYLE-010", "terminology", "Параметр номлари курсивда (italics) ёзилиши", "", "Italicize parameter names", "may", "n=10 → *n*=10", "Statistics"),
+        ]
+        for r in SEED_STYLE_RULES:
+            try:
+                cursor.execute(
+                    "INSERT INTO style_rules (rule_id, category, description, pattern, suggestion, severity, examples, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    r
+                )
+            except Exception:
+                pass
     # Seed admin if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'texnopharm@gmail.com'")
     if cursor.fetchone()[0] == 0:

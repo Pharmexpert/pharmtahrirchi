@@ -990,6 +990,59 @@ async def learn_linguistic(payload: Dict[str, Any], current_user: Dict = Depends
         return {"success": False, "error": str(e)}
 
 
+@router.get("/style-rules")
+async def list_style_rules(category: str = None, current_user: Dict = Depends(get_current_user)):
+    """List pharma style guide rules."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        if category:
+            cur.execute("SELECT * FROM style_rules WHERE category = ? ORDER BY rule_id", (category,))
+        else:
+            cur.execute("SELECT * FROM style_rules ORDER BY rule_id")
+        rules = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return {"rules": rules, "total": len(rules)}
+    except Exception as e:
+        return {"rules": [], "error": str(e)}
+
+
+@router.post("/check-style")
+async def check_style(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Check text against pharma style guide rules."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"violations": []}
+    violations = []
+    try:
+        import re as _re
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM style_rules WHERE pattern != '' AND pattern IS NOT NULL")
+        rules = [dict(r) for r in cur.fetchall()]
+        for rule in rules:
+            try:
+                for m in _re.finditer(rule["pattern"], text):
+                    violations.append({
+                        "rule_id": rule["rule_id"],
+                        "category": rule["category"],
+                        "severity": rule["severity"],
+                        "description": rule["description"],
+                        "suggestion": rule["suggestion"],
+                        "from": m.start(),
+                        "to": m.end(),
+                        "matched": m.group(0),
+                    })
+            except _re.error:
+                pass
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[check-style] {e}")
+    return {"violations": violations, "total": len(violations)}
+
+
 @router.post("/decompose-term")
 async def decompose_medical_term(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """Decompose a medical term into Greek/Latin morphemes."""

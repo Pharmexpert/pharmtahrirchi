@@ -290,6 +290,62 @@ Rules:
     return {"data": result_data}
 
 
+@router.post("/api/document-versions/save")
+async def save_document_version(payload: Dict[str, Any]):
+    """Save a snapshot of a row to the version history."""
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS document_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text_id TEXT, sentence_no INTEGER, lang TEXT,
+                version INTEGER DEFAULT 1, content TEXT,
+                author_id TEXT, author_name TEXT, action TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute(
+            "SELECT MAX(version) FROM document_versions WHERE text_id = ? AND sentence_no = ? AND lang = ?",
+            (payload.get("text_id"), payload.get("sentence_no"), payload.get("lang"))
+        )
+        row = cur.fetchone()
+        next_v = (row[0] or 0) + 1
+        cur.execute("""
+            INSERT INTO document_versions (text_id, sentence_no, lang, version, content, author_id, author_name, action)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payload.get("text_id"), payload.get("sentence_no"), payload.get("lang"),
+            next_v, payload.get("content", ""), payload.get("author_id", ""),
+            payload.get("author_name", ""), payload.get("action", "edit"),
+        ))
+        conn.commit()
+        conn.close()
+        return {"success": True, "version": next_v}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/document-versions/{text_id}/{sentence_no}")
+async def get_document_versions(text_id: str, sentence_no: int, lang: str = None):
+    """Get version history for a specific row."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        if lang:
+            cur.execute("SELECT * FROM document_versions WHERE text_id = ? AND sentence_no = ? AND lang = ? ORDER BY version DESC LIMIT 50",
+                        (text_id, sentence_no, lang))
+        else:
+            cur.execute("SELECT * FROM document_versions WHERE text_id = ? AND sentence_no = ? ORDER BY version DESC LIMIT 50",
+                        (text_id, sentence_no))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return {"versions": rows}
+    except Exception as e:
+        return {"versions": [], "error": str(e)}
+
+
 @router.post("/api/improve-row")
 async def improve_row(payload: Dict[str, Any]):
     """
