@@ -498,11 +498,67 @@ export const nlp = {
   dashboardSummary: () => get<{ last_7_days: any; last_30_days: any; recent_nightly_runs: any[] }>('/api/nlp/dashboard-summary'),
 }
 
+// ═══════════════════════════════════════════════════
+// Phase 8: Tilshunos (Linguist) integrated workflow
+// ═══════════════════════════════════════════════════
+
+export interface LinguisticIssue {
+  category: string
+  subcategory: string
+  rule_id: string
+  error_type: string
+  from_index: number
+  to_index: number
+  matched_text: string
+  suggestion: string
+  message: string
+  severity: 'low' | 'medium' | 'high'
+  source: string
+}
+
+export interface TilshunosCheckResult {
+  text: string
+  lang: string
+  issues: LinguisticIssue[]
+  by_category: Record<string, number>
+  by_severity: Record<string, number>
+  total: number
+  morphology: any[]
+  score: number
+  word_count: number
+}
+
+export const tilshunos = {
+  rulesStats: () => get<{
+    canonical_rules: Record<string, number>
+    sayqallash_total: number
+    sayqallash_by_type: Record<string, number>
+    hunspell: Record<string, number>
+    tahrirchi_lexicon_words: number
+    platform_databases: Record<string, number>
+  }>('/api/tilshunos/rules/stats'),
+
+  check: (text: string, lang = 'uz', categories?: string[]) =>
+    post<TilshunosCheckResult>('/api/tilshunos/check', { text, lang, categories }),
+
+  improve: (text: string, lang = 'uz', auto_apply_severity: 'low' | 'medium' | 'high' = 'high') =>
+    post<{
+      original_text: string
+      improved_text: string
+      applied_fixes: any[]
+      fix_count: number
+      remaining_issues: LinguisticIssue[]
+    }>('/api/tilshunos/improve', { text, lang, auto_apply_severity }),
+
+  confirm: (payload: { wrong: string; correct: string; context?: string; category?: string; lang?: string }) =>
+    post<LearnResult>('/api/tilshunos/confirm', payload),
+}
+
 // Re-export everything as default namespace
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp,
+  morph, grammar, learn, nlp, tilshunos,
   API_BASE,
 }
 
