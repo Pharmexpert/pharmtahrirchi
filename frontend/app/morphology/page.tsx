@@ -102,6 +102,34 @@ export default function MorphologyPage() {
         {a.negation && <FeatureBadge label="Инкор" value="ҳа" color="#DC2626" />}
       </div>
 
+      {/* Validation badges (Phase 2.5) */}
+      {(a.valid_order !== undefined || (a.order_score !== undefined && a.order_score < 1)) && (
+        <div style={{
+          marginTop: 14, padding: '10px 14px',
+          background: a.valid_order ? '#F0FDF4' : '#FEF2F2',
+          border: `1.5px solid ${a.valid_order ? '#86EFAC' : '#FCA5A5'}`,
+          borderRadius: 10, fontSize: '0.8rem',
+          color: a.valid_order ? '#166534' : '#991B1B'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+            {a.valid_order ? '✅' : '⚠️'} Тартиб ҳолати:
+            <span>{a.valid_order ? 'Канон тартиб' : 'Морфема тартиби бузилган'}</span>
+            {a.order_score !== undefined && (
+              <span style={{ marginLeft: 'auto', fontSize: '0.7rem', opacity: 0.8 }}>
+                Score: {(a.order_score * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+          {a.order_issues && a.order_issues.length > 0 && (
+            <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+              {a.order_issues.map((iss, i) => (
+                <li key={i} style={{ marginBottom: 4 }}>{iss}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Breakdown */}
       <div style={{ marginTop: 14, padding: 10, background: '#F9FAFB', borderRadius: 8, fontFamily: 'monospace', fontSize: '0.85rem', color: '#374151' }}>
         {a.breakdown}

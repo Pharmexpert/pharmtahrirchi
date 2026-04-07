@@ -395,6 +395,9 @@ export interface MorphAnalysis {
   breakdown: string
   source: string
   valid: boolean
+  valid_order?: boolean
+  order_score?: number
+  order_issues?: string[]
 }
 
 export const morph = {
