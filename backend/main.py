@@ -39,6 +39,12 @@ os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 
 app = FastAPI()
 
+
+@app.get("/api/health")
+async def health_check():
+    """Lightweight healthcheck for Railway."""
+    return {"status": "ok"}
+
 # ═══════════════════════════════════════════════════
 # Middleware: CORS & Security Headers
 # ═══════════════════════════════════════════════════
