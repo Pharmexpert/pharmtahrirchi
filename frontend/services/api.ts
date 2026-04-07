@@ -622,6 +622,12 @@ export const tilshunos = {
   decomposeTerm: (word: string) =>
     post<{ found: boolean; prefix?: string; root?: string; suffix?: string; meaning?: string; prefix_meaning?: string; suffix_meaning?: string }>('/api/tilshunos/decompose-term', { word }),
 
+  styleRules: (category?: string) =>
+    get<{ rules: any[]; total: number }>(`/api/tilshunos/style-rules${category ? `?category=${category}` : ''}`),
+
+  checkStyle: (text: string) =>
+    post<{ violations: Array<{ rule_id: string; category: string; severity: string; description: string; suggestion: string; from: number; to: number; matched: string }>; total: number }>('/api/tilshunos/check-style', { text }),
+
   trainingLogExport: (kind?: string, limit = 10000) => {
     const qs = new URLSearchParams()
     if (kind) qs.set('kind', kind)

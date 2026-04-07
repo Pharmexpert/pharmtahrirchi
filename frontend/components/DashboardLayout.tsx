@@ -45,6 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     navItems.push({ name: t('nav.admin'), icon: ShieldCheck, path: '/admin' })
     navItems.push({ name: 'Мониторинг', icon: BookOpen, path: '/admin/monitoring' })
     navItems.push({ name: 'Pharma DB', icon: Database, path: '/admin/pharma' })
+    navItems.push({ name: 'Style Guide', icon: FileText, path: '/admin/style-guide' })
   }
 
   return (
