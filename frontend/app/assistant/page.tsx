@@ -50,6 +50,26 @@ export default function AssistantPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Auto language detection
+  const detectFileLang = (text: string): Lang => {
+    if (!text || text.length < 5) return lang
+    const cyr = (text.match(/[а-яА-ЯёЁўғқҳЎҒҚҲ]/g) || []).length
+    const lat = (text.match(/[a-zA-Z]/g) || []).length
+    const ruIndic = /[ыэъЫЭЪ]/.test(text) || /\b(что|это|как|для|при|или|если|есть|более|который)\b/i.test(text)
+    const uzCyrIndic = /[ўғқҳЎҒҚҲ]/.test(text) || /\b(билан|учун|керак|бўлади|шундай)\b/i.test(text)
+    const enIndic = /\b(the|and|of|in|is|was|has|have|with|for|that)\b/i.test(text)
+    const uzLatIndic = /[ʻ']/.test(text) || /\b(bilan|uchun|kerak|bo'ladi|shunday)\b/i.test(text)
+    if (cyr > lat * 0.5) {
+      if (uzCyrIndic && !ruIndic) return 'uz-cyr'
+      if (ruIndic) return 'ru'
+      if (uzCyrIndic) return 'uz-cyr'
+      return 'ru'
+    }
+    if (enIndic && !uzLatIndic) return 'en'
+    if (uzLatIndic) return 'uz-lat'
+    return 'uz-lat'
+  }
+
   const handleFileUpload = async (file: File) => {
     if (file.size > 50 * 1024 * 1024) {
       alert(`Файл ${(file.size / 1024 / 1024).toFixed(1)} MB — лимит 50 MB`)
@@ -66,6 +86,24 @@ export default function AssistantPage() {
         mime: r.mime,
         size_mb: r.size_mb,
       }])
+      // Auto-detect language from file text
+      if (r.text && r.text.length > 20) {
+        const detected = detectFileLang(r.text)
+        if (mode === 'translate') {
+          setSourceLang(detected)
+        } else {
+          setLang(detected)
+        }
+        // Auto-select best engine for this language
+        const baseLang = detected.startsWith('uz') ? 'uz' : detected
+        const best = engines.find(e => {
+          if (!e.available || e.key === 'auto') return false
+          const langs: string[] = e.languages || []
+          return langs.includes(baseLang) && langs.length <= 2  // specialized
+        })
+        if (best) setEngine(best.key)
+        else setEngine('auto')
+      }
     } catch (e: any) {
       alert('Юклашда хато: ' + (e?.message || e))
     } finally {
@@ -222,11 +260,37 @@ export default function AssistantPage() {
             padding: '8px 12px', borderRadius: 10, border: '1.5px solid var(--border)',
             fontSize: '0.82rem', fontWeight: 600, background: 'white', cursor: 'pointer',
           }}>
-            {engines.map(e => (
-              <option key={e.key} value={e.key} disabled={!e.available}>
-                {e.available ? '🟢' : '⚪'} {e.label}
-              </option>
-            ))}
+            {(() => {
+              // Filter engines by current language + task (mode)
+              const activeLang = mode === 'translate' ? sourceLang : lang
+              const baseLang = activeLang.startsWith('uz') ? 'uz' : activeLang
+              const filtered = engines.filter(e => {
+                if (!e.available) return false
+                // Check capabilities (chat/edit/translate)
+                const caps: string[] = e.capabilities || []
+                if (mode === 'chat' && !caps.includes('chat') && e.key !== 'auto') return false
+                if (mode === 'edit' && !caps.includes('edit') && e.key !== 'auto') return false
+                if (mode === 'translate' && !caps.includes('translate') && e.key !== 'auto') return false
+                // Check languages
+                const langs: string[] = e.languages || []
+                if (e.key !== 'auto' && langs.length > 0 && !langs.includes(baseLang)) return false
+                return true
+              })
+              // Sort: auto first, then by language match quality
+              filtered.sort((a, b) => {
+                if (a.key === 'auto') return -1
+                if (b.key === 'auto') return 1
+                const aLangs: string[] = a.languages || []
+                const bLangs: string[] = b.languages || []
+                // Fewer languages = more specialized for this lang
+                return aLangs.length - bLangs.length
+              })
+              return filtered.map(e => (
+                <option key={e.key} value={e.key}>
+                  🟢 {e.label}
+                </option>
+              ))
+            })()}
           </select>
 
           {mode === 'translate' ? (
