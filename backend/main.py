@@ -451,6 +451,38 @@ async def _auto_seed_background():
                 logger.info(f"[post-process] pharmacopoeia: {r}")
             except Exception as ee:
                 logger.warning(f"[post-process] pharmacopoeia failed: {ee}")
+
+            # 5. Editorial-approved disputed words (docx → disputed_board)
+            try:
+                import import_disputed_board
+                r = import_disputed_board.main()
+                logger.info(f"[post-process] disputed_board: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] disputed_board failed: {ee}")
+
+            # 6. Pharma DB (TOC + Drug Registry)
+            try:
+                import import_pharma_db
+                r = import_pharma_db.main()
+                logger.info(f"[post-process] pharma_db: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] pharma_db failed: {ee}")
+
+            # 7. Colors table (285 uz/ru/en from State Pharmacopoeia)
+            try:
+                import import_colors_table
+                r = import_colors_table.main()
+                logger.info(f"[post-process] colors_table: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] colors_table failed: {ee}")
+
+            # 8. Izohli lugat (102 pharmacopoeia terms → annotated_words)
+            try:
+                import import_izohli_lugat
+                r = import_izohli_lugat.main()
+                logger.info(f"[post-process] izohli_lugat: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] izohli_lugat failed: {ee}")
         except Exception as e:
             logger.warning(f"[post-process] setup failed: {e}")
 

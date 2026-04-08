@@ -470,6 +470,9 @@ export default function LinguisticCategoryPage() {
         </table>
       </div>
 
+      {/* Editorial Board Approved Disputed Words — second table (disputed category only) */}
+      {category === 'disputed' && <DisputedBoardTable />}
+
       {/* Edit Modal */}
       {editItem !== null && (
         <div style={{
@@ -532,6 +535,140 @@ export default function LinguisticCategoryPage() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════
+// Editorial Board Approved Disputed Words (second table)
+// ═══════════════════════════════════════════════════
+function DisputedBoardTable() {
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  const [fRu, setFRu] = useState('')
+  const [fEn, setFEn] = useState('')
+  const [fProp, setFProp] = useState('')
+  const [expanded, setExpanded] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r: any = await api.admin.disputedBoard(q)
+      setRows(r.rows || [])
+    } catch { setRows([]) }
+    finally { setLoading(false) }
+  }, [q])
+
+  useEffect(() => { load() }, [load])
+
+  const visible = rows.filter(r => {
+    if (fRu && !(r.ru_term || '').toLowerCase().includes(fRu.toLowerCase())) return false
+    if (fEn && !(r.en_context || '').toLowerCase().includes(fEn.toLowerCase())) return false
+    if (fProp && !(r.proposed_variant || '').toLowerCase().includes(fProp.toLowerCase())) return false
+    return true
+  })
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)',
+        borderRadius: 16, padding: '18px 24px', marginBottom: 14,
+        border: '1.5px solid #f9a8d4', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap'
+      }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#831843' }}>
+            🏛️ Таҳририят кенгаши тасдиқлаган мунозарали сўзлар
+          </h2>
+          <p style={{ margin: 0, fontSize: '.78rem', color: '#9f1239' }}>
+            Европа фармакопеяси асосида Давлат фармакопеяси учун тасдиқланган терминлар — {rows.length} та
+          </p>
+        </div>
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9f1239' }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Қидирув..."
+            style={{ padding: '8px 12px 8px 34px', borderRadius: 10, border: '1.5px solid #f9a8d4', background: 'white', fontSize: '.82rem', outline: 'none', minWidth: 240 }} />
+        </div>
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#94A3B8' }}>
+            <Loader2 className="animate-spin" size={28} />
+          </div>
+        ) : (
+          <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+              <thead style={{ position: 'sticky', top: 0, background: '#FDF2F8', borderBottom: '2px solid #f9a8d4', zIndex: 1 }}>
+                <tr>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, fontSize: '.7rem', color: '#831843', textTransform: 'uppercase', width: 50 }}>№</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, fontSize: '.7rem', color: '#831843', textTransform: 'uppercase' }}>РУС ТЕРМИН</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, fontSize: '.7rem', color: '#831843', textTransform: 'uppercase' }}>EUR.PH. КОНТЕКСТ (EN)</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, fontSize: '.7rem', color: '#831843', textTransform: 'uppercase' }}>МАВЖУД ВАРИАНТЛАР</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, fontSize: '.7rem', color: '#831843', textTransform: 'uppercase' }}>ТАКЛИФ</th>
+                  <th style={{ padding: '12px 16px', width: 50 }}></th>
+                </tr>
+                <tr style={{ background: '#FDF2F8', borderBottom: '1px solid #f9a8d4' }}>
+                  <th></th>
+                  <th style={{ padding: '6px 16px' }}>
+                    <input value={fRu} onChange={e => setFRu(e.target.value)} placeholder="🔍 рус..."
+                      style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #fbcfe8', fontSize: '.72rem', background: 'white' }} />
+                  </th>
+                  <th style={{ padding: '6px 16px' }}>
+                    <input value={fEn} onChange={e => setFEn(e.target.value)} placeholder="🔍 EN..."
+                      style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #fbcfe8', fontSize: '.72rem', background: 'white' }} />
+                  </th>
+                  <th></th>
+                  <th style={{ padding: '6px 16px' }}>
+                    <input value={fProp} onChange={e => setFProp(e.target.value)} placeholder="🔍 таклиф..."
+                      style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #fbcfe8', fontSize: '.72rem', background: 'white' }} />
+                  </th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 ? (
+                  <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: '#94A3B8' }}>Топилмади</td></tr>
+                ) : visible.map((r, i) => (
+                  <React.Fragment key={r.id}>
+                    <tr style={{ borderBottom: '1px solid #FCE7F3', cursor: 'pointer' }} onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                      <td style={{ padding: '10px 16px', color: '#9CA3AF', fontWeight: 700 }}>{r.seq_no || i + 1}</td>
+                      <td style={{ padding: '10px 16px', fontWeight: 700, color: '#9D174D' }}>{r.ru_term}</td>
+                      <td style={{ padding: '10px 16px', color: '#475569', fontSize: '.75rem', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {(r.en_context || '').slice(0, 100)}{(r.en_context || '').length > 100 ? '…' : ''}
+                      </td>
+                      <td style={{ padding: '10px 16px', color: '#64748B', fontSize: '.75rem', whiteSpace: 'pre-line' }}>
+                        {(r.existing_variants || '').slice(0, 80)}
+                      </td>
+                      <td style={{ padding: '10px 16px' }}>
+                        <span style={{ padding: '4px 10px', borderRadius: 14, background: '#DCFCE7', color: '#15803D', fontWeight: 800, fontSize: '.78rem' }}>
+                          {r.proposed_variant}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 16px', color: '#BE185D', fontSize: '1rem' }}>
+                        {expanded === r.id ? '▲' : '▼'}
+                      </td>
+                    </tr>
+                    {expanded === r.id && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 16, background: '#FDF2F8', borderBottom: '1px solid #FCE7F3' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: '.8rem' }}>
+                            <div><b>EN контекст:</b><br />{r.en_context || '—'}</div>
+                            <div><b>RU контекст:</b><br />{r.ru_context || '—'}</div>
+                            <div style={{ gridColumn: '1 / -1' }}><b>Изоҳ (UZ):</b><br />{r.definition_uz || '—'}</div>
+                            <div style={{ gridColumn: '1 / -1' }}><b>Мавжуд вариантлар:</b><br /><pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{r.existing_variants || '—'}</pre></div>
+                            <div style={{ gridColumn: '1 / -1' }}><b>Адабиётлар:</b><br /><pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '.74rem', color: '#64748B' }}>{r.references_text || '—'}</pre></div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

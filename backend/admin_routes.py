@@ -410,6 +410,143 @@ async def import_pharmacopoeia_route(current_user: dict = Depends(get_admin_user
         return {"success": False, "error": str(e)}
 
 
+@router.post("/disputed-board/import")
+async def import_disputed_board_route(current_user: dict = Depends(get_admin_user)):
+    """Import editorial-board-approved disputed words (234 terms from docx)."""
+    try:
+        return {"success": True, **_run_script("import_disputed_board")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/disputed-board")
+async def list_disputed_board(q: str = None, limit: int = 500, current_user: dict = Depends(get_current_user)):
+    """List editorial-approved disputed terms. All users can view."""
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    conn.row_factory = _sql.Row
+    cur = conn.cursor()
+    try:
+        if q:
+            like = f"%{q}%"
+            cur.execute("""
+                SELECT * FROM disputed_board
+                WHERE ru_term LIKE ? OR proposed_variant LIKE ? OR definition_uz LIKE ? OR existing_variants LIKE ?
+                ORDER BY COALESCE(updated_at, created_at) DESC, seq_no ASC
+                LIMIT ?
+            """, (like, like, like, like, limit))
+        else:
+            cur.execute("""
+                SELECT * FROM disputed_board
+                ORDER BY COALESCE(updated_at, created_at) DESC, seq_no ASC
+                LIMIT ?
+            """, (limit,))
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+    conn.close()
+    return {"rows": rows, "total": len(rows)}
+
+
+# ─────────────────────────────────────────────
+# Pharma DB (TOC + Drug Registry + Colors)
+# ─────────────────────────────────────────────
+
+def _pharma_db_conn():
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    conn.row_factory = _sql.Row
+    return conn
+
+
+@router.post("/pharma-db/import")
+async def import_pharma_db_route(current_user: dict = Depends(get_admin_user)):
+    """Import TOC + Drug Registry."""
+    try:
+        return {"success": True, **_run_script("import_pharma_db")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/pharma-db/import-colors")
+async def import_colors_route(current_user: dict = Depends(get_admin_user)):
+    """Import State Pharmacopoeia colors table."""
+    try:
+        return {"success": True, **_run_script("import_colors_table")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/pharma-db/toc")
+async def pharma_toc(q: str = None, edition: str = None, limit: int = 3000, current_user: dict = Depends(get_current_user)):
+    """Pharmacopoeia Table of Contents (both editions)."""
+    conn = _pharma_db_conn()
+    cur = conn.cursor()
+    try:
+        where = "WHERE 1=1"
+        params: list = []
+        if edition:
+            where += " AND edition = ?"
+            params.append(edition)
+        if q:
+            where += " AND (name_uz LIKE ? OR name_en LIKE ? OR name_ru LIKE ? OR text_no LIKE ?)"
+            like = f"%{q}%"
+            params.extend([like, like, like, like])
+        params.append(limit)
+        cur.execute(f"SELECT * FROM pharma_toc {where} ORDER BY edition, seq_no LIMIT ?", params)
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return {"rows": rows, "total": len(rows)}
+
+
+@router.get("/pharma-db/registry")
+async def drug_registry(q: str = None, country: str = None, atc: str = None, limit: int = 2000, current_user: dict = Depends(get_current_user)):
+    """State Drug Registry (local + foreign drugs)."""
+    conn = _pharma_db_conn()
+    cur = conn.cursor()
+    try:
+        where = "WHERE 1=1"
+        params: list = []
+        if country:
+            where += " AND country = ?"
+            params.append(country)
+        if atc:
+            where += " AND atc_code LIKE ?"
+            params.append(f"{atc}%")
+        if q:
+            where += " AND (trade_name LIKE ? OR inn LIKE ? OR manufacturer LIKE ? OR atc_code LIKE ? OR registration_no LIKE ?)"
+            like = f"%{q}%"
+            params.extend([like, like, like, like, like])
+        params.append(limit)
+        cur.execute(f"SELECT * FROM drug_registry {where} ORDER BY seq_no LIMIT ?", params)
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return {"rows": rows, "total": len(rows)}
+
+
+@router.get("/pharma-db/colors")
+async def colors_table(q: str = None, limit: int = 500, current_user: dict = Depends(get_current_user)):
+    """Colors table (uz/ru/en)."""
+    conn = _pharma_db_conn()
+    cur = conn.cursor()
+    try:
+        if q:
+            like = f"%{q}%"
+            cur.execute("SELECT * FROM colors_table WHERE uz LIKE ? OR ru LIKE ? OR en LIKE ? ORDER BY seq_no LIMIT ?",
+                        (like, like, like, limit))
+        else:
+            cur.execute("SELECT * FROM colors_table ORDER BY seq_no LIMIT ?", (limit,))
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return {"rows": rows, "total": len(rows)}
+
+
 @router.post("/wordlists/import-uzbek-net")
 async def import_uzbek_net_route(current_user: dict = Depends(get_admin_user)):
     """Import uzbek-net/uz-hunspell (Latin + Cyrillic)."""

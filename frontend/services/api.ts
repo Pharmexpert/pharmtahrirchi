@@ -417,6 +417,13 @@ export const admin = {
   mergeAffixDescriptions: () => post<any>('/api/admin/post-process/merge-affix', {}),
   autoRepRules: () => post<any>('/api/admin/post-process/auto-rep-rules', {}),
   importPharmacopoeia: () => post<any>('/api/admin/pharmacopoeia/import', {}),
+  importDisputedBoard: () => post<any>('/api/admin/disputed-board/import', {}),
+  disputedBoard: (q = '') => get<{ rows: any[]; total: number }>(`/api/admin/disputed-board${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  importPharmaDb: () => post<any>('/api/admin/pharma-db/import', {}),
+  importPharmaColors: () => post<any>('/api/admin/pharma-db/import-colors', {}),
+  pharmaToc: (q = '', edition = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/toc?${new URLSearchParams({ q, edition }).toString()}`),
+  pharmaRegistry: (q = '', country = '', atc = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/registry?${new URLSearchParams({ q, country, atc }).toString()}`),
+  pharmaColors: (q = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/colors${q ? `?q=${encodeURIComponent(q)}` : ''}`),
 }
 
 // ═══════════════════════════════════════════════════
