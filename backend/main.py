@@ -216,6 +216,20 @@ async def auto_seed_databases():
             except Exception as e:
                 logger.warning(f"[auto-seed] drugs failed: {e}")
 
+        # Seed medical terms if empty
+        try:
+            conn2 = _db.connect_db()
+            cur2 = conn2.cursor()
+            cur2.execute("SELECT COUNT(*) FROM medical_terms")
+            terms_count = cur2.fetchone()[0]
+            conn2.close()
+            if terms_count == 0:
+                import seed_medical_terms
+                result = seed_medical_terms.seed()
+                logger.info(f"[auto-seed] Medical terms: {result}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] medical_terms failed: {e}")
+
         # Try to seed Uzbek rules from book if PDF text is bundled
         try:
             import seed_uzbek_rules_from_book
