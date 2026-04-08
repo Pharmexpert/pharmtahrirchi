@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { BookOpen, Search, Loader2, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import api from '../../services/api'
 
 interface DictWord {
@@ -24,6 +25,7 @@ const POS_LABELS: Record<string, { label: string; color: string }> = {
 
 export default function DictionaryPage() {
   const { token } = useAuth()
+  const { t } = useLang()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [words, setWords] = useState<DictWord[]>([])
@@ -104,7 +106,7 @@ export default function DictionaryPage() {
             <BookOpen size={24} color="white" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Изоҳли луғат</h1>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>{t('dict.title')}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
               Ўзбек тили имло луғати • <strong>{total}</strong> сўз • {language === 'cyrl' ? 'Кирилл' : 'Лотин'}
             </p>
