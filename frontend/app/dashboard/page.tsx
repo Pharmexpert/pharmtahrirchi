@@ -29,10 +29,9 @@ export default function DashboardPage() {
       if (!token) return
       setLoading(true)
       try {
-        const headers = { Authorization: `Bearer ${token}` }
         const [statsRes, lingRes, projRes, filesRes] = await Promise.allSettled([
           api.admin.dbStats(),
-          fetch(`${API_BASE}/api/linguistic/all`, { headers }),
+          api.linguistic.all(),
           api.projects.list(),
           api.files.list(),
         ])
@@ -46,8 +45,8 @@ export default function DashboardPage() {
             synonyms: d.synonyms || d.counts?.synonyms || 0
           }))
         }
-        if (lingRes.status === 'fulfilled' && lingRes.value.ok) {
-          const d = await lingRes.value.json()
+        if (lingRes.status === 'fulfilled') {
+          const d: any = lingRes.value
           setStats(prev => ({
             ...prev,
             annotated: (d.annotated || []).length,

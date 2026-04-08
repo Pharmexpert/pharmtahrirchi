@@ -363,10 +363,8 @@ export default function ParagraphsPage() {
                     <button onClick={async () => {
                       if (!confirm('Ушбу ёзувни ўчиришни тасдиқлайсизми?')) return
                       try {
-                        const res = await fetch(`${API_BASE}/api/dashboard/${entry.id}`, {
-                          method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-                        })
-                        if (res.ok) { showToast('Ўчирилди ✓'); fetchEntries() }
+                        await api.dashboard.delete(entry.id)
+                        showToast('Ўчирилди ✓'); fetchEntries()
                       } catch { showToast('Хатолик', 'error') }
                     }} style={{
                       padding: '6px', borderRadius: '8px', border: '1px solid #FECACA',

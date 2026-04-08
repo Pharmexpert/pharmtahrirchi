@@ -316,6 +316,7 @@ export const upload = {
 export const dashboard = {
   all: () => get<{ entries: import('../types/api').DashboardEntry[] }>('/api/dashboard/all'),
   record: (entry: Record<string, string>) => post<{ success: boolean }>('/api/dashboard/record', entry),
+  delete: (id: number) => del<{ success: boolean }>(`/api/dashboard/${id}`),
 }
 
 // ═══════════════════════════════════════════════════
