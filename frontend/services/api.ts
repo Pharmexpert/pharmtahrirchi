@@ -679,6 +679,16 @@ export const assistant = {
     if (!res.ok) throw new Error(await res.text())
     return res.json() as Promise<{ filename: string; size: number; size_mb: number; kind: string; text?: string; base64?: string; mime?: string; transcribed?: boolean }>
   },
+
+  // Chat history
+  saveChat: (payload: { session_id?: string; title?: string; messages: any[]; engine?: string; lang?: string; mode?: string }) =>
+    post<{ success: boolean; session_id?: string }>('/api/assistant/history/save', payload),
+  listChats: () =>
+    get<{ chats: Array<{ id: number; session_id: string; title: string; engine: string; lang: string; mode: string; created_at: string; updated_at: string }> }>('/api/assistant/history/list'),
+  getChat: (session_id: string) =>
+    get<{ found: boolean; chat?: { session_id: string; title: string; messages: any[]; engine: string; lang: string; mode: string } }>(`/api/assistant/history/${encodeURIComponent(session_id)}`),
+  deleteChat: (session_id: string) =>
+    del<{ success: boolean }>(`/api/assistant/history/${encodeURIComponent(session_id)}`),
 }
 
 // Re-export everything as default namespace

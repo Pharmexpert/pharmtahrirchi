@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Brain, Send, Paperclip, Image as ImageIcon, Mic, Wand2, Languages, MessageSquare, Loader2, X, Bot, User as UserIcon, FileText, Sparkles, Pill, BarChart3, CheckCircle2 } from 'lucide-react'
+import { Brain, Send, Paperclip, Image as ImageIcon, Mic, Wand2, Languages, MessageSquare, Loader2, X, Bot, User as UserIcon, FileText, Sparkles, Pill, BarChart3, CheckCircle2, Plus, Trash2, History } from 'lucide-react'
 import api from '../../services/api'
 import { useAuth } from '../../components/LoginGuard'
 
@@ -41,10 +41,66 @@ export default function AssistantPage() {
   const audioInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const [sessionId, setSessionId] = useState<string>('')
+  const [chatHistory, setChatHistory] = useState<Array<{ session_id: string; title: string; updated_at: string; engine: string }>>([])
+  const [showHistory, setShowHistory] = useState(false)
+
   useEffect(() => {
     if (!token) return
     api.assistant.engines().then(r => setEngines(r.engines || [])).catch(() => {})
+    api.assistant.listChats().then(r => setChatHistory(r.chats || [])).catch(() => {})
   }, [token])
+
+  // Auto-save chat after each message (debounced)
+  useEffect(() => {
+    if (messages.length === 0) return
+    const t = setTimeout(async () => {
+      try {
+        const firstUserMsg = messages.find(m => m.role === 'user')
+        const title = firstUserMsg ? firstUserMsg.content.slice(0, 60) : 'Чат'
+        const r = await api.assistant.saveChat({
+          session_id: sessionId || undefined,
+          title,
+          messages: messages.map(m => ({ role: m.role, content: m.content, engine: m.engine })),
+          engine, lang, mode,
+        })
+        if (r.session_id && !sessionId) setSessionId(r.session_id)
+        // Refresh list
+        api.assistant.listChats().then(cr => setChatHistory(cr.chats || [])).catch(() => {})
+      } catch (_) {}
+    }, 2000)
+    return () => clearTimeout(t)
+  }, [messages])
+
+  const handleNewChat = () => {
+    setMessages([])
+    setSessionId('')
+    setInput('')
+    setPendingFiles([])
+  }
+
+  const handleLoadChat = async (sid: string) => {
+    try {
+      const r = await api.assistant.getChat(sid)
+      if (r.found && r.chat) {
+        setMessages(r.chat.messages.map((m: any) => ({ ...m, ts: Date.now() })))
+        setSessionId(sid)
+        if (r.chat.engine) setEngine(r.chat.engine)
+        if (r.chat.mode) setMode(r.chat.mode as Mode)
+        setShowHistory(false)
+      }
+    } catch (_) {}
+  }
+
+  const handleDeleteChat = async (sid: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('Чатни ўчиришни тасдиқлайсизми?')) return
+    try {
+      await api.assistant.deleteChat(sid)
+      setChatHistory(prev => prev.filter(c => c.session_id !== sid))
+      if (sessionId === sid) handleNewChat()
+    } catch (_) {}
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -233,7 +289,47 @@ export default function AssistantPage() {
           <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#5B21B6' }}>Фармацевт ёрдамчиси</h1>
           <p style={{ margin: 0, fontSize: '0.85rem', color: '#7C3AED' }}>Сунъий идрок — таҳрир, таржима, чат, файл/расм/аудио тахлили</p>
         </div>
+        <button onClick={handleNewChat} title="Янги чат" style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #7C3AED', background: 'white', color: '#7C3AED', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Plus size={14} /> Янги чат
+        </button>
+        <button onClick={() => setShowHistory(true)} title="Чат тарихи" style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #7C3AED', background: 'white', color: '#7C3AED', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <History size={14} /> Тарих ({chatHistory.length})
+        </button>
       </div>
+
+      {/* Chat history modal */}
+      {showHistory && (
+        <div onClick={() => setShowHistory(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 24, width: 'min(640px, 92vw)', maxHeight: '85vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <History size={20} color="#7C3AED" /> Чат тарихи
+              </h3>
+              <button onClick={() => setShowHistory(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#6B7280' }}><X size={20} /></button>
+            </div>
+            {chatHistory.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9CA3AF', padding: 40 }}>Ҳеч қандай сақланган чат йўқ</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {chatHistory.map(c => (
+                  <div key={c.session_id} onClick={() => handleLoadChat(c.session_id)}
+                    style={{ padding: 12, border: `1.5px solid ${sessionId === c.session_id ? '#7C3AED' : '#E5E7EB'}`, borderRadius: 8, cursor: 'pointer', background: sessionId === c.session_id ? '#F5F3FF' : 'white', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#9CA3AF', marginTop: 2 }}>
+                        {c.engine || 'auto'} · {new Date(c.updated_at).toLocaleString('ru-RU')}
+                      </div>
+                    </div>
+                    <button onClick={e => handleDeleteChat(c.session_id, e)} title="Ўчириш" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 6 }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Mode tabs + Engine + Lang */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
