@@ -308,6 +308,20 @@ async def auto_seed_databases():
         except Exception as e:
             logger.info(f"[auto-seed] hunspell affix skipped: {e}")
 
+        # Auto-import Hunspell REP rules → sayqallash_rules (if REP count low)
+        try:
+            conn_r = _db.connect_db()
+            cur_r = conn_r.cursor()
+            cur_r.execute("SELECT COUNT(*) FROM sayqallash_rules WHERE error_type = 'REP/Hunspell'")
+            rep_count = cur_r.fetchone()[0]
+            conn_r.close()
+            if rep_count < 100:
+                import hunspell_data
+                added = hunspell_data.import_rep_to_sayqallash()
+                logger.info(f"[auto-seed] Hunspell REP rules: +{added} (had {rep_count})")
+        except Exception as e:
+            logger.info(f"[auto-seed] hunspell REP skipped: {e}")
+
         # Auto-run WHO INN import if drugs < 300
         try:
             conn4 = _db.connect_db()

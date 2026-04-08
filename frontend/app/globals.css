@@ -1,5 +1,6 @@
-/* Tailwind directives removed — package not installed in production builds.
-   Add them back when tailwindcss + postcss + autoprefixer are deps and node_modules ready. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   /* Colors — Warm Milky/Cream Palette from site v.4 */
