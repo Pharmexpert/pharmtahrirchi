@@ -346,6 +346,25 @@ async def auto_seed_databases():
                     logger.info(f"[auto-seed] debian_hunspell: {r}")
                 except Exception as ee:
                     logger.warning(f"[auto-seed] debian_hunspell failed: {ee}")
+                # Post-processing: freq rankings + affix merge + auto REP rules
+                try:
+                    import build_freq_rankings
+                    r = build_freq_rankings.main()
+                    logger.info(f"[auto-seed] freq rankings: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] freq rankings failed: {ee}")
+                try:
+                    import merge_affix_descriptions
+                    r = merge_affix_descriptions.main()
+                    logger.info(f"[auto-seed] affix merge: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] affix merge failed: {ee}")
+                try:
+                    import auto_generate_rep_rules
+                    r = auto_generate_rep_rules.main(max_words=5000)
+                    logger.info(f"[auto-seed] auto REP rules: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] auto REP rules failed: {ee}")
         except Exception as e:
             logger.warning(f"[auto-seed] user_dictionary check failed: {e}")
 
