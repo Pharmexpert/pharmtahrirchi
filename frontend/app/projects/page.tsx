@@ -3,11 +3,13 @@
 import React, { useState, useEffect } from 'react'
 import { History, Search, Eye, Trash2, Download, FileText } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import Link from 'next/link'
 import api from '../../services/api'
 
 export default function ProjectsPage() {
   const { token, isAdmin } = useAuth()
+  const { t } = useLang()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,9 +46,9 @@ export default function ProjectsPage() {
       <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px', letterSpacing: '-0.5px' }}>
-            Лойиҳалар 📁
+            {t('proj.title')} 📁
           </h1>
-          <p style={{ color: 'var(--text-muted)' }}>Барча юкланган ҳужжатлар рўйхати</p>
+          <p style={{ color: 'var(--text-muted)' }}>{t('proj.subtitle')}</p>
         </div>
         <div style={{
           background: 'var(--bg-card)', padding: '12px 20px', borderRadius: '12px',
@@ -75,7 +77,7 @@ export default function ProjectsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
-              {['№', 'Матн рақами', 'Мутахассис', 'Янгиланган', 'Амаллар'].map(h => (
+              {['№', t('proj.textNum'), t('projects.specialist'), t('proj.updated'), t('projects.actions')].map(h => (
                 <th key={h} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{h}</th>
               ))}
             </tr>

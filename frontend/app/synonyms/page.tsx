@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Repeat2, Search, Plus, Trash2, Loader2, CheckCircle2, AlertCircle, X, RefreshCw, Languages, Download } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
 
@@ -11,6 +12,7 @@ interface SynGroup { word: string; lang: string; synonyms: SynEntry[]; total_fre
 
 export default function SynonymsPage() {
   const { token, user } = useAuth()
+  const { t } = useLang()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const [groups, setGroups] = useState<SynGroup[]>([])
   const [totalSynonyms, setTotalSynonyms] = useState(0)
@@ -128,7 +130,7 @@ export default function SynonymsPage() {
             <Repeat2 size={24} color="white" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Синонимлар базаси</h1>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>{t('syn.title')}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
               3 тилда (EN/RU/UZ) синонимлар • <strong>{filtered.length}</strong> сўз • <strong>{totalSynonyms}</strong> синоним
             </p>

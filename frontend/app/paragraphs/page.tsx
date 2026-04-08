@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Search, Download, Loader2, CheckCircle2, AlertCircle, Edit2, Save, X, ArrowLeft, Clock, Users, BookText, Filter, Trash2 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
@@ -31,6 +32,7 @@ function formatDate(d?: string) {
 
 export default function ParagraphsPage() {
   const { token, user } = useAuth()
+  const { t } = useLang()
   const router = useRouter()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -175,10 +177,10 @@ export default function ParagraphsPage() {
           </div>
           <div>
             <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px', letterSpacing: '-0.5px' }}>
-              Хатбошилар
+              {t('para.title')}
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-              Audit trail — барча таҳрир ва AI ишлов бериш тарихи
+              {t('para.subtitle')}
             </p>
             <div style={{ display: 'flex', gap: '20px', marginTop: '4px' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>

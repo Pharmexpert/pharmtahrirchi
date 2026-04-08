@@ -5,6 +5,7 @@ import { FolderOpen, Upload, Download, Trash2, Eye, Play, Loader2, CheckCircle2,
 import { useRouter } from 'next/navigation'
 import api from '../../services/api'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 
 interface UploadedFile {
   filename: string
@@ -50,6 +51,7 @@ function getFileIcon(ext: string): string {
 export default function FilesPage() {
   const router = useRouter()
   const auth = useAuth()
+  const { t } = useLang()
   const isAdmin = !!auth?.isAdmin
   const [adminOwnerFilter, setAdminOwnerFilter] = useState<string>('')
   const [adminMonthFilter, setAdminMonthFilter] = useState<string>('')
@@ -270,10 +272,10 @@ export default function FilesPage() {
           </div>
           <div>
             <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px', letterSpacing: '-0.5px' }}>
-              Файллар директорияси
+              {t('files.directory')}
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-              Юкланган ҳужжатлар архиви — DOCX, PDF
+              {t('files.archive')} — DOCX, PDF
             </p>
             <div style={{ display: 'flex', gap: '20px', marginTop: '4px' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
