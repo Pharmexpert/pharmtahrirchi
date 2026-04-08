@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { BarChart3, FileText, Database, Users, TrendingUp, BookOpen, MessageSquare, Hash, Upload, FolderOpen, Loader2, Sparkles, ChevronRight, Clock } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import api from '../../services/api'
 
 export default function DashboardPage() {
   const { token, user } = useAuth()
+  const { t } = useLang()
   const router = useRouter()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const [stats, setStats] = useState({
@@ -120,7 +122,7 @@ export default function DashboardPage() {
       }}>
         <div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '6px' }}>
-            Хуш келибсиз, {user?.name?.split(' ')[0] || 'Мутахассис'} 👋
+            {t('dashboard.welcome')}, {user?.name?.split(' ')[0] || 'Мутахассис'} 👋
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>
             Pharma Expert тизимининг умумий ҳолати

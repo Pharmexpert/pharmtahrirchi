@@ -25,10 +25,12 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import api from '../../services/api'
 
 export default function AdminPage() {
   const { token, user: currentUser } = useAuth()
+  const { t } = useLang()
   const [users, setUsers] = useState<any[]>([])
   const [stats, setStats] = useState<any>(null)
   const [dbSizes, setDbSizes] = useState<any>({})
@@ -195,7 +197,7 @@ export default function AdminPage() {
       <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '2.4rem', fontWeight: 900, marginBottom: '8px', letterSpacing: '-1.5px', color: '#0F172A' }}>
-            Admin Paneli 🛡️
+            {t('admin.title')} 🛡️
           </h1>
           <p style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: 500 }}>
             Tizim holati va foydalanuvchilarni boshqarish.

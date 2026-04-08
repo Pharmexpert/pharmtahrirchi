@@ -158,6 +158,20 @@ const translations: Record<string, Record<LangCode, string>> = {
   'proj.subtitle': { en: 'List of all uploaded documents', ru: 'Список всех загруженных документов', 'uz-lat': 'Barcha yuklangan hujjatlar ro\'yxati', 'uz-cyr': 'Барча юкланган ҳужжатлар рўйхати' },
   'proj.textNum': { en: 'Text №', ru: 'Текст №', 'uz-lat': 'Matn №', 'uz-cyr': 'Матн №' },
   'proj.updated': { en: 'Updated', ru: 'Обновлено', 'uz-lat': 'Yangilangan', 'uz-cyr': 'Янгиланган' },
+
+  // Profile
+  'profile.title': { en: 'Profile Settings', ru: 'Настройки профиля', 'uz-lat': 'Profil sozlamalari', 'uz-cyr': 'Профиль созламалари' },
+  'profile.name': { en: 'Name', ru: 'Имя', 'uz-lat': 'Ism', 'uz-cyr': 'Исм' },
+  'profile.email': { en: 'Email', ru: 'Эл. почта', 'uz-lat': 'Email', 'uz-cyr': 'Email' },
+  'profile.password': { en: 'Password', ru: 'Пароль', 'uz-lat': 'Parol', 'uz-cyr': 'Парол' },
+  'profile.oldPassword': { en: 'Old password', ru: 'Старый пароль', 'uz-lat': 'Eski parol', 'uz-cyr': 'Эски парол' },
+  'profile.newPassword': { en: 'New password', ru: 'Новый пароль', 'uz-lat': 'Yangi parol', 'uz-cyr': 'Янги парол' },
+
+  // Admin
+  'admin.title': { en: 'Admin Panel', ru: 'Панель администратора', 'uz-lat': 'Admin paneli', 'uz-cyr': 'Админ панели' },
+  'admin.users': { en: 'Users', ru: 'Пользователи', 'uz-lat': 'Foydalanuvchilar', 'uz-cyr': 'Фойдаланувчилар' },
+  'admin.dbStats': { en: 'DB Statistics', ru: 'Статистика БД', 'uz-lat': 'DB statistikasi', 'uz-cyr': 'DB статистикаси' },
+  'admin.activity': { en: 'Activity Log', ru: 'Журнал активности', 'uz-lat': 'Faollik jurnali', 'uz-cyr': 'Фаоллик журнали' },
 }
 
 // ═══════════════════════════════════════════════════

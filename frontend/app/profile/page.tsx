@@ -3,10 +3,12 @@
 import React, { useState } from 'react'
 import { User, Mail, Lock, Save, CheckCircle2, AlertCircle, Eye, EyeOff, Shield } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import api from '../../services/api'
 
 export default function ProfilePage() {
   const { token, user } = useAuth()
+  const { t } = useLang()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [name, setName] = useState(user?.name || '')
@@ -90,7 +92,7 @@ export default function ProfilePage() {
           {(user?.name || 'U')[0].toUpperCase()}
         </div>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '4px' }}>Профиль созламалари</h1>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '4px' }}>{t('profile.title')}</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
             {user?.role === 'admin' ? '👑 Администратор' : '👤 Мутахассис'} • {user?.email}
           </p>

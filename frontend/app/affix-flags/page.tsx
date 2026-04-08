@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Layers, Search, Loader2, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import api from '../../services/api'
 
 interface AffixFlag {
@@ -15,6 +16,7 @@ interface AffixFlag {
 
 export default function AffixFlagsPage() {
   const { token } = useAuth()
+  const { t } = useLang()
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   const [flags, setFlags] = useState<AffixFlag[]>([])
@@ -62,7 +64,7 @@ export default function AffixFlagsPage() {
             <Layers size={24} color="white" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>Грамматика қоидалари</h1>
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 800, marginBottom: '4px' }}>{t('affix.title')}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
               Suffix/Prefix қоидалари • <strong>{total}</strong> гуруҳ
             </p>
