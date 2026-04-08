@@ -1029,19 +1029,27 @@ def search_dictionary(query: str, limit: int = 10) -> List[str]:
     return found
 
 def get_all_rules(lang: str = 'uz', limit: int = 500) -> List[Dict]:
-    """Get all rules for a language, excluding binary vector data."""
+    """Get all rules for a language, excluding binary vector data.
+    Matches 'uz' prefix (uz-lat, uz-cyr, uz_UZ, etc.) when 'uz' is requested.
+    Returns latest-first (by id DESC) so most recent additions show up first.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    # Explicitly exclude 'vector' as it contains binary data that breaks JSON encoding
+    # Prefix match for uz/ru to support variants
+    where_clause = "WHERE lang = ? OR lang LIKE ?" if lang in ("uz", "ru") else "WHERE lang = ?"
+    params: list = [lang, f"{lang}%"] if lang in ("uz", "ru") else [lang]
+    params.append(limit)
     cursor.execute(
-        """SELECT id, wrong_form, correct_form, error_type, context, lang, frequency,
+        f"""SELECT id, wrong_form, correct_form, error_type, context, lang, frequency,
                   created_at, updated_at,
                   COALESCE(quality_flag, 'unverified') as quality_flag,
-                  COALESCE(source, '') as source
-           FROM sayqallash_rules WHERE lang = ?
-           ORDER BY frequency DESC LIMIT ?""",
-        (lang, limit)
+                  COALESCE(source, '') as source,
+                  COALESCE(modified_by, '') as modified_by
+           FROM sayqallash_rules {where_clause}
+           ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+           LIMIT ?""",
+        tuple(params)
     )
     rows = cursor.fetchall()
     conn.close()
