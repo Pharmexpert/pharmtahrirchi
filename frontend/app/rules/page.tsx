@@ -6,6 +6,7 @@ import {
   Languages, CheckCircle2, AlertCircle, Loader2, X
 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import { useLang } from '../../components/LanguageProvider'
 import api from '../../services/api'
 
 interface Rule {
@@ -21,6 +22,7 @@ interface Rule {
 
 export default function RulesPage() {
   const { token } = useAuth()
+  const { t } = useLang()
   const [rules, setRules] = useState<Rule[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -121,10 +123,10 @@ export default function RulesPage() {
       <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '8px', letterSpacing: '-1px' }}>
-            Sayqallash Qoidalari 📖
+            {t('rules.title')} 📖
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Imlo xatoliklari va tuzatish qoidalari bazasi.
+            {t('rules.subtitle')}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -219,12 +221,12 @@ export default function RulesPage() {
         <div className="responsive-table-wrap"><table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Хато шакл</th>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тўғри шакл</th>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Тури</th>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Частота</th>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ўзгартирган</th>
-              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Amallar</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('rules.wrongForm')}</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('rules.correctForm')}</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('rules.type')}</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>{t('rules.frequency')}</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('rules.modifiedBy')}</th>
+              <th style={{ padding: '20px 24px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>{t('rules.actions')}</th>
             </tr>
             {/* Column Filters */}
             <tr style={{ background: '#FAFBFC', borderBottom: '1px solid var(--border)' }}>

@@ -379,7 +379,7 @@ async def auto_seed_databases():
             except Exception:
                 tm_count = -1
             conn6.close()
-            if tm_count == 0:
+            if tm_count < 2000:  # dilmash fix: re-run if under threshold (lutfiy alone gives 1000)
                 import sys as _sys, os as _os
                 sd = _os.path.join(_os.path.dirname(__file__), "scripts")
                 if sd not in _sys.path:

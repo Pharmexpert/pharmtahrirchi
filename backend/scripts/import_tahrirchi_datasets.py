@@ -143,15 +143,45 @@ def import_dilmash(cur, limit: int) -> int:
     except ImportError:
         return 0
     try:
-        # Try 'train' split; if fails, try other names
-        ds = None
-        for split_attempt in ["train", "validation", "test"]:
+        # dilmash has multiple configs: kaa_eng, kaa_rus, kaa_uzb, eng_uzb, eng_rus, uzb_rus etc.
+        # Each is a parquet file — we load them directly
+        all_inserted = 0
+        configs = ["eng_uzb", "kaa_uzb", "eng_rus", "uzb_rus", "kaa_rus", "kaa_eng"]
+        for conf in configs:
             try:
-                ds = load_dataset("tahrirchi/dilmash", split=f"{split_attempt}[:{limit}]", token=HF_TOKEN)
-                log.info(f"dilmash loaded from split={split_attempt}: {len(ds)}, fields={ds.column_names}")
-                break
-            except Exception:
-                continue
+                ds = load_dataset("tahrirchi/dilmash", name=conf, split=f"train[:{limit // len(configs)}]", token=HF_TOKEN)
+                log.info(f"dilmash {conf}: {len(ds)}, fields={ds.column_names}")
+                # Config name tells us src/tgt languages
+                parts = conf.split("_")
+                src_lang = parts[0][:3] if len(parts) >= 2 else "en"
+                tgt_lang = parts[1][:3] if len(parts) >= 2 else "uz"
+                for example in ds:
+                    if not isinstance(example, dict):
+                        continue
+                    str_fields = [(k, v) for k, v in example.items() if isinstance(v, str) and v.strip()]
+                    if len(str_fields) >= 2:
+                        src = str_fields[0][1]
+                        tgt = str_fields[1][1]
+                        try:
+                            cur.execute("""
+                                INSERT INTO translation_memory (source_lang, target_lang, source_text, target_text, source_db, quality_score)
+                                VALUES (?, ?, ?, ?, 'tahrirchi_dilmash', 1.0)
+                            """, (src_lang, tgt_lang, str(src)[:2000], str(tgt)[:2000]))
+                            all_inserted += 1
+                        except Exception:
+                            pass
+            except Exception as ee:
+                log.warning(f"dilmash {conf} failed: {ee}")
+        log.info(f"dilmash: +{all_inserted}")
+        return all_inserted
+
+    except Exception as e:
+        log.warning(f"dilmash outer failed: {e}")
+        return 0
+
+def _dilmash_legacy_skip(cur, limit):
+    try:
+        ds = None
         if ds is None:
             log.warning("dilmash: no valid split found")
             return 0
