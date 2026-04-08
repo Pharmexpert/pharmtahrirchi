@@ -263,6 +263,33 @@ async def auto_seed_databases():
         except Exception as e:
             logger.warning(f"[auto-seed] medical_terms failed: {e}")
 
+        # Auto-import kmashrab wordlist if user_dictionary is small
+        try:
+            conn3 = _db.connect_db()
+            cur3 = conn3.cursor()
+            cur3.execute("SELECT COUNT(*) FROM user_dictionary")
+            ud_count = cur3.fetchone()[0]
+            conn3.close()
+            if ud_count < 1000:  # one-time trigger
+                import sys as _sys, os as _os
+                sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+                if sd not in _sys.path:
+                    _sys.path.insert(0, sd)
+                try:
+                    import import_kmashrab
+                    r = import_kmashrab.main()
+                    logger.info(f"[auto-seed] kmashrab: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] kmashrab failed: {ee}")
+                try:
+                    import import_additional_dicts
+                    r = import_additional_dicts.main()
+                    logger.info(f"[auto-seed] extras: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] extras failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] user_dictionary check failed: {e}")
+
         # Try to seed Uzbek rules from book if PDF text is bundled
         try:
             import seed_uzbek_rules_from_book

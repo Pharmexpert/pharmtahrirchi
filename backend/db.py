@@ -509,6 +509,49 @@ def init_db():
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_para_textid ON paragraph_progress(text_id)')
 
+    # GEC (Grammatical Error Correction) dataset — self-building
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS gec_dataset (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        original TEXT NOT NULL,
+        corrected TEXT NOT NULL,
+        error_type TEXT,
+        domain TEXT DEFAULT 'general',
+        verified_by TEXT,
+        confidence REAL DEFAULT 0.5,
+        source TEXT,
+        lang TEXT DEFAULT 'uz',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_gec_domain ON gec_dataset(domain)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_gec_src ON gec_dataset(source)')
+
+    # Translation memory (imported from Tahrirchi dilmash)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS translation_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_lang TEXT,
+        target_lang TEXT,
+        source_text TEXT,
+        target_text TEXT,
+        source_db TEXT,
+        quality_score REAL DEFAULT 1.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_tm_langs ON translation_memory(source_lang, target_lang)')
+
+    # uz-crawl corpus + uzbek literature
+    cursor.execute('CREATE TABLE IF NOT EXISTS uz_crawl_corpus (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS uzbek_literature (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, source TEXT, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+
+    # Person names + places + numbers (kmashrab import)
+    cursor.execute('CREATE TABLE IF NOT EXISTS person_names (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, source TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS places (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, source TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS numbers (id INTEGER PRIMARY KEY AUTOINCREMENT, number_word TEXT UNIQUE, source TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS word_blacklist (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT UNIQUE, reason TEXT, source TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+
     # Style guide rules (pharma writing standards)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS style_rules (
