@@ -192,6 +192,18 @@ def run_full_cycle() -> Dict[str, Any]:
     result["duration_seconds"] = (datetime.now() - start).total_seconds()
     result["completed_at"] = datetime.now().isoformat()
 
+    # Write local log file (fallback when SMTP not configured)
+    try:
+        import json as _json
+        log_dir = os.path.join(os.path.dirname(__file__), "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "weekly_cycles.jsonl")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(result, ensure_ascii=False, default=str) + "\n")
+        logger.info(f"[weekly] local log appended: {log_file}")
+    except Exception as e:
+        logger.warning(f"[weekly] local log failed: {e}")
+
     # Send email report to admin (if configured)
     try:
         import email_helper

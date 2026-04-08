@@ -40,6 +40,10 @@ export default function DictionaryPage() {
   const [loading, setLoading] = useState(false)
   const [translations, setTranslations] = useState<Record<string, Translation>>({})
   const [translatingAll, setTranslatingAll] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState<string>('')
+
+  const visibleWords = sourceFilter ? words.filter(w => (w.source || '') === sourceFilter) : words
+  const availableSources = Array.from(new Set(words.map(w => w.source).filter(Boolean))) as string[]
 
   const fetchWords = useCallback(async () => {
     setLoading(true)
@@ -139,10 +143,19 @@ export default function DictionaryPage() {
           <input placeholder="Сўз бўйича қидириш..." value={search} onChange={e => { setSearch(e.target.value); setPage(0) }}
             style={{ width: '100%', padding: '12px 16px 12px 40px', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
         </div>
+        <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}
+          style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--border)', background: 'white', fontSize: '0.82rem', cursor: 'pointer', minWidth: 160 }}>
+          <option value="">Манба: барчаси</option>
+          {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <button onClick={fetchWords} style={{
           padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)',
           background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
         }}><RefreshCw size={14} /> Янгилаш</button>
+        <a href={`${API_BASE}/api/dictionary/export-csv?language=${language === 'cyrl' ? 'uz-cyr' : 'uz-lat'}`} target="_blank" rel="noreferrer"
+          style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', background: 'white', fontSize: '0.82rem', fontWeight: 700, color: '#0369A1', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+          📥 CSV
+        </a>
         <button onClick={translateAllVisible} disabled={translatingAll} style={{
           padding: '12px 16px', borderRadius: '10px', border: 'none',
           background: translatingAll ? '#9CA3AF' : 'linear-gradient(135deg, #B48C64, #8B5E3C)',
@@ -167,7 +180,7 @@ export default function DictionaryPage() {
                 <span key={h} style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{h}</span>
               ))}
             </div>
-            {words.map((w, i) => {
+            {visibleWords.map((w, i) => {
               const pos = POS_LABELS[w.pos] || POS_LABELS.other
               const tr = translations[w.word]
               return (

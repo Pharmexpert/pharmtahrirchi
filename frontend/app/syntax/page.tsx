@@ -58,6 +58,20 @@ export default function SyntaxPage() {
     api.syntax.stats().then(setStats).catch(() => {})
   }, [])
 
+  // Keyboard shortcuts: Ctrl+Enter = analyze, Ctrl+Shift+R = reorder, Esc = clear
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.includes('Mac')
+      const mod = isMac ? e.metaKey : e.ctrlKey
+      if (mod && e.key === 'Enter') { e.preventDefault(); analyze() }
+      else if (mod && e.shiftKey && (e.key === 'R' || e.key === 'r')) { e.preventDefault(); reorder() }
+      else if (e.key === 'Escape') { setText(''); setResult(null) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)

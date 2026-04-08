@@ -7,6 +7,29 @@ import io
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+@router.get("/rules/export-csv")
+async def export_rules_csv(lang: str = None, current_user: dict = Depends(get_admin_user)):
+    """Export all rules as CSV including quality_flag + source."""
+    import csv as _csv, io as _io
+    from fastapi.responses import StreamingResponse
+    rules = db.get_all_rules(lang, limit=50000)
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(["id", "wrong_form", "correct_form", "error_type", "lang", "frequency", "quality_flag", "source", "updated_at"])
+    for r in rules:
+        writer.writerow([
+            r.get("id", ""), r.get("wrong_form", ""), r.get("correct_form", ""),
+            r.get("error_type", ""), r.get("lang", ""), r.get("frequency", 0),
+            r.get("quality_flag", ""), r.get("source", ""), r.get("updated_at", ""),
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=rules_{lang or 'all'}.csv"},
+    )
+
+
 @router.get("/rules/export")
 async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_admin_user)):
     """Export all correction rules to an XLSX file."""

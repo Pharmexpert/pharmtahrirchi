@@ -887,6 +887,10 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
             
             if before_ok and after_ok:
                 actual_wrong = text[idx:idx + len(wrong)]
+                # Confidence score: base 60% + frequency boost (max +35%) — capped 95%
+                freq = rule.get('frequency', 1) or 1
+                import math
+                confidence = min(95, 60 + int(math.log2(max(freq, 1)) * 5))
                 found.append({
                     'from_index': idx,
                     'to_index': idx + len(wrong),
@@ -894,7 +898,8 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
                     'new_value': correct,
                     'error_type': rule['error_type'],
                     'source': 'rules_db',
-                    'frequency': rule['frequency']
+                    'frequency': rule['frequency'],
+                    'confidence': confidence,
                 })
             start_search = idx + len(wrong)
 
