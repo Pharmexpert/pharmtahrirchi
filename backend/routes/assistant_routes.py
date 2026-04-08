@@ -115,7 +115,10 @@ async def _cloud_fallback(prompt: str, system: Optional[str] = None, task: str =
             p = (system + "\n\n" if system else "") + prompt
         txt = await generate_ai_content(p, prefer="cloud")
         if txt and txt.strip():
-            return {"text": txt.strip(), "engine": "cloud_fallback"}
+            # Detect which cloud engine actually responded
+            import os as _os
+            engine_name = "gemini" if _os.getenv("GOOGLE_API_KEY") else "anthropic"
+            return {"text": txt.strip(), "engine": engine_name}
     except Exception as e:
         logger.warning(f"[cloud_fallback] {e}")
     return {"text": "", "engine": "none", "error": "cloud_fallback_failed"}
@@ -139,10 +142,9 @@ async def _call_engine(engine: str, prompt: str, system: Optional[str] = None, l
                         return {"text": txt.strip(), "engine": "llama_" + llama_engine.get_mode()}
                 except Exception as e:
                     logger.warning(f"[llama] {e}")
-            # Fall through to cloud
+            # Fall through to cloud — use it transparently (don't confuse user)
             fb = await _cloud_fallback(prompt, system, task, source_lang, target_lang)
             if fb.get("text"):
-                fb["engine"] = f"llama_loading→{fb['engine']}"
                 return fb
             return {"text": "Llama engine юкланмоқда (3-5 мин) ва cloud fallback ҳам ишламади.", "engine": "llama_empty", "error": "all_failed"}
 
@@ -160,10 +162,9 @@ async def _call_engine(engine: str, prompt: str, system: Optional[str] = None, l
                         return {"text": txt.strip(), "engine": "mistral_" + mistral_engine.get_mode()}
                 except Exception as e:
                     logger.warning(f"[mistral] {e}")
-            # Fall through to cloud
+            # Fall through to cloud — transparent
             fb = await _cloud_fallback(prompt, system, task, source_lang, target_lang)
             if fb.get("text"):
-                fb["engine"] = f"mistral_empty→{fb['engine']}"
                 return fb
             return {"text": "Mistral ва cloud fallback ишламади.", "engine": "mistral_empty", "error": "all_failed"}
 
