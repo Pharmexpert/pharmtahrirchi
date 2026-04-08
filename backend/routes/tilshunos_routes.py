@@ -1035,6 +1035,44 @@ async def tahrirchi_transliterate_endpoint(payload: Dict[str, Any], current_user
         return {"text": text, "error": str(e)}
 
 
+@router.post("/uzbek/pos-tag")
+async def uzbek_pos_tag(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """POS tagging via MaksudSharipov/Uzbek-POS-Tagger-TahrirchiBERT."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"tags": []}
+    try:
+        import uzbek_engines
+        tags = await uzbek_engines.pos_tag_async(text)
+        return {"tags": tags, "engine": "tahrirchi_pos"}
+    except Exception as e:
+        return {"tags": [], "error": str(e)}
+
+
+@router.post("/uzbek/correct")
+async def uzbek_correct(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Uzbek OCR/transcript corrector via islomov/rubai-corrector."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"corrected": ""}
+    try:
+        import uzbek_engines
+        corrected = await uzbek_engines.correct_text_async(text)
+        return {"corrected": corrected, "engine": "rubai_corrector"}
+    except Exception as e:
+        return {"corrected": text, "error": str(e)}
+
+
+@router.get("/uzbek/status")
+async def uzbek_status(current_user: Dict = Depends(get_current_user)):
+    """Status of advanced Uzbek engines."""
+    try:
+        import uzbek_engines
+        return uzbek_engines.get_status()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/style-rules")
 async def list_style_rules(category: str = None, current_user: Dict = Depends(get_current_user)):
     """List pharma style guide rules."""
