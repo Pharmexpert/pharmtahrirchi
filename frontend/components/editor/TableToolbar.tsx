@@ -21,6 +21,7 @@ interface Props {
   handleSaveAll: () => void
   finishWork: () => void
   handleExport: () => void
+  handleSyntaxCheck?: () => Promise<{ totalErrors: number; rowsWithErrors: number }>
 }
 
 export default function TableToolbar({
@@ -28,8 +29,17 @@ export default function TableToolbar({
   showSourceLangModal, saveStatus,
   isBatchPolishing, isAiAligning, savingAll, isFinishing,
   handleLinguisticBtnClick, batchTransliterate, runBatchSayqallash,
-  aiAlign, handleSaveAll, finishWork, handleExport,
+  aiAlign, handleSaveAll, finishWork, handleExport, handleSyntaxCheck,
 }: Props) {
+  const [synBusy, setSynBusy] = React.useState(false)
+  const runSyntax = async () => {
+    if (!handleSyntaxCheck) return
+    setSynBusy(true)
+    try {
+      const r = await handleSyntaxCheck()
+      alert(`Синтаксис: ${r.totalErrors} та хато, ${r.rowsWithErrors} та қаторда`)
+    } finally { setSynBusy(false) }
+  }
   return (
     <header style={{ flexShrink: 0, position: 'sticky', top: 0, zIndex: 100, background: '#1e293b', color: 'white', padding: '0 14px', height: '50px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 2px 8px rgba(0,0,0,.25)' }}>
       <Database size={17} color="#60a5fa" style={{ flexShrink: 0 }} />
@@ -86,6 +96,11 @@ export default function TableToolbar({
         <button onClick={finishWork} disabled={isFinishing} style={{ padding: '5px 10px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(217,119,6,0.3)' }}>
           {isFinishing ? 'Якунланмоқда...' : 'Ишни якунлаш ✓'}
         </button>
+        {handleSyntaxCheck && (
+          <button onClick={runSyntax} disabled={synBusy} style={{ padding: '5px 10px', background: synBusy ? '#9CA3AF' : '#7C3AED', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: synBusy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+            {synBusy ? '⏳ Синтаксис...' : '📐 Синтаксис'}
+          </button>
+        )}
         <button onClick={handleExport} style={{ padding: '5px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           Export DOCX
         </button>

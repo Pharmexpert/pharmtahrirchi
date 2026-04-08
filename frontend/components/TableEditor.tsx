@@ -118,6 +118,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         handleSaveAll={editor.handleSaveAll}
         finishWork={editor.finishWork}
         handleExport={editor.handleExport}
+        handleSyntaxCheck={editor.handleSyntaxCheck}
       />
 
       {/* Progress Modal (Batch Polishing / AI Analysis) */}

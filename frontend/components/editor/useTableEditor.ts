@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { RowData } from '../../types/api'
 import { useAuth } from '../LoginGuard'
+import api from '../../services/api'
 import type { Term } from './TermHighlighter'
 
 export interface SynonymPopupState {
@@ -545,6 +546,33 @@ export function useTableEditor({ initialData, filename, textId = '' }: UseTableE
     setBatchSummary({ total: contentRows.length, corrected: correctedCount, annotations: totalAnns })
   }
 
+  // Phase 5: Syntax check across all uz_proposed cells
+  const handleSyntaxCheck = async () => {
+    const newData = [...data]
+    let totalErrors = 0
+    let rowsWithErrors = 0
+    for (let i = 0; i < newData.length; i++) {
+      const r = newData[i]
+      if (r.type !== 'content') continue
+      const uzText = (r.uz_proposed || r.uz_v1 || '').trim()
+      if (!uzText) continue
+      try {
+        const res: any = await api.syntax.check(uzText)
+        if (res.errors && res.errors.length > 0) {
+          totalErrors += res.errors.length
+          rowsWithErrors++
+          newData[i] = {
+            ...newData[i],
+            notes: (newData[i].notes ? newData[i].notes + '\n' : '') +
+                   `Синтаксис: ${res.errors.length} та хато (${res.errors.map((e: any) => e.message).slice(0, 2).join('; ')})`
+          }
+        }
+      } catch {}
+    }
+    setData(newData)
+    return { totalErrors, rowsWithErrors }
+  }
+
   const handleSaveAll = async () => {
     setSavingAll(true)
     try {
@@ -636,6 +664,7 @@ export function useTableEditor({ initialData, filename, textId = '' }: UseTableE
     improveRow, saveSingleRow, aiAlign, handleLinguisticBtnClick, startLinguisticAnalysis,
     confirmSaveLinguisticItems, finishWork, searchLinguisticDatabase, runBatchSayqallash,
     handleSaveAll, handleExport, onMagicSplit, startResizing,
+    handleSyntaxCheck,
   }
 }
 

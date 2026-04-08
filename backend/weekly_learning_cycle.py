@@ -182,6 +182,13 @@ def run_full_cycle() -> Dict[str, Any]:
     except Exception as e:
         result["pharma_dict_error"] = str(e)
 
+    # 5. Syntax module — auto-extract from approved translations
+    try:
+        import syntax_self_improve
+        result["syntax_improve"] = syntax_self_improve.run()
+    except Exception as e:
+        result["syntax_improve_error"] = str(e)
+
     result["duration_seconds"] = (datetime.now() - start).total_seconds()
     result["completed_at"] = datetime.now().isoformat()
 
