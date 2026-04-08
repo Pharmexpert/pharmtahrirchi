@@ -290,6 +290,57 @@ async def reparse_hunspell(current_user: dict = Depends(get_admin_user)):
         return {"success": False, "error": str(e)}
 
 
+@router.post("/pharma-dict/generate")
+async def generate_pharma_dict(current_user: dict = Depends(get_admin_user)):
+    """Generate Hunspell dictionary from drugs + medical_terms tables using uz-hungen port."""
+    try:
+        import uzbek_dict_generator
+        result = uzbek_dict_generator.generate_pharma_dictionary()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/weekly-cycle/run")
+async def run_weekly_cycle(current_user: dict = Depends(get_admin_user)):
+    """Manually trigger weekly learning cycle (normally runs Sunday 03:00)."""
+    try:
+        import weekly_learning_cycle
+        result = weekly_learning_cycle.run_full_cycle()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/weekly-cycle/history")
+async def weekly_cycle_history(limit: int = 20, current_user: dict = Depends(get_admin_user)):
+    """Get history of previous weekly cycles."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_cycles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                result TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("SELECT * FROM weekly_cycles ORDER BY created_at DESC LIMIT ?", (limit,))
+        rows = []
+        import json as _json
+        for r in cur.fetchall():
+            d = dict(r)
+            try:
+                d["result"] = _json.loads(d.get("result", "{}") or "{}")
+            except Exception:
+                pass
+            rows.append(d)
+        conn.close()
+        return {"cycles": rows}
+    except Exception as e:
+        return {"cycles": [], "error": str(e)}
+
+
 @router.post("/uzbek-rules/seed")
 async def seed_uzbek_rules(current_user: dict = Depends(get_admin_user)):
     """Import Uzbek rules from 'Ona tili' book (M.Hamroyev et al., 2007)."""
