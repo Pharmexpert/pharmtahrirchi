@@ -491,6 +491,14 @@ async def _auto_seed_background():
                 logger.info(f"[post-process] style_rules: {r}")
             except Exception as ee:
                 logger.warning(f"[post-process] style_rules failed: {ee}")
+
+            # 10. SI units (61) + pharma solubility (7) + auto-generated style rules (61)
+            try:
+                import import_si_units_style
+                r = import_si_units_style.main()
+                logger.info(f"[post-process] si_units: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] si_units failed: {ee}")
         except Exception as e:
             logger.warning(f"[post-process] setup failed: {e}")
 
