@@ -374,13 +374,28 @@ export default function RulesPage() {
                     </td>
                     <td style={{ padding: '20px 24px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button 
+                        {(rule.quality_flag === 'noisy' || rule.quality_flag === 'suspicious') && (
+                          <button
+                            title="Mark as clean"
+                            onClick={async () => {
+                              try {
+                                await (api.admin as any).setRuleQuality(rule.id, 'clean')
+                                setRules(rules.map(r => r.id === rule.id ? { ...r, quality_flag: 'clean' } : r))
+                                showMessage('Clean деб белгиланди ✓')
+                              } catch { showMessage('Xatolik', 'error') }
+                            }}
+                            style={{ padding: '8px', borderRadius: '8px', background: '#DCFCE7', color: '#15803D', border: 'none', cursor: 'pointer' }}
+                          >
+                            ✓
+                          </button>
+                        )}
+                        <button
                           onClick={() => setEditingRule(rule)}
                           style={{ padding: '8px', borderRadius: '8px', background: 'var(--accent-bg)', color: 'var(--accent-primary)', border: 'none', cursor: 'pointer' }}
                         >
                           <Edit2 size={16} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDelete(rule.id)}
                           style={{ padding: '8px', borderRadius: '8px', background: 'var(--danger-bg)', color: 'var(--danger)', border: 'none', cursor: 'pointer' }}
                         >

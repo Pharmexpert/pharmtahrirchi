@@ -163,6 +163,27 @@ async def delete_rule(rule_id: int, current_user: dict = Depends(can_edit_db)):
     db.delete_sayqallash_rule(rule_id)
     return {"status": "deleted"}
 
+
+@router.post("/rules/{rule_id}/quality")
+async def set_rule_quality(rule_id: int, payload: Dict[str, Any], current_user: dict = Depends(can_edit_db)):
+    """Manually set quality_flag of a rule (clean/noisy/suspicious/unverified)."""
+    flag = (payload.get("quality_flag") or "").strip()
+    if flag not in ("clean", "noisy", "suspicious", "unverified"):
+        raise HTTPException(status_code=400, detail="Invalid quality_flag")
+    conn = db.connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE sayqallash_rules SET quality_flag = ?, verified_at = CURRENT_TIMESTAMP WHERE id = ?", (flag, rule_id))
+        conn.commit()
+    finally:
+        conn.close()
+    # Invalidate rules cache so changes take effect in editor pipeline
+    try:
+        db.rules_cache.last_load = 0
+    except Exception:
+        pass
+    return {"status": "updated", "rule_id": rule_id, "quality_flag": flag}
+
 @router.get("/db-stats")
 async def get_db_stats(current_user: dict = Depends(get_current_user)):
     """Detailed database statistics for admin reporting."""

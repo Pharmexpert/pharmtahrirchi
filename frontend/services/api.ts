@@ -398,6 +398,8 @@ export const admin = {
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
   updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),
+  setRuleQuality: (id: number, quality_flag: string) =>
+    post<{ status: string }>(`/api/admin/rules/${id}/quality`, { quality_flag }),
   // Seed / import endpoints
   importKmashrab: () => post<any>('/api/admin/wordlists/import-kmashrab', {}),
   importExtras: () => post<any>('/api/admin/wordlists/import-extras', {}),

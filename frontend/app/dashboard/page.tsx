@@ -250,6 +250,45 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+          {/* SVG Bar Chart — relative sizes of top tables */}
+          <div style={{ marginTop: 20, padding: '14px 16px', background: '#FAFBFC', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, marginBottom: 10 }}>📊 ТАБЛИЦА ҲАЖМЛАРИ (LOG ШКАЛА)</div>
+            {(() => {
+              const bars = [
+                { label: 'Луғат', key: 'user_dictionary', color: '#3B82F6' },
+                { label: 'Бирикмалар', key: 'syntax_phrases', color: '#8B5CF6' },
+                { label: 'Парсе', key: 'syntax_parsed_sentences', color: '#10B981' },
+                { label: 'Шаблон', key: 'syntax_sentence_templates', color: '#F59E0B' },
+                { label: 'Тартиб', key: 'syntax_word_order_rules', color: '#EF4444' },
+                { label: 'Sayqallash', key: 'sayqallash_rules', color: '#EC4899' },
+                { label: 'TM', key: 'translation_memory', color: '#A855F7' },
+                { label: 'Freq', key: 'word_frequency_corpus', color: '#14B8A6' },
+              ]
+              const values = bars.map(b => dbMetrics[b.key] || 0)
+              const max = Math.max(...values, 1)
+              const logMax = Math.log10(max + 1)
+              return (
+                <div>
+                  {bars.map((b, i) => {
+                    const v = values[i]
+                    const pct = v > 0 ? (Math.log10(v + 1) / logMax) * 100 : 0
+                    return (
+                      <div key={b.key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <div style={{ width: 80, fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{b.label}</div>
+                        <div style={{ flex: 1, background: '#E5E7EB', borderRadius: 4, height: 18, position: 'relative', overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: b.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                          <div style={{ position: 'absolute', left: 8, top: 0, lineHeight: '18px', fontSize: '0.68rem', fontWeight: 700, color: pct > 30 ? 'white' : '#334155' }}>
+                            {v.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+
           {dbMetrics.quality_distribution && Object.keys(dbMetrics.quality_distribution).length > 0 && (
             <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, alignSelf: 'center' }}>Сифат тақсимоти:</span>
