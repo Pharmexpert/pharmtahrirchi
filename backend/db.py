@@ -831,13 +831,20 @@ def is_word_wrong(word: str, lang: str = 'uz') -> bool:
 
 def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     """Find known correction rules that apply to the given text.
-    
+
     IMPORTANT: Does NOT suggest replacing text that is a known correct_form.
-    This prevents circular corrections (e.g., marking 'аксарият' as wrong
-    when it was previously corrected FROM 'аксарияд' TO 'аксарият').
+    Supports dual-script matching: if text is in Latin, Cyrillic rules are
+    auto-converted for matching, and vice versa.
     """
     if not text:
         return []
+
+    # Dual-script: detect text script and prepare converted version for matching
+    try:
+        import dual_script
+        _text_script = dual_script.detect_script(text)
+    except Exception:
+        _text_script = "unknown"
     
     # Use in-memory cache instead of database query per call
     rules = rules_cache.get_all(lang)
@@ -870,38 +877,59 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
         
         wrong_lower = wrong.lower().strip()
         correct_lower = correct.lower().strip()
-        
+
         # CRITICAL: Skip if wrong and correct are same
         if wrong_lower == correct_lower:
             continue
-        
+
+        # Dual-script: if rule is in different script than text, convert rule for matching
+        wrong_match = wrong_lower
+        correct_out = correct
+        try:
+            if _text_script in ("cyr", "lat"):
+                rule_script = "cyr" if any("\u0400" <= ch <= "\u04FF" for ch in wrong_lower) else "lat"
+                if rule_script != _text_script:
+                    import dual_script
+                    if _text_script == "lat":
+                        conv_wrong = dual_script.to_latin(wrong_lower)
+                        conv_correct = dual_script.to_latin(correct)
+                    else:
+                        conv_wrong = dual_script.to_cyrillic(wrong_lower)
+                        conv_correct = dual_script.to_cyrillic(correct)
+                    if conv_wrong:
+                        wrong_match = conv_wrong.lower().strip()
+                    if conv_correct:
+                        correct_out = conv_correct
+        except Exception:
+            pass
+
         # Exact Match
         start_search = 0
         while True:
-            idx = text_lower.find(wrong_lower, start_search)
+            idx = text_lower.find(wrong_match, start_search)
             if idx == -1:
                 break
             
             before_ok = (idx == 0) or not text[idx - 1].isalpha()
-            after_ok = (idx + len(wrong) >= len(text)) or not text[idx + len(wrong)].isalpha()
+            after_ok = (idx + len(wrong_match) >= len(text)) or not text[idx + len(wrong_match)].isalpha()
             
             if before_ok and after_ok:
-                actual_wrong = text[idx:idx + len(wrong)]
+                actual_wrong = text[idx:idx + len(wrong_match)]
                 # Confidence score: base 60% + frequency boost (max +35%) — capped 95%
                 freq = rule.get('frequency', 1) or 1
                 import math
                 confidence = min(95, 60 + int(math.log2(max(freq, 1)) * 5))
                 found.append({
                     'from_index': idx,
-                    'to_index': idx + len(wrong),
+                    'to_index': idx + len(wrong_match),
                     'old_value': actual_wrong,
-                    'new_value': correct,
+                    'new_value': correct_out,
                     'error_type': rule['error_type'],
                     'source': 'rules_db',
                     'frequency': rule['frequency'],
                     'confidence': confidence,
                 })
-            start_search = idx + len(wrong)
+            start_search = idx + len(wrong_match)
 
     # Semantic (Vector) Match - SCALABLE VERSION (FAISS)
     if bert_engine.engine.initialized:
