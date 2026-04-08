@@ -624,28 +624,7 @@ export default function TilshunosPage() {
         </div>
       )}
 
-      {/* AI Engines status badges */}
-      {aiEngines && (
-        <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap', fontSize: '0.65rem', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>🤖 AI Engines:</span>
-          {Object.entries(aiEngines).map(([name, info]: [string, any]) => {
-            const ok = info?.available
-            const mode = info?.mode || (info?.uzbert_available !== undefined ? (info.ensemble ? 'ensemble' : 'single') : '')
-            const color = ok ? '#16A34A' : '#9CA3AF'
-            const bg = ok ? '#F0FDF4' : '#F3F4F6'
-            return (
-              <span key={name} title={info?.model || name} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '3px 8px', borderRadius: 10, background: bg, color,
-                border: `1px solid ${color}33`, fontWeight: 700,
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                {name.toUpperCase()}{mode ? ` · ${mode}` : ''}
-              </span>
-            )
-          })}
-        </div>
-      )}
+      {/* AI Engines badges removed per user request */}
 
       {mode === 'edit' ? (
         /* ───────── EDIT MODE ───────── */
