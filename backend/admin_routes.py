@@ -146,11 +146,25 @@ async def get_db_stats(current_user: dict = Depends(get_current_user)):
     conn = db.connect_db()
     cursor = conn.cursor()
     stats = {}
-    for table in ['projects', 'alignments', 'sayqallash_rules', 'users', 'paragraphs_dashboard']:
+    for table in ['projects', 'alignments', 'sayqallash_rules', 'users', 'paragraphs_dashboard',
+                  'user_dictionary', 'syntax_phrases', 'syntax_parsed_sentences',
+                  'syntax_sentence_templates', 'syntax_word_order_rules',
+                  'hunspell_affix_descriptions', 'affix_flag_mapping',
+                  'word_frequency_corpus', 'translation_memory']:
         try:
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             stats[table] = cursor.fetchone()[0]
         except: stats[table] = 0
+
+    # Quality flag distribution for sayqallash_rules
+    try:
+        cursor.execute("""
+            SELECT COALESCE(quality_flag, 'unverified') as q, COUNT(*)
+            FROM sayqallash_rules GROUP BY q
+        """)
+        stats['quality_distribution'] = {row[0]: row[1] for row in cursor.fetchall()}
+    except:
+        stats['quality_distribution'] = {}
     # "paragraphs" stat = paragraphs_dashboard count (matches /paragraphs page)
     stats['paragraphs'] = stats.get('paragraphs_dashboard', 0)
     

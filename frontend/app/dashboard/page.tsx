@@ -17,6 +17,7 @@ export default function DashboardPage() {
     projects: 0, alignments: 0, rules: 0,
     annotated: 0, disputed: 0, abbreviations: 0, files: 0, synonyms: 0
   })
+  const [dbMetrics, setDbMetrics] = useState<any>(null)
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -44,6 +45,7 @@ export default function DashboardPage() {
             alignments: d.paragraphs || d.counts?.paragraphs_dashboard || d.counts?.alignments || 0,
             synonyms: d.synonyms || d.counts?.synonyms || 0
           }))
+          setDbMetrics(d.counts || {})
         }
         if (lingRes.status === 'fulfilled') {
           const d: any = lingRes.value
@@ -223,6 +225,46 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Linguistic DB Metrics Panel (new Phase 2026 data) */}
+      {dbMetrics && (
+        <div style={{ background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border)', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', marginBottom: '24px' }}>
+          <h2 style={{ fontWeight: 800, fontSize: '1.05rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Database size={18} color="#8B5E3C" /> Лингвистик база метрикалари
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+            {[
+              { label: 'Луғат сўзлари', key: 'user_dictionary', color: '#3B82F6' },
+              { label: 'Синтаксис бирикмалар', key: 'syntax_phrases', color: '#8B5CF6' },
+              { label: 'Парсе қилинган гаплар', key: 'syntax_parsed_sentences', color: '#10B981' },
+              { label: 'Синтаксис шаблонлар', key: 'syntax_sentence_templates', color: '#F59E0B' },
+              { label: 'Сўз тартиби қоидалари', key: 'syntax_word_order_rules', color: '#EF4444' },
+              { label: 'Affix qoida (qoida)', key: 'hunspell_affix_descriptions', color: '#06B6D4' },
+              { label: 'Affix flag mapping', key: 'affix_flag_mapping', color: '#EC4899' },
+              { label: 'Word freq corpus', key: 'word_frequency_corpus', color: '#14B8A6' },
+              { label: 'Translation memory', key: 'translation_memory', color: '#A855F7' },
+            ].map(m => (
+              <div key={m.key} style={{ padding: '14px', borderRadius: 10, background: `${m.color}08`, border: `1px solid ${m.color}22` }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>{m.label}</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: m.color }}>{(dbMetrics[m.key] || 0).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+          {dbMetrics.quality_distribution && Object.keys(dbMetrics.quality_distribution).length > 0 && (
+            <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, alignSelf: 'center' }}>Сифат тақсимоти:</span>
+              {Object.entries(dbMetrics.quality_distribution).map(([k, v]: any) => {
+                const c: any = { clean: '#16A34A', noisy: '#DC2626', suspicious: '#D97706', unverified: '#64748B' }
+                return (
+                  <span key={k} style={{ padding: '4px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: `${c[k] || '#999'}15`, color: c[k] || '#555' }}>
+                    {k}: {v}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Projects */}
       <div style={{ background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border)', padding: '28px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
