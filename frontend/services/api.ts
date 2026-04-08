@@ -628,6 +628,12 @@ export const tilshunos = {
   checkStyle: (text: string) =>
     post<{ violations: Array<{ rule_id: string; category: string; severity: string; description: string; suggestion: string; from: number; to: number; matched: string }>; total: number }>('/api/tilshunos/check-style', { text }),
 
+  saveDocVersion: (payload: { text_id: string; sentence_no: number; lang: string; content: string; author_id?: string; author_name?: string; action?: string }) =>
+    post<{ success: boolean; version?: number }>('/api/document-versions/save', payload),
+
+  getDocVersions: (text_id: string, sentence_no: number, lang?: string) =>
+    get<{ versions: any[] }>(`/api/document-versions/${encodeURIComponent(text_id)}/${sentence_no}${lang ? `?lang=${lang}` : ''}`),
+
   trainingLogExport: (kind?: string, limit = 10000) => {
     const qs = new URLSearchParams()
     if (kind) qs.set('kind', kind)

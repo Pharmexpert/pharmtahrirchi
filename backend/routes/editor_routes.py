@@ -290,6 +290,65 @@ Rules:
     return {"data": result_data}
 
 
+@router.post("/api/paragraph-progress/update")
+async def update_paragraph_progress(payload: Dict[str, Any]):
+    """Update workflow status of a paragraph (pending/in_review/approved/needs_revision)."""
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS paragraph_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text_id TEXT, sentence_no INTEGER,
+                status TEXT DEFAULT 'pending', reviewer_id TEXT, reviewer_name TEXT,
+                notes TEXT, ai_score REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(text_id, sentence_no)
+            )
+        """)
+        cur.execute("""
+            INSERT INTO paragraph_progress (text_id, sentence_no, status, reviewer_id, reviewer_name, notes, ai_score, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(text_id, sentence_no) DO UPDATE SET
+                status=excluded.status,
+                reviewer_id=excluded.reviewer_id,
+                reviewer_name=excluded.reviewer_name,
+                notes=excluded.notes,
+                ai_score=excluded.ai_score,
+                updated_at=CURRENT_TIMESTAMP
+        """, (
+            payload.get("text_id"), payload.get("sentence_no"),
+            payload.get("status", "pending"),
+            payload.get("reviewer_id", ""), payload.get("reviewer_name", ""),
+            payload.get("notes", ""), payload.get("ai_score"),
+        ))
+        conn.commit()
+        conn.close()
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/paragraph-progress/{text_id}")
+async def get_paragraph_progress(text_id: str):
+    """Get progress for all paragraphs in a project."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM paragraph_progress WHERE text_id = ?", (text_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        # Aggregate stats
+        stats = {"pending": 0, "in_review": 0, "approved": 0, "needs_revision": 0}
+        for r in rows:
+            s = r.get("status", "pending")
+            stats[s] = stats.get(s, 0) + 1
+        return {"rows": rows, "stats": stats, "total": len(rows)}
+    except Exception as e:
+        return {"rows": [], "error": str(e)}
+
+
 @router.post("/api/document-versions/save")
 async def save_document_version(payload: Dict[str, Any]):
     """Save a snapshot of a row to the version history."""
