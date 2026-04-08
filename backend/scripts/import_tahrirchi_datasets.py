@@ -104,38 +104,6 @@ def import_uz_crawl(cur, limit: int) -> int:
         log.warning(f"uz-crawl import failed: {e}")
         return 0
 
-def _unused_old_uz_crawl(cur, limit):
-    try:
-        ds = None
-        inserted = 0
-        for i, example in enumerate([]):
-            if i >= limit:
-                break
-            # Try multiple possible field names
-            text = ""
-            if isinstance(example, dict):
-                text = example.get("text") or example.get("content") or example.get("sentence") or ""
-                if not text:
-                    # Take first string field
-                    for k, v in example.items():
-                        if isinstance(v, str) and len(v) > 20:
-                            text = v
-                            break
-            if not text or len(text) < 20:
-                continue
-            try:
-                cur.execute("INSERT INTO uz_crawl_corpus (text, metadata) VALUES (?, ?)",
-                            (str(text)[:10000], f"example_{i}"))
-                inserted += 1
-            except Exception as e:
-                log.debug(f"  insert fail: {e}")
-        log.info(f"uz-crawl: +{inserted}")
-        return inserted
-    except Exception as e:
-        log.warning(f"uz-crawl import failed: {e}")
-        return 0
-
-
 def import_dilmash(cur, limit: int) -> int:
     """Import dilmash translation pairs (non-streaming)."""
     try:
@@ -178,61 +146,6 @@ def import_dilmash(cur, limit: int) -> int:
     except Exception as e:
         log.warning(f"dilmash outer failed: {e}")
         return 0
-
-def _dilmash_legacy_skip(cur, limit):
-    try:
-        ds = None
-        if ds is None:
-            log.warning("dilmash: no valid split found")
-            return 0
-        inserted = 0
-        for example in ds:
-            if inserted >= limit:
-                break
-            if not isinstance(example, dict):
-                continue
-            # Auto-detect: first 2 string fields as src/tgt
-            str_fields = [(k, v) for k, v in example.items() if isinstance(v, str) and v.strip()]
-            if len(str_fields) >= 2:
-                src_key, src = str_fields[0]
-                tgt_key, tgt = str_fields[1]
-                src_lang = src_key[:3] if len(src_key) <= 5 else "en"
-                tgt_lang = tgt_key[:3] if len(tgt_key) <= 5 else "uz"
-            else:
-                continue
-            # Legacy fallback if auto-detect gave empty
-            if not src:
-                src = example.get("source", example.get("src", example.get("en", "")))
-            if not tgt:
-                tgt = example.get("target", example.get("tgt", example.get("uz", "")))
-            if 'src_lang' not in locals():
-                src_lang = example.get("source_lang", "en")
-            tgt_lang = example.get("target_lang", "uz")
-            # Try other common structures
-            if not src and "translation" in example:
-                t = example["translation"]
-                if isinstance(t, dict):
-                    keys = list(t.keys())
-                    if len(keys) >= 2:
-                        src_lang, tgt_lang = keys[0], keys[1]
-                        src = t[src_lang]
-                        tgt = t[tgt_lang]
-            if not src or not tgt:
-                continue
-            try:
-                cur.execute("""
-                    INSERT INTO translation_memory (source_lang, target_lang, source_text, target_text, source_db, quality_score)
-                    VALUES (?, ?, ?, ?, 'tahrirchi_dilmash', 1.0)
-                """, (src_lang, tgt_lang, str(src)[:2000], str(tgt)[:2000]))
-                inserted += 1
-            except Exception:
-                pass
-        log.info(f"dilmash: +{inserted}")
-        return inserted
-    except Exception as e:
-        log.warning(f"dilmash import failed: {e}")
-        return 0
-
 
 def import_lutfiy(cur, limit: int) -> int:
     """Import lutfiy literary pairs (non-streaming + field auto-detection)."""
