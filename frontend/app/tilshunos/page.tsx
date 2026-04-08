@@ -98,6 +98,23 @@ export default function TilshunosPage() {
   const richEditRef = useRef<HTMLDivElement>(null)
   const richSrcRef = useRef<HTMLDivElement>(null)
   const richTgtRef = useRef<HTMLDivElement>(null)
+  const syncScrollRef = useRef<boolean>(true)
+
+  // Side-by-side sync scroll handler
+  const handleSourceScroll = (e: React.UIEvent<HTMLElement>) => {
+    if (!syncScrollRef.current || !richTgtRef.current) return
+    const src = e.currentTarget
+    const tgt = richTgtRef.current
+    const ratio = src.scrollTop / (src.scrollHeight - src.clientHeight || 1)
+    tgt.scrollTop = ratio * (tgt.scrollHeight - tgt.clientHeight)
+  }
+  const handleTargetScroll = (e: React.UIEvent<HTMLElement>) => {
+    if (!syncScrollRef.current || !richSrcRef.current) return
+    const tgt = e.currentTarget
+    const src = richSrcRef.current
+    const ratio = tgt.scrollTop / (tgt.scrollHeight - tgt.clientHeight || 1)
+    src.scrollTop = ratio * (src.scrollHeight - src.clientHeight)
+  }
   // Rich (DOCX) HTML content — when present, render rich editor instead of plain
   const [richHtml, setRichHtml] = useState<string>('')
   const [richSrcHtml, setRichSrcHtml] = useState<string>('')
@@ -1048,12 +1065,23 @@ export default function TilshunosPage() {
                   contentEditable
                   suppressContentEditableWarning
                   onInput={e => setSourceText((e.currentTarget as HTMLDivElement).innerText)}
+                  onScroll={handleSourceScroll}
                   dangerouslySetInnerHTML={{ __html: richSrcHtml }}
                   className="docx-rich"
                   style={{ width: '100%', minHeight: 500, padding: 20, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.9rem', fontFamily: 'Times New Roman, Georgia, serif', background: 'white', lineHeight: 1.6, outline: 'none', overflow: 'auto' }}
                 />
               ) : (
-                <textarea value={sourceText} onChange={e => setSourceText(e.target.value)} placeholder="Асл матн..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+                <>
+                  <textarea value={sourceText} onChange={e => setSourceText(e.target.value)} placeholder="Асл матн..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+                  {(linguistic.annotated.length + linguistic.disputed.length + linguistic.abbreviations.length) > 0 && sourceText && (
+                    <div style={{ marginTop: 6, padding: '6px 10px', background: '#FAFBFF', border: '1px dashed #E5E7EB', borderRadius: 6, fontSize: '0.72rem', lineHeight: 1.5 }}>
+                      <div style={{ fontSize: '0.58rem', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>🧬 Лингвистик аниқланган</div>
+                      {linguistic.annotated.map((a, i) => <span key={`a${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#F3E8FF', color: '#7C3AED', borderRadius: 4, fontWeight: 600 }}>{a.text}</span>)}
+                      {linguistic.disputed.map((d, i) => <span key={`d${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#FEE2E2', color: '#DC2626', borderRadius: 4, fontWeight: 600 }}>{d.text}</span>)}
+                      {linguistic.abbreviations.map((b, i) => <span key={`b${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#DCFCE7', color: '#16A34A', borderRadius: 4, fontWeight: 600 }}>{b.text}</span>)}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
@@ -1064,6 +1092,7 @@ export default function TilshunosPage() {
                   contentEditable
                   suppressContentEditableWarning
                   onInput={e => setTargetText((e.currentTarget as HTMLDivElement).innerText)}
+                  onScroll={handleTargetScroll}
                   dangerouslySetInnerHTML={{ __html: richTgtHtml }}
                   className="docx-rich"
                   style={{ width: '100%', minHeight: 500, padding: 20, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.9rem', fontFamily: 'Times New Roman, Georgia, serif', background: 'white', lineHeight: 1.6, outline: 'none', overflow: 'auto' }}

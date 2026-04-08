@@ -236,6 +236,20 @@ async def change_role(payload: Dict[str, Any], current_user: dict = Depends(get_
     db.update_user_role(user_id, role)
     return {"success": True}
 
+@router.post("/sayqallash/cleanup")
+async def run_sayqallash_cleanup(current_user: dict = Depends(get_admin_user)):
+    """Run Sayqallash DB cleanup: remove duplicates, no-ops, empty rules."""
+    try:
+        import sys as _sys, os as _os
+        script_dir = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if script_dir not in _sys.path:
+            _sys.path.insert(0, script_dir)
+        import sayqallash_cleanup
+        return {"success": True, **sayqallash_cleanup.cleanup()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/uzbek-rules/seed")
 async def seed_uzbek_rules(current_user: dict = Depends(get_admin_user)):
     """Import Uzbek rules from 'Ona tili' book (M.Hamroyev et al., 2007)."""
