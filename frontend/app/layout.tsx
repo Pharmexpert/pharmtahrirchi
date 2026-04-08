@@ -5,6 +5,7 @@ import LoginGuard from '../components/LoginGuard'
 import DashboardLayout from '../components/DashboardLayout'
 import ErrorBoundary from '../components/ErrorBoundary'
 import LanguageProvider from '../components/LanguageProvider'
+import VersionPoller from '../components/VersionPoller'
 
 // Rebuild triggered: 2026-04-05
 const inter = Inter({ subsets: ['latin'] })
@@ -37,6 +38,7 @@ export default function RootLayout({
             </LoginGuard>
           </LanguageProvider>
         </ErrorBoundary>
+        <VersionPoller />
         <script src="https://accounts.google.com/gsi/client" async defer></script>
       </body>
     </html>

@@ -11,6 +11,7 @@ import TableToolbar from './editor/TableToolbar'
 import DocumentVersionsModal from './DocumentVersionsModal'
 import ParagraphProgress from './editor/ParagraphProgress'
 import { useTableEditor } from './editor/useTableEditor'
+import LinguisticAnalysisBar from './LinguisticAnalysisBar'
 import api from '../services/api'
 import { useAuth } from './LoginGuard'
 import useWebSocket from '../hooks/useWebSocket'
@@ -120,6 +121,15 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         handleExport={editor.handleExport}
         handleSyntaxCheck={editor.handleSyntaxCheck}
       />
+
+      {/* 4-layer Linguistic Analysis Bar — analyzes all uz_proposed rows combined */}
+      <div style={{ padding: '8px 14px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+        <LinguisticAnalysisBar
+          text={(editor.data || []).filter((r: any) => r.type === 'content').map((r: any) => r.uz_proposed || r.uz_v1 || '').join('\n')}
+          lang="uz"
+          compact
+        />
+      </div>
 
       {/* Progress Modal (Batch Polishing / AI Analysis) */}
       {(isLinguisticLoading || isBatchPolishing) && (
