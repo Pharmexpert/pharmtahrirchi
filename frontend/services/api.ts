@@ -731,11 +731,23 @@ export const assistant = {
     del<{ success: boolean }>(`/api/assistant/history/${encodeURIComponent(session_id)}`),
 }
 
+// Syntax (Phase 3)
+export const syntax = {
+  analyze: (text: string) => post<any>('/api/syntax/analyze', { text }),
+  check: (text: string) => post<{ errors: any[]; count: number }>('/api/syntax/check', { text }),
+  reorder: (text: string) => post<{ original: string; canonical: string }>('/api/syntax/reorder', { text }),
+  saveRule: (wrong: string, correct: string, explanation = '') =>
+    post<{ success: boolean; id?: number }>('/api/syntax/save-rule', { wrong, correct, explanation }),
+  templates: (limit = 50) => get<{ templates: any[] }>(`/api/syntax/templates?limit=${limit}`),
+  stats: () => get<Record<string, number>>('/api/syntax/stats'),
+  parts: (word: string) => get<{ word: string; roles: any[] }>(`/api/syntax/parts/${encodeURIComponent(word)}`),
+}
+
 // Re-export everything as default namespace
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp, tilshunos, assistant, billing,
+  morph, grammar, learn, nlp, tilshunos, assistant, billing, syntax,
   API_BASE,
 }
 

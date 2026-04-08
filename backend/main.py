@@ -30,6 +30,7 @@ from routes.nlp_admin_routes import router as nlp_admin_router
 from routes.tilshunos_routes import router as tilshunos_router
 from routes.assistant_routes import router as assistant_router
 from routes.billing_routes import router as billing_router
+from routes.syntax_routes import router as syntax_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -148,6 +149,16 @@ async def startup_event():
     db.init_faiss_index()
     bert_engine.engine.initialize()
 
+    # Syntax module — Phase 1: 5 ta jadval + canonical seed
+    try:
+        import syntax_db
+        syntax_db.init_syntax_tables()
+        syntax_db.seed_canonical_templates()
+        syntax_db.seed_basic_word_order_rules()
+        logger.info("[syntax] Phase 1 schema + seeds OK")
+    except Exception as e:
+        logger.warning(f"[syntax] init failed: {e}")
+
     import asyncio
     from anyio import to_thread
 
@@ -242,6 +253,7 @@ app.include_router(nlp_admin_router)
 app.include_router(tilshunos_router)
 app.include_router(assistant_router)
 app.include_router(billing_router)
+app.include_router(syntax_router)
 
 
 # ═══════════════════════════════════════════════════
@@ -329,6 +341,30 @@ async def auto_seed_databases():
                 logger.info(f"[auto-seed] Hunspell affix rules: {affix_result}")
         except Exception as e:
             logger.info(f"[auto-seed] hunspell affix skipped: {e}")
+
+        # Syntax Phase 2: Auto-import UD_Uzbek-UT corpus (if syntax_phrases empty)
+        try:
+            conn_ud = _db.connect_db()
+            cur_ud = conn_ud.cursor()
+            try:
+                cur_ud.execute("SELECT COUNT(*) FROM syntax_phrases")
+                phrases_n = cur_ud.fetchone()[0]
+            except Exception:
+                phrases_n = 0
+            conn_ud.close()
+            if phrases_n < 100:
+                import sys as _sys, os as _os
+                sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+                if sd not in _sys.path:
+                    _sys.path.insert(0, sd)
+                try:
+                    import import_ud_uzbek
+                    r = import_ud_uzbek.main()
+                    logger.info(f"[auto-seed] UD_Uzbek-UT: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] UD_Uzbek-UT failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] UD check failed: {e}")
 
         # Auto-import Hunspell REP rules → sayqallash_rules (if REP count low)
         try:
