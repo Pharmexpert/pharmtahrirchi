@@ -9,7 +9,9 @@ import RichContent from './editor/RichContent'
 import LangCell from './editor/LangCell'
 import TableToolbar from './editor/TableToolbar'
 import DocumentVersionsModal from './DocumentVersionsModal'
+import ParagraphProgress from './editor/ParagraphProgress'
 import { useTableEditor } from './editor/useTableEditor'
+import api from '../services/api'
 import { useAuth } from './LoginGuard'
 import useWebSocket from '../hooks/useWebSocket'
 
@@ -46,6 +48,18 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   const { user } = useAuth()
   const [collabOn, setCollabOn] = useState(false)
   const [versionsModal, setVersionsModal] = useState<{ sentenceNo: number; lang: string } | null>(null)
+  const [progressMap, setProgressMap] = useState<Record<number, string>>({})
+
+  useEffect(() => {
+    if (!textId) return
+    api.tilshunos.getParagraphProgress(textId).then(r => {
+      const map: Record<number, string> = {}
+      for (const row of r.rows || []) {
+        map[row.sentence_no] = row.status
+      }
+      setProgressMap(map)
+    }).catch(() => {})
+  }, [textId])
   const ws = useWebSocket(
     collabOn && textId ? textId : null,
     user?.id || 'anonymous',
@@ -366,6 +380,16 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                             style={{ background: 'none', border: '1px solid #ddd', borderRadius: 3, padding: '2px 3px', cursor: 'pointer', color: '#94a3b8', display: 'flex', lineHeight: 1 }}>
                             <Trash2 size={10} />
                           </button>
+                          {textId && (
+                            <div style={{ marginTop: 2 }}>
+                              <ParagraphProgress
+                                textId={textId}
+                                sentenceNo={row.sentence_no || idx}
+                                currentStatus={progressMap[row.sentence_no || idx] || 'pending'}
+                                onUpdate={(st) => setProgressMap(prev => ({ ...prev, [row.sentence_no || idx]: st }))}
+                              />
+                            </div>
+                          )}
                         </>
                       )}
                     </div>

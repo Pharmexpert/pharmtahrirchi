@@ -650,6 +650,12 @@ export const tilshunos = {
   getDocVersions: (text_id: string, sentence_no: number, lang?: string) =>
     get<{ versions: any[] }>(`/api/document-versions/${encodeURIComponent(text_id)}/${sentence_no}${lang ? `?lang=${lang}` : ''}`),
 
+  updateParagraphProgress: (payload: { text_id: string; sentence_no: number; status: string; reviewer_id?: string; reviewer_name?: string; notes?: string; ai_score?: number }) =>
+    post<{ success: boolean }>('/api/paragraph-progress/update', payload),
+
+  getParagraphProgress: (text_id: string) =>
+    get<{ rows: any[]; stats: Record<string, number>; total: number }>(`/api/paragraph-progress/${encodeURIComponent(text_id)}`),
+
   trainingLogExport: (kind?: string, limit = 10000) => {
     const qs = new URLSearchParams()
     if (kind) qs.set('kind', kind)

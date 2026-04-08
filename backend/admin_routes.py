@@ -221,11 +221,22 @@ async def get_users(current_user: dict = Depends(get_admin_user)):
 @router.post("/users/approve")
 @router.post("/approve")
 async def approve_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
-    """Approve or update a user status."""
+    """Approve or update a user status. Sends email notification on approval."""
     user_id = payload.get("userId")
-    # Support both "approve" (legacy) and direct status updates
     status = payload.get("status", "approved")
     db.update_user_status(user_id, status)
+
+    # Send email notification if approved
+    if status == "approved":
+        try:
+            user_data = db.get_user_by_id(user_id)
+            if user_data and user_data.get("email"):
+                import email_helper
+                if email_helper.is_configured():
+                    email_helper.send_approval(user_data["email"], user_data.get("name", "Фойдаланувчи"))
+        except Exception:
+            pass
+
     return {"success": True}
 
 @router.post("/role")

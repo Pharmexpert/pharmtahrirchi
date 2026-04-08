@@ -185,6 +185,15 @@ def run_full_cycle() -> Dict[str, Any]:
     result["duration_seconds"] = (datetime.now() - start).total_seconds()
     result["completed_at"] = datetime.now().isoformat()
 
+    # Send email report to admin (if configured)
+    try:
+        import email_helper
+        if email_helper.is_configured():
+            admin_email = os.getenv("ADMIN_EMAIL") or "texnopharm@gmail.com"
+            email_helper.send_daily_cycle_report(admin_email, result)
+    except Exception as e:
+        logger.warning(f"[weekly] email skipped: {e}")
+
     # Log to weekly_cycles table
     try:
         conn = sqlite3.connect(DB_PATH)
