@@ -1034,28 +1034,6 @@ export default function TilshunosPage() {
             </button>
           </div>
 
-          {/* AI Engines status badges in translate mode */}
-          {aiEngines && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', fontSize: '0.62rem', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>🤖 AI:</span>
-              {Object.entries(aiEngines).map(([name, info]: [string, any]) => {
-                const ok = info?.available
-                const color = ok ? '#16A34A' : '#9CA3AF'
-                return (
-                  <span key={name} title={info?.model || name} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 3,
-                    padding: '2px 7px', borderRadius: 8,
-                    background: ok ? '#F0FDF4' : '#F3F4F6',
-                    color, border: `1px solid ${color}33`, fontWeight: 700,
-                  }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />
-                    {name.toUpperCase()}
-                  </span>
-                )
-              })}
-            </div>
-          )}
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[sourceLang]}</div>

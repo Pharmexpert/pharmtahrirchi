@@ -193,13 +193,15 @@ def chat(messages: List[Dict[str, str]], max_tokens: int = 512, temperature: flo
         if not llm:
             return ""
         try:
-            # Cap tokens for CPU speed
-            effective_max = min(max_tokens, 128)
+            # Allow full 512 tokens for complete responses
+            effective_max = min(max_tokens, 512)
             out = llm(
                 prompt,
                 max_tokens=effective_max,
                 temperature=temperature,
                 top_p=0.9,
+                top_k=40,
+                repeat_penalty=1.1,
                 stop=["</s>", "[INST]"],
             )
             return out["choices"][0]["text"].strip()

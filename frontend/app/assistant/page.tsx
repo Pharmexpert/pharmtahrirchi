@@ -45,11 +45,37 @@ export default function AssistantPage() {
   const [chatHistory, setChatHistory] = useState<Array<{ session_id: string; title: string; updated_at: string; engine: string }>>([])
   const [showHistory, setShowHistory] = useState(false)
 
+  const [progress, setProgress] = useState(0)
+  const [thinkingTime, setThinkingTime] = useState(0)
+
   useEffect(() => {
     if (!token) return
     api.assistant.engines().then(r => setEngines(r.engines || [])).catch(() => {})
     api.assistant.listChats().then(r => setChatHistory(r.chats || [])).catch(() => {})
   }, [token])
+
+  // Simulated progress animation during loading (0→95% over ~60s, 100% when done)
+  useEffect(() => {
+    if (!loading) {
+      if (progress > 0) setProgress(100)
+      const t = setTimeout(() => {
+        setProgress(0)
+        setThinkingTime(0)
+      }, 500)
+      return () => clearTimeout(t)
+    }
+    setProgress(0)
+    setThinkingTime(0)
+    const start = Date.now()
+    const interval = setInterval(() => {
+      const elapsed = (Date.now() - start) / 1000
+      setThinkingTime(elapsed)
+      // Asymptotic curve: 0→95% over 60 sec (logarithmic)
+      const p = Math.min(95, 95 * (1 - Math.exp(-elapsed / 20)))
+      setProgress(p)
+    }, 200)
+    return () => clearInterval(interval)
+  }, [loading])
 
   // Auto-save chat after each message (debounced)
   useEffect(() => {
@@ -465,14 +491,55 @@ export default function AssistantPage() {
         ))}
         {loading && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
               <Bot size={18} color="white" />
+              <div style={{ position: 'absolute', inset: -3, border: '2px solid #A78BFA', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
             </div>
-            <div style={{ padding: '12px 16px', borderRadius: 14, background: 'var(--bg-secondary)' }}>
-              <Loader2 size={16} className="animate-spin" />
+            <div style={{ padding: '14px 18px', borderRadius: 14, background: 'linear-gradient(135deg, #F5F3FF, #EDE9FE)', border: '1.5px solid #C4B5FD', minWidth: 300, maxWidth: '75%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Loader2 size={14} className="animate-spin" color="#7C3AED" />
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#5B21B6' }}>
+                  {engine === 'auto' ? 'Энг яхши AI танланмоқда...' :
+                   thinkingTime < 5 ? 'Савол қабул қилинди, ўйламоқда...' :
+                   thinkingTime < 15 ? 'Жавоб тайёрланмоқда...' :
+                   thinkingTime < 30 ? 'Батафсил таҳлил қилинмоқда...' :
+                   thinkingTime < 60 ? 'Илмий жавоб ёзилмоқда...' :
+                   'Деярли тайёр...'}
+                </span>
+                <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: '#7C3AED', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {Math.round(progress)}%
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div style={{ height: 6, background: '#DDD6FE', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${progress}%`,
+                  background: 'linear-gradient(90deg, #7C3AED, #A78BFA, #7C3AED)',
+                  borderRadius: 3,
+                  transition: 'width 0.3s ease-out',
+                  boxShadow: '0 0 8px #A78BFA',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 2s linear infinite',
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#6B21A8' }}>
+                <span>⏱ {thinkingTime.toFixed(1)}с</span>
+                <span>🤖 {engine === 'auto' ? 'auto' : engine}</span>
+              </div>
             </div>
           </div>
         )}
+        <style jsx global>{`
+          @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
         <div ref={messagesEndRef} />
       </div>
 
