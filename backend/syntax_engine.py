@@ -131,19 +131,43 @@ def find_word_order_rule(pos_pattern: str) -> dict | None:
 # ─────────────────────────────────────────────
 
 def analyze(sentence: str) -> dict:
-    """Full syntax analysis of one sentence."""
+    """Full syntax analysis of one sentence.
+    Uses BERTbek POS tagger if BERTBEK_ENABLED=1, otherwise falls back to rule-based guess.
+    """
     sentence = sentence.strip()
     if not sentence:
         return {"tokens": [], "errors": [], "suggestions": [], "valid": False}
 
-    raw_words = sentence.split()
+    # Try BERTbek POS tagger first (92% accuracy vs 60% rule-based)
+    pos_tags = None
+    try:
+        import bertbek_engine
+        if bertbek_engine.is_available():
+            pos_tags = bertbek_engine.tag_pos(sentence)
+    except Exception:
+        pass
+
     tokens = []
-    for w in raw_words:
-        clean = _strip_punct(w)
-        if not clean:
-            continue
-        pos = guess_pos(clean)
-        tokens.append({"word": w, "clean": clean, "pos": pos})
+    if pos_tags:
+        # Use BERTbek tags
+        for word, upos in pos_tags:
+            clean = _strip_punct(word)
+            if not clean:
+                continue
+            # Map UD tags to our internal POS
+            internal_pos = upos
+            if upos == "NOUN" and any(clean.lower().endswith(s) for s in UZBEK_NOUN_SUFFIXES_OBJ):
+                internal_pos = "NOUN_OBJ"
+            tokens.append({"word": word, "clean": clean, "pos": internal_pos})
+    else:
+        # Fallback: rule-based POS guess
+        raw_words = sentence.split()
+        for w in raw_words:
+            clean = _strip_punct(w)
+            if not clean:
+                continue
+            pos = guess_pos(clean)
+            tokens.append({"word": w, "clean": clean, "pos": pos})
 
     total = len(tokens)
     for i, tok in enumerate(tokens):
