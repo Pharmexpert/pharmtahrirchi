@@ -277,6 +277,35 @@ async def run_sayqallash_consolidate(current_user: dict = Depends(get_admin_user
         return {"success": False, "error": str(e)}
 
 
+@router.post("/drugs/import-who")
+async def import_who_inn(current_user: dict = Depends(get_admin_user)):
+    """Import 200+ WHO INN essential medicines."""
+    try:
+        import sys as _sys, os as _os
+        script_dir = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if script_dir not in _sys.path:
+            _sys.path.insert(0, script_dir)
+        import import_who_inn
+        result = import_who_inn.seed()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/db/backup")
+async def manual_db_backup(current_user: dict = Depends(get_admin_user)):
+    """Manually trigger DB backup."""
+    try:
+        import sys as _sys, os as _os
+        script_dir = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if script_dir not in _sys.path:
+            _sys.path.insert(0, script_dir)
+        import db_backup
+        return db_backup.run_backup()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/affix-rules/stats")
 async def affix_rules_stats(current_user: dict = Depends(get_current_user)):
     """Get statistics on Hunspell affix rules DB."""
