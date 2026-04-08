@@ -258,6 +258,94 @@ async def _call_engine(engine: str, prompt: str, system: Optional[str] = None, l
         return {"text": f"Хато: {e}", "engine": engine, "error": str(e)}
 
 
+@router.post("/history/save")
+async def save_chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Save assistant chat history for user."""
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS assistant_chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT, session_id TEXT,
+                title TEXT, messages TEXT, engine TEXT, lang TEXT,
+                mode TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        import json as _json
+        session_id = payload.get("session_id") or str(current_user.get("id", "") + "_" + str(int(__import__('time').time())))
+        messages = _json.dumps(payload.get("messages", []), ensure_ascii=False)
+        title = payload.get("title", (payload.get("messages") or [{}])[0].get("content", "Чат")[:60])
+        # Check if session exists → update
+        cur.execute("SELECT id FROM assistant_chats WHERE session_id = ? AND user_id = ?", (session_id, current_user.get("id", "")))
+        row = cur.fetchone()
+        if row:
+            cur.execute("UPDATE assistant_chats SET messages = ?, title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (messages, title, row[0]))
+        else:
+            cur.execute("""INSERT INTO assistant_chats (user_id, session_id, title, messages, engine, lang, mode) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (current_user.get("id", ""), session_id, title, messages, payload.get("engine", ""), payload.get("lang", ""), payload.get("mode", "")))
+        conn.commit()
+        conn.close()
+        return {"success": True, "session_id": session_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/history/list")
+async def list_chats(current_user: Dict = Depends(get_current_user)):
+    """List user's saved chat sessions."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS assistant_chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, session_id TEXT, title TEXT,
+            messages TEXT, engine TEXT, lang TEXT, mode TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cur.execute("SELECT id, session_id, title, engine, lang, mode, created_at, updated_at FROM assistant_chats WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100", (current_user.get("id", ""),))
+        chats = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return {"chats": chats}
+    except Exception as e:
+        return {"chats": [], "error": str(e)}
+
+
+@router.get("/history/{session_id}")
+async def get_chat(session_id: str, current_user: Dict = Depends(get_current_user)):
+    """Get full chat messages by session_id."""
+    try:
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM assistant_chats WHERE session_id = ? AND user_id = ?", (session_id, current_user.get("id", "")))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return {"found": False}
+        import json as _json
+        d = dict(row)
+        d["messages"] = _json.loads(d.get("messages", "[]") or "[]")
+        return {"found": True, "chat": d}
+    except Exception as e:
+        return {"found": False, "error": str(e)}
+
+
+@router.delete("/history/{session_id}")
+async def delete_chat(session_id: str, current_user: Dict = Depends(get_current_user)):
+    """Delete a chat session."""
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM assistant_chats WHERE session_id = ? AND user_id = ?", (session_id, current_user.get("id", "")))
+        conn.commit()
+        conn.close()
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/chat")
 async def chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """General-purpose chat with engine selection."""
