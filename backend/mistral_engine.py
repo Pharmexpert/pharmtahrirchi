@@ -97,17 +97,17 @@ def _get_hf_model():
             if _hf_model is None:
                 import torch
                 from transformers import AutoModelForCausalLM, AutoTokenizer
-                logger.info(f"[Mistral] Loading full HF model: {MODEL_ID} (this can take 3-5 min and ~14GB RAM)")
+                logger.info(f"[Mistral] Loading {MODEL_ID} (CPU bf16, ~14GB RAM, 3-5 min)")
                 _hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
-                _hf_model = AutoModelForCausalLM.from_pretrained(
-                    MODEL_ID,
-                    token=HF_TOKEN,
-                    torch_dtype=torch.float16,
-                    device_map="auto" if torch.cuda.is_available() else "cpu",
-                    low_cpu_mem_usage=True,
-                )
+                load_kwargs = {"token": HF_TOKEN, "low_cpu_mem_usage": True}
+                if torch.cuda.is_available():
+                    load_kwargs["torch_dtype"] = torch.float16
+                    load_kwargs["device_map"] = "auto"
+                else:
+                    load_kwargs["torch_dtype"] = torch.bfloat16
+                _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **load_kwargs)
                 _hf_model.eval()
-                logger.info("[Mistral] Full HF model READY")
+                logger.info("[Mistral] Full HF model READY (bf16 CPU)")
     except Exception as e:
         logger.error(f"[Mistral] Full HF model load failed: {e}")
         return None, None

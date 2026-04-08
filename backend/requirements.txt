@@ -17,7 +17,10 @@ huggingface-hub>=0.20.0
 
 # Accelerate — for efficient model loading (device_map, 8-bit, low_cpu_mem_usage)
 accelerate>=0.27.0
-bitsandbytes>=0.42.0; platform_system != "Windows"
+
+# llama-cpp-python for GGUF Q4/Q8 CPU inference (5-8 tok/sec on Railway Pro)
+# Optional — only loaded when LLAMA_GGUF_PATH or MISTRAL_GGUF_PATH files exist
+llama-cpp-python>=0.2.90; platform_system != "Windows"
 pandas==2.2.3
 numpy==2.2.5
 faiss-cpu==1.13.2

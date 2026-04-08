@@ -78,19 +78,23 @@ def _get_hf_model():
             if _hf_model is None:
                 import torch
                 from transformers import AutoModelForCausalLM, AutoTokenizer
-                logger.info(f"[Llama] Loading full HF: {MODEL_ID} (~16GB RAM, 3-5 min)")
+                logger.info(f"[Llama] Loading {MODEL_ID} (CPU bf16, ~16GB RAM, 3-5 min)")
                 _hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
-                # Use accelerate's low_cpu_mem_usage + device_map=cpu (auto-detected)
+
                 load_kwargs = {
                     "token": HF_TOKEN,
-                    "torch_dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
                     "low_cpu_mem_usage": True,
                 }
                 if torch.cuda.is_available():
+                    # GPU: fp16 with accelerate device_map
+                    load_kwargs["torch_dtype"] = torch.float16
                     load_kwargs["device_map"] = "auto"
+                else:
+                    # CPU: bf16 is faster than fp32 on modern CPUs + half the RAM
+                    load_kwargs["torch_dtype"] = torch.bfloat16
                 _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **load_kwargs)
                 _hf_model.eval()
-                logger.info("[Llama] Full HF model READY")
+                logger.info("[Llama] Full HF model READY (bf16 CPU)")
     except Exception as e:
         logger.error(f"[Llama] full HF load failed: {e}")
     return _hf_model, _hf_tokenizer
@@ -139,17 +143,20 @@ def chat(messages: List[Dict[str, str]], max_tokens: int = 1024, temperature: fl
             return ""
         try:
             import torch
-            inputs = tok(prompt, return_tensors="pt", truncation=True, max_length=8192)
+            # Limit input length to 2048 for CPU speed
+            inputs = tok(prompt, return_tensors="pt", truncation=True, max_length=2048)
             if torch.cuda.is_available():
                 inputs = {k: v.cuda() for k, v in inputs.items()}
+            # CPU is slow — cap new tokens to 256 for first response
+            effective_max = min(max_tokens, 256) if not torch.cuda.is_available() else max_tokens
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
-                    max_new_tokens=max_tokens,
+                    max_new_tokens=effective_max,
                     temperature=temperature,
                     do_sample=temperature > 0,
                     pad_token_id=tok.eos_token_id,
-                    eos_token_id=tok.convert_tokens_to_ids("<|eot_id|>"),
+                    eos_token_id=[tok.eos_token_id, tok.convert_tokens_to_ids("<|eot_id|>")],
                 )
             full = tok.decode(outputs[0], skip_special_tokens=True)
             # Extract assistant response after the last "assistant" header
