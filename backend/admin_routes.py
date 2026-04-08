@@ -250,6 +250,46 @@ async def run_sayqallash_cleanup(current_user: dict = Depends(get_admin_user)):
         return {"success": False, "error": str(e)}
 
 
+@router.post("/sayqallash/consolidate")
+async def run_sayqallash_consolidate(current_user: dict = Depends(get_admin_user)):
+    """
+    Advanced Sayqallash DB consolidation:
+      - Remove duplicates
+      - Flag conflicts (same wrong → multiple corrects)
+      - BERT-based semantic deduplication
+    """
+    try:
+        import sayqallash_consolidator
+        result = sayqallash_consolidator.consolidate(semantic=True)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/affix-rules/stats")
+async def affix_rules_stats(current_user: dict = Depends(get_current_user)):
+    """Get statistics on Hunspell affix rules DB."""
+    try:
+        import affix_db_loader
+        return affix_db_loader.stats()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/hunspell-v2/reparse")
+async def reparse_hunspell(current_user: dict = Depends(get_admin_user)):
+    """Re-parse u2b3k/uz-hunspell .aff files into uzbek_affix_rules table."""
+    try:
+        import parse_hunspell_affix
+        result = parse_hunspell_affix.import_rules()
+        # Force cache reload
+        import affix_db_loader
+        affix_db_loader.reload_cache()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/uzbek-rules/seed")
 async def seed_uzbek_rules(current_user: dict = Depends(get_admin_user)):
     """Import Uzbek rules from 'Ona tili' book (M.Hamroyev et al., 2007)."""
