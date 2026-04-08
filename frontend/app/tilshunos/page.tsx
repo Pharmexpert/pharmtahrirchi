@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2 } from 'lucide-react'
+import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2, FileText, Sparkles } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
+import WordDocumentViewer from '../../components/WordDocumentViewer'
 
-type Mode = 'edit' | 'translate'
+type Mode = 'edit' | 'translate' | 'word'
 type Lang = 'en' | 'ru' | 'uz-cyr' | 'uz-lat'
 
 const LANG_LABELS: Record<Lang, string> = {
@@ -607,6 +608,17 @@ export default function TilshunosPage() {
             }}>
             <ArrowRightLeft size={13} /> Илмий таржима
           </button>
+          <button onClick={() => setMode('word')}
+            style={{
+              padding: '8px 14px',
+              background: mode === 'word' ? 'linear-gradient(135deg, #2563EB, #1D4ED8)' : 'transparent',
+              color: mode === 'word' ? 'white' : 'var(--text-primary)',
+              border: 'none', borderRadius: 7,
+              fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}>
+            <FileText size={13} /> Word ҳужжат
+          </button>
         </div>
       </div>
 
@@ -882,7 +894,7 @@ export default function TilshunosPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : mode === 'translate' ? (
         /* ───────── TRANSLATE MODE ───────── */
         <div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1072,6 +1084,30 @@ export default function TilshunosPage() {
             .docx-rich ul, .docx-rich ol { padding-left: 24px; }
           `}</style>
         </div>
+      ) : (
+        /* ───────── WORD MODE (docx-preview) ───────── */
+        <WordMode
+          onRunSayqallash={async (text) => {
+            if (!text.trim()) { alert('Матн танланмаган'); return }
+            try {
+              const res: any = await api.sayqallash.check(text, 'uz')
+              const cnt = (res?.annotations || []).length
+              alert(`🧠 Сайқаллаш натижаси: ${cnt} та таклиф топилди`)
+            } catch { alert('Xatolik') }
+          }}
+          onRunSyntax={async (text) => {
+            if (!text.trim()) { alert('Матн танланмаган'); return }
+            try {
+              const res: any = await api.syntax.check(text)
+              alert(`📐 Синтаксис: ${res.count || 0} та xato аниқланди`)
+            } catch { alert('Xatolik') }
+          }}
+          onRunTranslate={(text) => {
+            if (!text.trim()) { alert('Матн танланмаган'); return }
+            setSourceText(text)
+            setMode('translate')
+          }}
+        />
       )}
 
       {/* Error popup */}
@@ -1344,5 +1380,102 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       <span style={{ width: 10, height: 3, background: color, borderRadius: 2 }} />
       <span>{label}</span>
     </span>
+  )
+}
+
+// ═══════════════════════════════════════════════════
+// Word Mode — docx-preview integration (Stage 1 of 3)
+// ═══════════════════════════════════════════════════
+function WordMode({
+  onRunSayqallash,
+  onRunSyntax,
+  onRunTranslate,
+}: {
+  onRunSayqallash: (text: string) => void
+  onRunSyntax: (text: string) => void
+  onRunTranslate: (text: string) => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [, setFullText] = useState('')
+
+  const handleFile = (f: File) => {
+    if (!f.name.toLowerCase().endsWith('.docx')) {
+      alert("Faqat .docx формат qo'llab-quvvatlanadi. .doc → .docx конверт қилинг.")
+      return
+    }
+    setFile(f)
+  }
+
+  return (
+    <div>
+      {/* Upload bar */}
+      <div style={{ background: 'white', borderRadius: 12, padding: 16, marginBottom: 14, border: '1.5px solid var(--border)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{
+          padding: '10px 18px', borderRadius: 10, background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+          color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: '.85rem',
+        }}>
+          <Upload size={15} /> .docx файл юклаш
+          <input type="file" accept=".docx" hidden onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+        </label>
+        {file && (
+          <>
+            <div style={{ fontSize: '.8rem', color: '#475569' }}>
+              <strong>{file.name}</strong>
+              <span style={{ marginLeft: 8, color: '#94A3B8', fontSize: '.72rem' }}>
+                ({(file.size / 1024).toFixed(1)} KB)
+              </span>
+            </div>
+            <button onClick={() => { setFile(null); setFullText('') }} style={{ marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontWeight: 700, fontSize: '.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Trash2 size={13} /> Тозалаш
+            </button>
+          </>
+        )}
+        {!file && (
+          <span style={{ fontSize: '.76rem', color: '#94A3B8', fontStyle: 'italic' }}>
+            Word ҳужжатингизни юкланг — жадваллар, расмлар, колонтитуллар сақланади
+          </span>
+        )}
+      </div>
+
+      {/* Info banner (first-time hint) */}
+      {!file && (
+        <div style={{
+          background: 'linear-gradient(135deg, #DBEAFE 0%, #EDE9FE 100%)', borderRadius: 12, padding: '14px 18px', marginBottom: 14,
+          border: '1px solid #BFDBFE', fontSize: '.82rem', color: '#1E40AF',
+        }}>
+          💡 <strong>Word ҳужжат режими (Босқич 1)</strong> — docx-preview орқали тўлиқ фиделити кўрсатиш: жадваллар, расмлар, колонтитуллар, ҳавolalar.
+          Матнни танланг ва юқоридаги AI тугмаларини босиб сайқаллаш / синтаксис / таржима амалга оширинг.
+          <br />
+          <span style={{ fontSize: '.72rem', opacity: 0.8 }}>
+            📌 Босқич 2 (SuperDoc) ва Босқич 3 (ONLYOFFICE — MathType) кейинги итерацияларда қўшилади.
+          </span>
+        </div>
+      )}
+
+      <WordDocumentViewer
+        file={file}
+        onTextExtracted={setFullText}
+        aiActions={[
+          {
+            label: 'Сайқаллаш',
+            icon: <Sparkles size={12} />,
+            color: '#8B5E3C',
+            onClick: (sel, full) => onRunSayqallash(sel || full),
+          },
+          {
+            label: 'Синтаксис',
+            icon: <Wand2 size={12} />,
+            color: '#7C3AED',
+            onClick: (sel, full) => onRunSyntax(sel || full),
+          },
+          {
+            label: 'Таржима',
+            icon: <ArrowRightLeft size={12} />,
+            color: '#059669',
+            onClick: (sel, full) => onRunTranslate(sel || full),
+          },
+        ]}
+      />
+    </div>
   )
 }
