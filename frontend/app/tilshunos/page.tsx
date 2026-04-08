@@ -5,6 +5,7 @@ import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, 
 import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 import WordDocumentViewer from '../../components/WordDocumentViewer'
+import SuperDocEditor from '../../components/SuperDocEditor'
 
 type Mode = 'edit' | 'translate' | 'word'
 type Lang = 'en' | 'ru' | 'uz-cyr' | 'uz-lat'
@@ -1397,6 +1398,7 @@ function WordMode({
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [, setFullText] = useState('')
+  const [subMode, setSubMode] = useState<'preview' | 'edit'>('preview')
 
   const handleFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith('.docx')) {
@@ -1425,6 +1427,21 @@ function WordMode({
                 ({(file.size / 1024).toFixed(1)} KB)
               </span>
             </div>
+            {/* Preview/Edit sub-mode toggle */}
+            <div style={{ display: 'flex', gap: 4, background: '#F1F5F9', borderRadius: 10, padding: 3, border: '1px solid #E2E8F0' }}>
+              <button onClick={() => setSubMode('preview')} style={{
+                padding: '6px 14px', borderRadius: 7, border: 'none',
+                background: subMode === 'preview' ? 'linear-gradient(135deg, #3B82F6, #2563EB)' : 'transparent',
+                color: subMode === 'preview' ? 'white' : '#64748B',
+                fontWeight: 700, fontSize: '.74rem', cursor: 'pointer',
+              }}>📖 Preview</button>
+              <button onClick={() => setSubMode('edit')} style={{
+                padding: '6px 14px', borderRadius: 7, border: 'none',
+                background: subMode === 'edit' ? 'linear-gradient(135deg, #16A34A, #15803D)' : 'transparent',
+                color: subMode === 'edit' ? 'white' : '#64748B',
+                fontWeight: 700, fontSize: '.74rem', cursor: 'pointer',
+              }}>✏️ Edit (SuperDoc)</button>
+            </div>
             <button onClick={() => { setFile(null); setFullText('') }} style={{ marginLeft: 'auto', padding: '8px 14px', borderRadius: 8, border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontWeight: 700, fontSize: '.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Trash2 size={13} /> Тозалаш
             </button>
@@ -1452,30 +1469,56 @@ function WordMode({
         </div>
       )}
 
-      <WordDocumentViewer
-        file={file}
-        onTextExtracted={setFullText}
-        aiActions={[
-          {
-            label: 'Сайқаллаш',
-            icon: <Sparkles size={12} />,
-            color: '#8B5E3C',
-            onClick: (sel, full) => onRunSayqallash(sel || full),
-          },
-          {
-            label: 'Синтаксис',
-            icon: <Wand2 size={12} />,
-            color: '#7C3AED',
-            onClick: (sel, full) => onRunSyntax(sel || full),
-          },
-          {
-            label: 'Таржима',
-            icon: <ArrowRightLeft size={12} />,
-            color: '#059669',
-            onClick: (sel, full) => onRunTranslate(sel || full),
-          },
-        ]}
-      />
+      {subMode === 'preview' ? (
+        <WordDocumentViewer
+          file={file}
+          onTextExtracted={setFullText}
+          aiActions={[
+            {
+              label: 'Сайқаллаш',
+              icon: <Sparkles size={12} />,
+              color: '#8B5E3C',
+              onClick: (sel, full) => onRunSayqallash(sel || full),
+            },
+            {
+              label: 'Синтаксис',
+              icon: <Wand2 size={12} />,
+              color: '#7C3AED',
+              onClick: (sel, full) => onRunSyntax(sel || full),
+            },
+            {
+              label: 'Таржима',
+              icon: <ArrowRightLeft size={12} />,
+              color: '#059669',
+              onClick: (sel, full) => onRunTranslate(sel || full),
+            },
+          ]}
+        />
+      ) : (
+        <SuperDocEditor
+          file={file}
+          aiActions={[
+            {
+              label: 'Сайқаллаш',
+              icon: <Sparkles size={12} />,
+              color: '#8B5E3C',
+              onClick: (sel, full) => onRunSayqallash(sel || full),
+            },
+            {
+              label: 'Синтаксис',
+              icon: <Wand2 size={12} />,
+              color: '#7C3AED',
+              onClick: (sel, full) => onRunSyntax(sel || full),
+            },
+            {
+              label: 'Таржима',
+              icon: <ArrowRightLeft size={12} />,
+              color: '#059669',
+              onClick: (sel, full) => onRunTranslate(sel || full),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }
