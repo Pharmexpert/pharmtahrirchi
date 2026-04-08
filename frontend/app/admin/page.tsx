@@ -39,7 +39,19 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [rules, setRules] = useState<any[]>([])
   const [rulesSearch, setRulesSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'seed'>('all')
+  const [seedLog, setSeedLog] = useState<string[]>([])
+  const [seedBusy, setSeedBusy] = useState<string | null>(null)
+  const runSeed = async (label: string, fn: () => Promise<any>) => {
+    setSeedBusy(label)
+    setSeedLog(prev => [`▶ ${label}…`, ...prev])
+    try {
+      const r = await fn()
+      setSeedLog(prev => [`✅ ${label}: ${JSON.stringify(r).slice(0, 200)}`, ...prev])
+    } catch (e: any) {
+      setSeedLog(prev => [`❌ ${label}: ${e?.message || e}`, ...prev])
+    } finally { setSeedBusy(null) }
+  }
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -242,6 +254,7 @@ export default function AdminPage() {
            </button>
            <button onClick={() => setActiveTab('active')} style={tabStyle(activeTab === 'active')}>Tasdiqlanganlar</button>
            <button onClick={() => setActiveTab('rules')} style={tabStyle(activeTab === 'rules')}>Linguistik Qoidalar</button>
+           <button onClick={() => setActiveTab('seed')} style={tabStyle(activeTab === 'seed')}>🌱 Seed / Import</button>
         </div>
 
         <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
@@ -266,7 +279,38 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {activeTab === 'rules' ? (
+      {activeTab === 'seed' ? (
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', padding: '24px' }}>
+          <h3 style={{ fontWeight: 800, color: '#0F172A', marginBottom: '16px' }}>🌱 Маълумотлар импорти / seed</h3>
+          <p style={{ color: '#64748B', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Бу тугмалар DB'га янги маълумотларни импорт қилади (idempotent — қайта босиш зарарсиз).
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+            {[
+              ['kmashrab wordlist', () => api.admin.importKmashrab()],
+              ['MUNIS + Quvonchbek', () => api.admin.importExtras()],
+              ['Tahrirchi datasets', () => api.admin.importTahrirchi()],
+              ['Sayqallash domain segment', () => api.admin.segmentDomains()],
+              ['WHO INN drugs', () => api.admin.importWhoInn()],
+              ['DB backup (now)', () => api.admin.dbBackup()],
+            ].map(([label, fn]) => (
+              <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
+                style={{
+                  padding: '14px 16px', borderRadius: '12px', border: '1px solid #E2E8F0',
+                  background: seedBusy === label ? '#FEF3C7' : 'white',
+                  fontWeight: 700, fontSize: '0.85rem', cursor: seedBusy ? 'not-allowed' : 'pointer',
+                  textAlign: 'left'
+                }}>
+                {seedBusy === label ? '⏳ ' : '▶ '}{label as string}
+              </button>
+            ))}
+          </div>
+          <div style={{ background: '#0F172A', color: '#E2E8F0', borderRadius: '12px', padding: '16px', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '320px', overflowY: 'auto' }}>
+            {seedLog.length === 0 ? <span style={{ opacity: 0.5 }}>Лог бўш...</span> :
+              seedLog.map((line, i) => <div key={i} style={{ marginBottom: '4px' }}>{line}</div>)}
+          </div>
+        </div>
+      ) : activeTab === 'rules' ? (
         <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC' }}>
             <h3 style={{ fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>

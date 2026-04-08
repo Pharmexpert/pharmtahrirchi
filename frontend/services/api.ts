@@ -398,6 +398,13 @@ export const admin = {
   addRule: (rule: Record<string, unknown>) => post<{ success: boolean }>('/api/admin/rules', rule),
   updateRule: (id: number, rule: Record<string, unknown>) => put<{ success: boolean }>(`/api/admin/rules/${id}`, rule),
   deleteRule: (id: number) => del<{ success: boolean }>(`/api/admin/rules/${id}`),
+  // Seed / import endpoints
+  importKmashrab: () => post<any>('/api/admin/wordlists/import-kmashrab', {}),
+  importExtras: () => post<any>('/api/admin/wordlists/import-extras', {}),
+  importTahrirchi: () => post<any>('/api/admin/tahrirchi/import-datasets', {}),
+  segmentDomains: () => post<any>('/api/admin/sayqallash/domain-segment', {}),
+  importWhoInn: () => post<any>('/api/admin/drugs/import-who', {}),
+  dbBackup: () => post<any>('/api/admin/db/backup', {}),
 }
 
 // ═══════════════════════════════════════════════════
