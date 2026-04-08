@@ -18,6 +18,7 @@ export default function DashboardPage() {
     annotated: 0, disputed: 0, abbreviations: 0, files: 0, synonyms: 0
   })
   const [dbMetrics, setDbMetrics] = useState<any>(null)
+  const [dbHistory, setDbHistory] = useState<Record<string, Array<{ count: number; at: string }>>>({})
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -46,6 +47,7 @@ export default function DashboardPage() {
             synonyms: d.synonyms || d.counts?.synonyms || 0
           }))
           setDbMetrics(d.counts || {})
+          api.admin.dbSnapshots(20).then((s: any) => setDbHistory(s.history || {})).catch(() => {})
         }
         if (lingRes.status === 'fulfilled') {
           const d: any = lingRes.value
@@ -243,12 +245,36 @@ export default function DashboardPage() {
               { label: 'Affix flag mapping', key: 'affix_flag_mapping', color: '#EC4899' },
               { label: 'Word freq corpus', key: 'word_frequency_corpus', color: '#14B8A6' },
               { label: 'Translation memory', key: 'translation_memory', color: '#A855F7' },
-            ].map(m => (
-              <div key={m.key} style={{ padding: '14px', borderRadius: 10, background: `${m.color}08`, border: `1px solid ${m.color}22` }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>{m.label}</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: m.color }}>{(dbMetrics[m.key] || 0).toLocaleString()}</div>
-              </div>
-            ))}
+            ].map(m => {
+              const hist = dbHistory[m.key] || []
+              const hasSpark = hist.length >= 2
+              let sparkPath = ''
+              if (hasSpark) {
+                const vals = hist.map(h => h.count)
+                const min = Math.min(...vals)
+                const max = Math.max(...vals)
+                const range = max - min || 1
+                const w = 100, h = 24
+                sparkPath = hist.map((p, i) => {
+                  const x = (i / (hist.length - 1)) * w
+                  const y = h - ((p.count - min) / range) * h
+                  return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+                }).join(' ')
+              }
+              return (
+                <div key={m.key} style={{ padding: '14px', borderRadius: 10, background: `${m.color}08`, border: `1px solid ${m.color}22` }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>{m.label}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 8 }}>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: m.color }}>{(dbMetrics[m.key] || 0).toLocaleString()}</div>
+                    {hasSpark && (
+                      <svg width={100} height={24} style={{ flexShrink: 0 }}>
+                        <path d={sparkPath} stroke={m.color} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
           {/* SVG Bar Chart — relative sizes of top tables */}
           <div style={{ marginTop: 20, padding: '14px 16px', background: '#FAFBFC', borderRadius: 10, border: '1px solid var(--border)' }}>

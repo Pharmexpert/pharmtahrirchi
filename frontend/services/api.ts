@@ -354,6 +354,7 @@ export const billing = {
 
 export const admin = {
   dbStats: () => get<import('../types/api').DbStats>('/api/admin/db-stats'),
+  dbSnapshots: (limit = 20) => get<{ history: Record<string, Array<{ count: number; at: string }>> }>(`/api/admin/db-snapshots?limit=${limit}`),
   rules: (lang?: string) => {
     const qs = lang ? `?lang=${lang}` : ''
     return get<{ rules: import('../types/api').SayqallashRule[] }>(`/api/admin/rules${qs}`)

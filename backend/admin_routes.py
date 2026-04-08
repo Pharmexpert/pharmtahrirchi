@@ -184,9 +184,25 @@ async def set_rule_quality(rule_id: int, payload: Dict[str, Any], current_user: 
         pass
     return {"status": "updated", "rule_id": rule_id, "quality_flag": flag}
 
+@router.get("/db-snapshots")
+async def get_db_snapshots(limit: int = 20, current_user: dict = Depends(get_current_user)):
+    """Time-series snapshots for sparkline charts."""
+    try:
+        import db_snapshots
+        return {"history": db_snapshots.get_history(limit_per_table=limit)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/db-stats")
 async def get_db_stats(current_user: dict = Depends(get_current_user)):
     """Detailed database statistics for admin reporting."""
+    # Take throttled snapshot (1 per hour)
+    try:
+        import db_snapshots
+        db_snapshots.take_snapshot(throttle_hours=1)
+    except Exception:
+        pass
     conn = db.connect_db()
     cursor = conn.cursor()
     stats = {}
