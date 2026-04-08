@@ -55,6 +55,26 @@ export default function SyntaxPage() {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   // Role picker state (click on token → popup with role options)
   const [rolePicker, setRolePicker] = useState<{ tokenIdx: number; x: number; y: number } | null>(null)
+  const [pickerDrag, setPickerDrag] = useState<{ offsetX: number; offsetY: number } | null>(null)
+
+  // Drag handlers for role picker popup
+  React.useEffect(() => {
+    if (!pickerDrag || !rolePicker) return
+    const onMove = (e: MouseEvent) => {
+      setRolePicker(prev => prev ? {
+        ...prev,
+        x: e.clientX - pickerDrag.offsetX,
+        y: e.clientY - pickerDrag.offsetY,
+      } : null)
+    }
+    const onUp = () => setPickerDrag(null)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [pickerDrag, rolePicker])
 
   const ROLES = [
     { key: 'ega', label: 'Эга (Subject)', icon: '👤' },
@@ -361,8 +381,8 @@ export default function SyntaxPage() {
               <div onClick={() => setRolePicker(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
               <div style={{
                 position: 'fixed',
-                left: Math.min(rolePicker.x, window.innerWidth - 260),
-                top: Math.min(rolePicker.y, window.innerHeight - 280),
+                left: Math.max(0, Math.min(rolePicker.x, window.innerWidth - 260)),
+                top: Math.max(0, Math.min(rolePicker.y, window.innerHeight - 280)),
                 width: 240,
                 background: 'white',
                 border: '2px solid #B48C64',
@@ -372,11 +392,36 @@ export default function SyntaxPage() {
                 overflow: 'hidden',
                 animation: 'fadeInRole .15s ease',
               }}>
-                <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #B48C64, #8B5E3C)', color: 'white', fontWeight: 800, fontSize: '.78rem' }}>
-                  Гап бўлагини танланг
-                  <div style={{ fontSize: '.68rem', opacity: .85, fontWeight: 600, marginTop: 2 }}>
-                    Сўз: <b>{result.tokens[rolePicker.tokenIdx]?.word}</b>
+                <div
+                  onMouseDown={(e) => {
+                    const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+                    setPickerDrag({
+                      offsetX: e.clientX - rect.left,
+                      offsetY: e.clientY - rect.top,
+                    })
+                    e.preventDefault()
+                  }}
+                  style={{
+                    padding: '10px 14px',
+                    background: 'linear-gradient(135deg, #B48C64, #8B5E3C)',
+                    color: 'white', fontWeight: 800, fontSize: '.78rem',
+                    cursor: pickerDrag ? 'grabbing' : 'grab',
+                    userSelect: 'none',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  title="Сичқонча билан судраб кўчиринг"
+                >
+                  <span style={{ fontSize: '.9rem' }}>⋮⋮</span>
+                  <div style={{ flex: 1 }}>
+                    Гап бўлагини танланг
+                    <div style={{ fontSize: '.68rem', opacity: .85, fontWeight: 600, marginTop: 2 }}>
+                      Сўз: <b>{result.tokens[rolePicker.tokenIdx]?.word}</b>
+                    </div>
                   </div>
+                  <button
+                    onClick={() => setRolePicker(null)}
+                    style={{ background: 'rgba(255,255,255,.2)', border: 'none', color: 'white', width: 20, height: 20, borderRadius: 4, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.8rem' }}
+                  >✕</button>
                 </div>
                 <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {ROLES.map(r => {
