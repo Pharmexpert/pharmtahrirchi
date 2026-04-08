@@ -37,14 +37,19 @@ FILES = [
 def fetch(filename: str) -> list:
     url = f"{BASE}/{filename}"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "pharma-expert/1.0"})
-        with urllib.request.urlopen(req, timeout=60) as response:
-            data = response.read().decode("utf-8", errors="ignore")
+        import requests as _requests
+        log.info(f"Fetching {url}...")
+        r = _requests.get(url, headers={"User-Agent": "pharma-expert/1.0"}, timeout=90)
+        log.info(f"  HTTP {r.status_code}, {len(r.content)} bytes")
+        if r.status_code != 200:
+            log.error(f"  Failed {filename}: HTTP {r.status_code}")
+            return []
+        data = r.content.decode("utf-8", errors="ignore")
         words = [w.strip() for w in data.splitlines() if w.strip() and not w.startswith("#")]
-        log.info(f"Fetched {filename}: {len(words)} words")
+        log.info(f"  Parsed {filename}: {len(words)} words")
         return words
     except Exception as e:
-        log.error(f"Failed {filename}: {e}")
+        log.error(f"  Exception {filename}: {type(e).__name__}: {e}")
         return []
 
 
