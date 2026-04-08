@@ -13,7 +13,7 @@ import urllib.request
 logging.basicConfig(level=logging.INFO, format="[hunspell_v2] %(message)s")
 log = logging.getLogger()
 
-BASE = "https://raw.githubusercontent.com/u2b3k/uz-hunspell/main"
+BASE = "https://raw.githubusercontent.com/u2b3k/uz-hunspell/master"
 DEST = os.getenv("HUNSPELL_V2_PATH", "/app/data/hunspell")
 
 FILES = [
