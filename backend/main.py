@@ -509,6 +509,29 @@ async def _auto_seed_background():
                 logger.info(f"[post-process] uzbek_qoidalari: {r}")
             except Exception as ee:
                 logger.warning(f"[post-process] uzbek_qoidalari failed: {ee}")
+
+            # 12. Cleanup: remove user-assigned role pollution from sayqallash_rules
+            # (legacy: old saveRule calls wrote "word/role" pairs as spelling rules)
+            try:
+                import sqlite3 as _sql
+                _c = _sql.connect(_db.DB_PATH)
+                _cur = _c.cursor()
+                _cur.execute("""
+                    DELETE FROM sayqallash_rules
+                    WHERE correct_form LIKE '%/ega%'
+                       OR correct_form LIKE '%/kesim%'
+                       OR correct_form LIKE '%/toldiruvchi%'
+                       OR correct_form LIKE '%/aniqlovchi%'
+                       OR correct_form LIKE '%/hol%'
+                       OR (context LIKE '%user-assigned role%')
+                """)
+                deleted = _cur.rowcount
+                _c.commit()
+                _c.close()
+                if deleted > 0:
+                    logger.info(f"[post-process] cleanup: removed {deleted} role-pollution rules")
+            except Exception as ee:
+                logger.warning(f"[post-process] cleanup failed: {ee}")
         except Exception as e:
             logger.warning(f"[post-process] setup failed: {e}")
 

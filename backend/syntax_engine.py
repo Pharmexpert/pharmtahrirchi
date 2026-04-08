@@ -87,21 +87,29 @@ def detect_role(token: dict, idx: int, total: int) -> str:
 # ─────────────────────────────────────────────
 
 def lookup_role_from_db(word: str) -> str | None:
-    """Check syntax_sentence_parts for the most frequent role of this word."""
+    """Check syntax_sentence_parts for the most frequent role of this word.
+    Uses SUM(frequency) (respects user-assigned role counts) + case-insensitive match.
+    """
+    if not word:
+        return None
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
+        w = word.lower().strip()
         cur.execute("""
-            SELECT role, COUNT(*) as c
+            SELECT role, SUM(COALESCE(frequency, 1)) as total_freq
             FROM syntax_sentence_parts
-            WHERE word = ? OR lemma = ?
+            WHERE LOWER(word) = ? OR LOWER(COALESCE(lemma, '')) = ?
             GROUP BY role
-            ORDER BY c DESC
+            ORDER BY total_freq DESC
             LIMIT 1
-        """, (word.lower(), word.lower()))
+        """, (w, w))
         row = cur.fetchone()
         conn.close()
-        return row[0] if row else None
+        # Only return if at least 1 real observation
+        if row and row[1] and row[1] > 0:
+            return row[0]
+        return None
     except Exception:
         return None
 
