@@ -410,6 +410,25 @@ async def import_pharmacopoeia_route(current_user: dict = Depends(get_admin_user
         return {"success": False, "error": str(e)}
 
 
+@router.post("/bertbek/info")
+async def bertbek_info_route(current_user: dict = Depends(get_admin_user)):
+    """Get BERTbek engine status."""
+    try:
+        import bertbek_engine
+        return {"success": True, **bertbek_engine.info()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/simreluz/calibrate")
+async def simreluz_calibrate_route(current_user: dict = Depends(get_admin_user)):
+    """Run SimRelUz semantic similarity calibration (requires BERTBEK_BASE_ENABLED=1)."""
+    try:
+        return {"success": True, **_run_script("calibrate_simreluz")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/disputed-board/import")
 async def import_disputed_board_route(current_user: dict = Depends(get_admin_user)):
     """Import editorial-board-approved disputed words (234 terms from docx)."""

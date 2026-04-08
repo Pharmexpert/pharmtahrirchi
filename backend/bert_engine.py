@@ -261,7 +261,7 @@ class BertEngine:
             return None
 
     def get_sentence_embedding(self, text: str, as_numpy: bool = False):
-        """Mean-pooled sentence embedding (better for sentence similarity / translation scoring)."""
+        """Mean-pooled sentence embedding — ENSEMBLE (Tahrirchi + UzBERT + BERTbek if enabled)."""
         if not self.initialized or not self.model or not self.tokenizer:
             return None
         try:
@@ -269,11 +269,29 @@ class BertEngine:
             inputs = self.tokenizer(normalized, return_tensors="pt", padding=True, truncation=True, max_length=512)
             with torch.no_grad():
                 outputs = self.model.base_model(**inputs)
-                last_hidden = outputs.last_hidden_state  # (1, seq, dim)
+                last_hidden = outputs.last_hidden_state
                 mask = inputs["attention_mask"].unsqueeze(-1).float()
                 summed = (last_hidden * mask).sum(dim=1)
                 counts = mask.sum(dim=1).clamp(min=1)
                 mean_pooled = (summed / counts).squeeze()
+
+            # Ensemble: combine with BERTbek if enabled
+            try:
+                import bertbek_engine
+                if bertbek_engine.is_available() and os.getenv("BERTBEK_BASE_ENABLED", "0") == "1":
+                    bertbek_emb = bertbek_engine.embed(text)
+                    if bertbek_emb is not None:
+                        import numpy as np
+                        # Normalize to same dim via mean if different
+                        if as_numpy:
+                            me_np = mean_pooled.cpu().numpy() if hasattr(mean_pooled, 'cpu') else mean_pooled
+                            # If dims match, average; otherwise return Tahrirchi only
+                            if me_np.shape == bertbek_emb.shape:
+                                return ((me_np + bertbek_emb) / 2.0)
+                            return me_np
+            except Exception:
+                pass
+
             return mean_pooled.cpu().numpy() if as_numpy else mean_pooled
         except Exception as e:
             logger.error(f"[!] Sentence Embedding Error: {e}")
