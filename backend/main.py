@@ -321,6 +321,31 @@ async def auto_seed_databases():
                     logger.info(f"[auto-seed] extras: {r}")
                 except Exception as ee:
                     logger.warning(f"[auto-seed] extras failed: {ee}")
+                # New Uzbek spell-check sources (uzbek-spell, uzbek-net, uzhungen qoida, debian)
+                try:
+                    import import_uzbek_spell
+                    r = import_uzbek_spell.main()
+                    logger.info(f"[auto-seed] uzbek_spell: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] uzbek_spell failed: {ee}")
+                try:
+                    import import_uzbek_net_hunspell
+                    r = import_uzbek_net_hunspell.main()
+                    logger.info(f"[auto-seed] uzbek_net: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] uzbek_net failed: {ee}")
+                try:
+                    import import_uzhungen_qoida
+                    r = import_uzhungen_qoida.main()
+                    logger.info(f"[auto-seed] uzhungen qoida: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] uzhungen qoida failed: {ee}")
+                try:
+                    import import_debian_hunspell
+                    r = import_debian_hunspell.main()
+                    logger.info(f"[auto-seed] debian_hunspell: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] debian_hunspell failed: {ee}")
         except Exception as e:
             logger.warning(f"[auto-seed] user_dictionary check failed: {e}")
 
