@@ -30,28 +30,44 @@ class ApiError extends Error {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      ...authHeaders(),
-      ...options.headers,
-    },
-  })
+  // Long timeout for AI inference (CPU Llama/Mistral can take 60-120 sec)
+  const isAiEndpoint = path.includes('/assistant/') || path.includes('/ai-improve') || path.includes('/translate') || path.includes('/check')
+  const timeoutMs = isAiEndpoint ? 180000 : 30000  // 3 min for AI, 30s for others
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`
-    try {
-      const err = await res.json()
-      detail = err.detail || err.message || detail
-    } catch {}
-    throw new ApiError(res.status, detail)
-  }
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...authHeaders(),
+        ...options.headers,
+      },
+    })
 
-  const contentType = res.headers.get('content-type') || ''
-  if (contentType.includes('application/json')) {
-    return res.json()
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try {
+        const err = await res.json()
+        detail = err.detail || err.message || detail
+      } catch {}
+      throw new ApiError(res.status, detail)
+    }
+
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      return res.json()
+    }
+    return res as unknown as T
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      throw new ApiError(408, `Сўров вақти тугади (${timeoutMs / 1000}с). Локал AI моделлар секин ишлаши мумкин — қайта уриниб кўринг.`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timeoutId)
   }
-  return res as unknown as T
 }
 
 function get<T>(path: string): Promise<T> {

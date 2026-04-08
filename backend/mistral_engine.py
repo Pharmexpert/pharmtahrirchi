@@ -70,7 +70,7 @@ def _get_local_llm():
                 logger.info(f"[Mistral] Loading local GGUF: {GGUF_PATH}")
                 _local_llm = Llama(
                     model_path=GGUF_PATH,
-                    n_ctx=4096,
+                    n_ctx=2048,
                     n_threads=int(os.getenv("LLAMA_THREADS", "4")),
                     n_gpu_layers=int(os.getenv("LLAMA_GPU_LAYERS", "0")),
                     verbose=False,
@@ -193,10 +193,13 @@ def chat(messages: List[Dict[str, str]], max_tokens: int = 512, temperature: flo
         if not llm:
             return ""
         try:
+            # Cap tokens for CPU speed
+            effective_max = min(max_tokens, 128)
             out = llm(
                 prompt,
-                max_tokens=max_tokens,
+                max_tokens=effective_max,
                 temperature=temperature,
+                top_p=0.9,
                 stop=["</s>", "[INST]"],
             )
             return out["choices"][0]["text"].strip()

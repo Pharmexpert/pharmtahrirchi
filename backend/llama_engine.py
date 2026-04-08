@@ -58,7 +58,7 @@ def _get_local_llm():
                 logger.info(f"[Llama] Loading GGUF: {GGUF_PATH}")
                 _local_llm = Llama(
                     model_path=GGUF_PATH,
-                    n_ctx=8192,
+                    n_ctx=2048,
                     n_threads=int(os.getenv("LLAMA_THREADS", "4")),
                     n_gpu_layers=int(os.getenv("LLAMA_GPU_LAYERS", "0")),
                     verbose=False,
@@ -172,7 +172,15 @@ def chat(messages: List[Dict[str, str]], max_tokens: int = 1024, temperature: fl
         if not llm:
             return ""
         try:
-            out = llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=["<|eot_id|>", "<|end_of_text|>"])
+            # Cap tokens for CPU speed: 128 for chat, 512 for edit/translate
+            effective_max = min(max_tokens, 128)
+            out = llm(
+                prompt,
+                max_tokens=effective_max,
+                temperature=temperature,
+                top_p=0.9,
+                stop=["<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>"],
+            )
             return out["choices"][0]["text"].strip()
         except Exception as e:
             logger.error(f"[Llama local] {e}")
