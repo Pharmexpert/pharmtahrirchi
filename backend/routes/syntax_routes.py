@@ -162,6 +162,51 @@ async def export_training(current_user: Dict = Depends(get_current_user)):
     return {"exported": count, "path": path}
 
 
+@router.get("/export-parsed")
+async def export_parsed_sentences(limit: int = 5000, format: str = "jsonl"):
+    """Download parsed sentences as JSONL or CSV (for external ML training)."""
+    from fastapi.responses import StreamingResponse
+    import io as _io, json as _json, csv as _csv
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT text, parse_tree, word_order_formula, sentence_type, source
+        FROM syntax_parsed_sentences
+        ORDER BY id DESC LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+
+    buf = _io.StringIO()
+    if format == "csv":
+        writer = _csv.writer(buf)
+        writer.writerow(["text", "word_order_formula", "sentence_type", "source"])
+        for r in rows:
+            writer.writerow([r["text"], r["word_order_formula"] or "", r["sentence_type"] or "", r["source"] or ""])
+        media = "text/csv"
+        fname = "parsed_sentences.csv"
+    else:
+        for r in rows:
+            rec = {
+                "text": r["text"],
+                "parse_tree": _json.loads(r["parse_tree"]) if r["parse_tree"] else None,
+                "word_order_formula": r["word_order_formula"],
+                "sentence_type": r["sentence_type"],
+                "source": r["source"],
+            }
+            buf.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+        media = "application/x-jsonlines"
+        fname = "parsed_sentences.jsonl"
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type=media,
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
 @router.get("/parts/{word}")
 async def get_word_roles(word: str):
     """Get all known roles for a word."""
