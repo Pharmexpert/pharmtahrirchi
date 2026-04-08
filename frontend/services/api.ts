@@ -741,6 +741,13 @@ export const syntax = {
   templates: (limit = 50) => get<{ templates: any[] }>(`/api/syntax/templates?limit=${limit}`),
   stats: () => get<Record<string, number>>('/api/syntax/stats'),
   parts: (word: string) => get<{ word: string; roles: any[] }>(`/api/syntax/parts/${encodeURIComponent(word)}`),
+  // GECTurk endpoints
+  verifyRules: (limit = 5000) => post<any>('/api/syntax/verify-rules', { limit }),
+  noisyRules: (limit = 100) => get<{ rules: any[] }>(`/api/syntax/noisy-rules?limit=${limit}`),
+  deleteNoisy: (confirm: boolean) => post<{ deleted: number }>('/api/syntax/delete-noisy', { confirm }),
+  generateSynth: (limit_sentences = 1000, transforms_per_sent = 5) =>
+    post<any>('/api/syntax/generate-synth', { limit_sentences, transforms_per_sent }),
+  exportTraining: () => post<{ exported: number; path: string }>('/api/syntax/export-training', {}),
 }
 
 // Re-export everything as default namespace

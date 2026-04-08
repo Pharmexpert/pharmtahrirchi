@@ -342,6 +342,46 @@ async def auto_seed_databases():
         except Exception as e:
             logger.info(f"[auto-seed] hunspell affix skipped: {e}")
 
+        # Syntax GECTurk-B: Auto-generate synthetic pairs if <5K synth exist
+        try:
+            conn_sy = _db.connect_db()
+            cur_sy = conn_sy.cursor()
+            try:
+                cur_sy.execute("SELECT COUNT(*) FROM translation_memory WHERE source_db='syntax_synth'")
+                synth_n = cur_sy.fetchone()[0]
+            except Exception:
+                synth_n = 0
+            conn_sy.close()
+            if synth_n < 5000:
+                try:
+                    import syntax_synth_generator
+                    r = syntax_synth_generator.generate_all(limit_sentences=2000, transforms_per_sent=5)
+                    logger.info(f"[auto-seed] syntax_synth: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] syntax_synth failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] synth check failed: {e}")
+
+        # Syntax GECTurk-A: Auto-verify sayqallash rules (flag noisy ones) on first run
+        try:
+            conn_v = _db.connect_db()
+            cur_v = conn_v.cursor()
+            try:
+                cur_v.execute("SELECT COUNT(*) FROM sayqallash_rules WHERE quality_flag IS NULL OR quality_flag='unverified'")
+                unverified_n = cur_v.fetchone()[0]
+            except Exception:
+                unverified_n = 0
+            conn_v.close()
+            if unverified_n > 500:
+                try:
+                    import syntax_verifier
+                    r = syntax_verifier.verify_all_rules(limit=10000)
+                    logger.info(f"[auto-seed] rule verification: clean={r.get('clean')}, noisy={r.get('noisy')}, suspicious={r.get('suspicious')}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] verifier failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] verifier check failed: {e}")
+
         # Syntax Phase 2: Auto-import UD_Uzbek-UT corpus (if syntax_phrases empty)
         try:
             conn_ud = _db.connect_db()

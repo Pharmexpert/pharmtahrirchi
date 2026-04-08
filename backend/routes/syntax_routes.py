@@ -99,6 +99,54 @@ async def syntax_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─────────────────────────────────────────────
+# GECTurk-style endpoints (Phases A, B, C)
+# ─────────────────────────────────────────────
+
+@router.post("/verify-rules")
+async def verify_rules(payload: Dict[str, Any] = None, current_user: Dict = Depends(get_current_user)):
+    """Phase A: Bidirectional verification of sayqallash_rules. Flags noisy rules."""
+    import syntax_verifier
+    limit = (payload or {}).get("limit", 5000)
+    return syntax_verifier.verify_all_rules(limit=limit)
+
+
+@router.get("/noisy-rules")
+async def list_noisy_rules(limit: int = 100, current_user: Dict = Depends(get_current_user)):
+    """List rules flagged as noisy after verification."""
+    import syntax_verifier
+    return {"rules": syntax_verifier.get_noisy_rules(limit=limit)}
+
+
+@router.post("/delete-noisy")
+async def delete_noisy(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Delete all noisy rules (requires confirm=true)."""
+    import syntax_verifier
+    confirm = payload.get("confirm", False)
+    deleted = syntax_verifier.delete_noisy_rules(confirm=confirm)
+    return {"deleted": deleted}
+
+
+@router.post("/generate-synth")
+async def generate_synth(payload: Dict[str, Any] = None, current_user: Dict = Depends(get_current_user)):
+    """Phase B: Generate synthetic parallel pairs from UD sentences via 10 transformations."""
+    import syntax_synth_generator
+    p = payload or {}
+    return syntax_synth_generator.generate_all(
+        limit_sentences=p.get("limit_sentences", 1000),
+        transforms_per_sent=p.get("transforms_per_sent", 5),
+    )
+
+
+@router.post("/export-training")
+async def export_training(current_user: Dict = Depends(get_current_user)):
+    """Phase C: Export training dataset (JSONL) for mBART fine-tuning."""
+    import syntax_train_mbart
+    path = "/tmp/syntax_train.jsonl"
+    count = syntax_train_mbart.export_training_dataset(path)
+    return {"exported": count, "path": path}
+
+
 @router.get("/parts/{word}")
 async def get_word_roles(word: str):
     """Get all known roles for a word."""

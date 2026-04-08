@@ -293,6 +293,10 @@ export default function AdminPage() {
               ['Sayqallash domain segment', () => api.admin.segmentDomains()],
               ['WHO INN drugs', () => api.admin.importWhoInn()],
               ['DB backup (now)', () => api.admin.dbBackup()],
+              ['📐 Syntax: Verify rules (bidirectional)', () => api.syntax.verifyRules(10000)],
+              ['📐 Syntax: Generate synth pairs (×5)', () => api.syntax.generateSynth(2000, 5)],
+              ['📐 Syntax: Export training JSONL', () => api.syntax.exportTraining()],
+              ['📐 Syntax: List noisy rules', () => api.syntax.noisyRules(50)],
             ].map(([label, fn]) => (
               <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
                 style={{
