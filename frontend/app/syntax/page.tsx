@@ -53,6 +53,35 @@ export default function SyntaxPage() {
 
   // Drag-and-drop state for enrich mode
   const [dragIdx, setDragIdx] = useState<number | null>(null)
+  // Role picker state (click on token → popup with role options)
+  const [rolePicker, setRolePicker] = useState<{ tokenIdx: number; x: number; y: number } | null>(null)
+
+  const ROLES = [
+    { key: 'ega', label: 'Эга (Subject)', icon: '👤' },
+    { key: 'kesim', label: 'Кесим (Predicate)', icon: '⚙️' },
+    { key: 'toldiruvchi', label: 'Тўлдирувчи (Object)', icon: '📦' },
+    { key: 'aniqlovchi', label: 'Аниқловчи (Attribute)', icon: '🏷️' },
+    { key: 'hol', label: 'Ҳол (Adverbial)', icon: '📍' },
+    { key: 'other', label: 'Бошқа (Other)', icon: '❓' },
+  ]
+
+  const setTokenRole = async (tokenIdx: number, newRole: string) => {
+    if (!result) return
+    const newTokens = [...result.tokens]
+    newTokens[tokenIdx] = { ...newTokens[tokenIdx], role: newRole }
+    setResult({ ...result, tokens: newTokens })
+    setRolePicker(null)
+    // Persist to DB: save role mapping to syntax_sentence_parts
+    try {
+      const word = newTokens[tokenIdx].clean || newTokens[tokenIdx].word
+      const pos = newTokens[tokenIdx].pos
+      await api.syntax.saveRule(
+        word,
+        `${word}/${newRole}`,
+        `POS=${pos}, user-assigned role=${newRole}`
+      )
+    } catch { /* silent */ }
+  }
 
   useEffect(() => {
     api.syntax.stats().then(setStats).catch(() => {})
@@ -293,6 +322,10 @@ export default function SyntaxPage() {
                   tabIndex={mode === 'enrich' ? 0 : -1}
                   aria-label={`${tok.word} — ${c.label}, POS ${tok.pos}, position ${i + 1} of ${total}`}
                   aria-grabbed={mode === 'enrich' && dragIdx === i ? 'true' : undefined}
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                    setRolePicker({ tokenIdx: i, x: rect.left, y: rect.bottom + 4 })
+                  }}
                   onKeyDown={e => {
                     if (mode !== 'enrich') return
                     if (e.key === 'ArrowLeft') { e.preventDefault(); moveLeft() }
@@ -301,10 +334,13 @@ export default function SyntaxPage() {
                   style={{
                     padding: '10px 14px', borderRadius: 10,
                     background: c.bg, border: `1.5px solid ${c.color}`,
-                    cursor: mode === 'enrich' ? 'grab' : 'default',
+                    cursor: 'pointer',
                     minWidth: 60, textAlign: 'center',
-                    outline: 'none'
+                    outline: 'none',
+                    transition: 'transform .1s',
                   }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
                   onFocus={e => { if (mode === 'enrich') e.currentTarget.style.boxShadow = `0 0 0 3px ${c.color}55` }}
                   onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
                 >
@@ -315,6 +351,70 @@ export default function SyntaxPage() {
               )
             })}
           </div>
+          <div style={{ fontSize: '.68rem', color: '#94A3B8', marginBottom: 8 }}>
+            💡 Ячейка устига босинг — гап бўлагини танлаш учун рўйхат очилади (эга / кесим / тўлдирувчи / аниқловчи / ҳол)
+          </div>
+
+          {/* Role picker popup */}
+          {rolePicker && (
+            <>
+              <div onClick={() => setRolePicker(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+              <div style={{
+                position: 'fixed',
+                left: Math.min(rolePicker.x, window.innerWidth - 260),
+                top: Math.min(rolePicker.y, window.innerHeight - 280),
+                width: 240,
+                background: 'white',
+                border: '2px solid #B48C64',
+                borderRadius: 12,
+                boxShadow: '0 20px 50px rgba(0,0,0,.2)',
+                zIndex: 9999,
+                overflow: 'hidden',
+                animation: 'fadeInRole .15s ease',
+              }}>
+                <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #B48C64, #8B5E3C)', color: 'white', fontWeight: 800, fontSize: '.78rem' }}>
+                  Гап бўлагини танланг
+                  <div style={{ fontSize: '.68rem', opacity: .85, fontWeight: 600, marginTop: 2 }}>
+                    Сўз: <b>{result.tokens[rolePicker.tokenIdx]?.word}</b>
+                  </div>
+                </div>
+                <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {ROLES.map(r => {
+                    const isCurrent = result.tokens[rolePicker.tokenIdx]?.role === r.key
+                    const color = ROLE_COLORS[r.key] || ROLE_COLORS.other
+                    return (
+                      <button
+                        key={r.key}
+                        onClick={() => setTokenRole(rolePicker.tokenIdx, r.key)}
+                        style={{
+                          padding: '8px 12px', borderRadius: 8, border: 'none',
+                          background: isCurrent ? color.color : color.bg,
+                          color: isCurrent ? 'white' : color.color,
+                          fontWeight: 700, fontSize: '.82rem',
+                          cursor: 'pointer', textAlign: 'left',
+                          display: 'flex', alignItems: 'center', gap: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: '1rem' }}>{r.icon}</span>
+                        <span>{r.label}</span>
+                        {isCurrent && <span style={{ marginLeft: 'auto', fontSize: '.7rem' }}>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ padding: '8px 14px', background: '#F8FAFC', fontSize: '.64rem', color: '#94A3B8', borderTop: '1px solid #E2E8F0' }}>
+                  Танловингиз Sayqallash базасига сақланади
+                </div>
+              </div>
+              <style jsx>{`
+                @keyframes fadeInRole {
+                  from { opacity: 0; transform: scale(.92); }
+                  to { opacity: 1; transform: scale(1); }
+                }
+              `}</style>
+            </>
+          )}
+
           {mode === 'enrich' && (
             <div style={{ fontSize: '.68rem', color: '#94A3B8', marginTop: -8, marginBottom: 12 }}>
               💡 Сичqoncha билан drag, клавиатурада Tab + ← → стрелкалари билан тартиблаш мумкин
