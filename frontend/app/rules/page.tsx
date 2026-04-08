@@ -182,9 +182,9 @@ export default function RulesPage() {
           </div>
 
           {/* Add Rule Button */}
-          <button 
+          <button
             onClick={() => setEditingRule({ wrong_form: '', correct_form: '', error_type: 'S/Spelling', lang })}
-            style={{ 
+            style={{
               padding: '10px 20px', background: 'var(--accent-gradient)', color: 'white',
               border: 'none', borderRadius: 'var(--radius-md)', fontWeight: 700,
               fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
@@ -192,6 +192,28 @@ export default function RulesPage() {
             }}
           >
             <Plus size={18} /> Yangi qoida
+          </button>
+
+          {/* Delete All Noisy (GECTurk) */}
+          <button
+            onClick={async () => {
+              const noisyCount = rules.filter(r => r.quality_flag === 'noisy').length
+              if (noisyCount === 0) { showMessage('Noisy qoidalar topilmadi', 'error'); return }
+              if (!confirm(`${noisyCount} ta noisy qoidani O'CHIRIB tashlaysizmi? Bu amalni qaytarib bo'lmaydi.`)) return
+              try {
+                const r: any = await api.syntax.deleteNoisy(true)
+                showMessage(`${r.deleted || 0} ta qoida o'chirildi`)
+                fetchRules()
+              } catch { showMessage("O'chirishda xatolik", 'error') }
+            }}
+            title="Bidirectional verifier tomonidan 'noisy' deb flag qilingan qoidalarni o'chirish"
+            style={{
+              padding: '10px 16px', background: '#FEE2E2', color: '#B91C1C',
+              border: '1px solid #FCA5A5', borderRadius: 'var(--radius-md)', fontWeight: 700,
+              fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            🗑️ Delete Noisy ({rules.filter(r => r.quality_flag === 'noisy').length})
           </button>
 
           {/* Refresh */}
