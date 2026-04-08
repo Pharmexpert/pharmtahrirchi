@@ -162,15 +162,15 @@ async def startup_event():
             import weekly_learning_cycle
             scheduler.add_job(
                 weekly_learning_cycle.run_full_cycle,
-                CronTrigger(day_of_week="sun", hour=3, minute=30),
-                id="weekly_learning",
-                name="Weekly self-improvement cycle",
+                CronTrigger(hour=3, minute=30),  # DAILY at 03:30 Tashkent time
+                id="daily_learning",
+                name="Daily self-improvement cycle",
                 replace_existing=True,
                 misfire_grace_time=7200,
             )
-            logger.info("[Scheduler] Weekly learning cycle scheduled (Sunday 03:30)")
+            logger.info("[Scheduler] Daily learning cycle scheduled (every day 03:30 Asia/Tashkent)")
         except Exception as ee:
-            logger.warning(f"[Scheduler] Weekly cycle skipped: {ee}")
+            logger.warning(f"[Scheduler] Daily learning cycle skipped: {ee}")
 
         scheduler.start()
         logger.info("[Scheduler] Nightly dictionary growth scheduled at 03:00 Asia/Tashkent")
