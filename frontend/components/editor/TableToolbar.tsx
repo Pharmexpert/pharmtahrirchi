@@ -22,6 +22,8 @@ interface Props {
   finishWork: () => void
   handleExport: () => void
   handleSyntaxCheck?: () => Promise<{ totalErrors: number; rowsWithErrors: number }>
+  handleStyleCheck?: () => Promise<{ total: number; rowsWith: number }>
+  handleWordUpload?: () => void
 }
 
 export default function TableToolbar({
@@ -29,8 +31,17 @@ export default function TableToolbar({
   showSourceLangModal, saveStatus,
   isBatchPolishing, isAiAligning, savingAll, isFinishing,
   handleLinguisticBtnClick, batchTransliterate, runBatchSayqallash,
-  aiAlign, handleSaveAll, finishWork, handleExport, handleSyntaxCheck,
+  aiAlign, handleSaveAll, finishWork, handleExport, handleSyntaxCheck, handleStyleCheck, handleWordUpload,
 }: Props) {
+  const [styleBusy, setStyleBusy] = React.useState(false)
+  const runStyle = async () => {
+    if (!handleStyleCheck) return
+    setStyleBusy(true)
+    try {
+      const r = await handleStyleCheck()
+      alert(`🎨 Style Guide: ${r.total} xato, ${r.rowsWith} қаторда`)
+    } finally { setStyleBusy(false) }
+  }
   const [synBusy, setSynBusy] = React.useState(false)
   const runSyntax = async () => {
     if (!handleSyntaxCheck) return

@@ -750,6 +750,19 @@ export const assistant = {
     del<{ success: boolean }>(`/api/assistant/history/${encodeURIComponent(session_id)}`),
 }
 
+// Unified analyze (4-layer)
+export const analyze = {
+  full: (text: string, lang = 'uz', layers?: string[]) =>
+    post<{
+      morph: any[]
+      sayqallash: any[]
+      syntax: any[]
+      style: any[]
+      total: number
+      summary: { morph_count: number; sayqallash_count: number; syntax_count: number; style_count: number }
+    }>('/api/analyze/full', { text, lang, layers }),
+}
+
 // Syntax (Phase 3)
 export const syntax = {
   analyze: (text: string) => post<any>('/api/syntax/analyze', { text }),
@@ -773,7 +786,7 @@ export const syntax = {
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp, tilshunos, assistant, billing, syntax,
+  morph, grammar, learn, nlp, tilshunos, assistant, billing, syntax, analyze,
   API_BASE,
 }
 
