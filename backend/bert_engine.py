@@ -218,6 +218,30 @@ class BertEngine:
         masked = window.replace(wrong_word, "[MASK]", 1)
         return self.predict_mask(masked, top_k=top_k, hunspell_filter=hunspell_filter)
 
+    def predict_mask_morpheme_aware(self, text: str, top_k: int = 15, final_k: int = 5):
+        """
+        Morpheme-aware mask prediction: BERT suggestions → Hunspell filter → morphology validator.
+        Uses uzbek_affix_rules DB to check slot compatibility.
+        """
+        raw = self.predict_mask(text, top_k=top_k, hunspell_filter=True, final_k=top_k)
+        if not raw:
+            return []
+        try:
+            import morphology
+            analyzer = morphology.get_analyzer()
+            validated = []
+            for w in raw:
+                try:
+                    analysis = analyzer.analyze(w)
+                    if analysis and getattr(analysis, "valid_order", True):
+                        validated.append(w)
+                except Exception:
+                    validated.append(w)  # if analyzer fails, pass through
+            return validated[:final_k] if validated else raw[:final_k]
+        except Exception as e:
+            logger.warning(f"[BERT morpheme-aware] fallback: {e}")
+            return raw[:final_k]
+
     # ───────────────────────────────────────────────────
     # Embeddings (token + sentence)
     # ───────────────────────────────────────────────────
