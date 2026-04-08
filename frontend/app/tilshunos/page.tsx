@@ -6,6 +6,7 @@ import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 import WordDocumentViewer from '../../components/WordDocumentViewer'
 import SuperDocEditor from '../../components/SuperDocEditor'
+import LinguisticAnalysisBar from '../../components/LinguisticAnalysisBar'
 
 type Mode = 'edit' | 'translate' | 'word'
 type Lang = 'en' | 'ru' | 'uz-cyr' | 'uz-lat'
@@ -818,6 +819,11 @@ export default function TilshunosPage() {
               </button>
             </div>
 
+            {/* 4-layer Linguistic Analysis Bar */}
+            <div style={{ padding: '10px 18px 0' }}>
+              <LinguisticAnalysisBar text={text} lang="uz" compact />
+            </div>
+
             {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
             <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }}>
               {richHtml && !result ? (
@@ -1017,6 +1023,11 @@ export default function TilshunosPage() {
             >
               <BookPlus size={13} /> Луғатга қўшиш
             </button>
+          </div>
+
+          {/* 4-layer Linguistic Analysis Bar for source text */}
+          <div style={{ marginBottom: 10 }}>
+            <LinguisticAnalysisBar text={sourceText} lang={sourceLang === 'ru' ? 'ru' : 'uz'} compact />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
@@ -1397,7 +1408,7 @@ function WordMode({
   onRunTranslate: (text: string) => void
 }) {
   const [file, setFile] = useState<File | null>(null)
-  const [, setFullText] = useState('')
+  const [fullText, setFullText] = useState('')
   const [subMode, setSubMode] = useState<'preview' | 'edit'>('preview')
 
   const handleFile = (f: File) => {
@@ -1466,6 +1477,13 @@ function WordMode({
           <span style={{ fontSize: '.72rem', opacity: 0.8 }}>
             📌 Босқич 2 (SuperDoc) ва Босқич 3 (ONLYOFFICE — MathType) кейинги итерацияларда қўшилади.
           </span>
+        </div>
+      )}
+
+      {/* 4-layer Linguistic Analysis Bar — runs against extracted text */}
+      {file && fullText && (
+        <div style={{ marginBottom: 10 }}>
+          <LinguisticAnalysisBar text={fullText} lang="uz" compact />
         </div>
       )}
 
