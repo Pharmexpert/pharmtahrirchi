@@ -11,6 +11,8 @@ interface DictWord {
   flags: string
   language: string
   pos: string
+  frequency?: number
+  source?: string
 }
 
 interface Translation { ru: string; en: string; definition: string }
@@ -187,8 +189,14 @@ export default function DictionaryPage() {
                   <span style={{ fontSize: '0.82rem', color: tr?.en ? '#9333EA' : 'var(--text-muted)', fontWeight: tr?.en ? 600 : 400 }}>
                     {tr?.en || '—'}
                   </span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }} title={w.flags}>
-                    {tr?.definition ? tr.definition.slice(0, 40) + (tr.definition.length > 40 ? '...' : '') : (w.flags ? w.flags.slice(0, 8) + '...' : '—')}
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }} title={`${w.flags || ''}${w.source ? ' — ' + w.source : ''}`}>
+                    {typeof w.frequency === 'number' && w.frequency > 0 && (
+                      <span style={{ display: 'inline-block', padding: '2px 6px', marginRight: 6, background: '#DBEAFE', color: '#1D4ED8', borderRadius: 4, fontWeight: 700 }}>×{w.frequency}</span>
+                    )}
+                    {w.source && (
+                      <span style={{ display: 'inline-block', padding: '2px 6px', marginRight: 6, background: '#F3E8FF', color: '#7C3AED', borderRadius: 4, fontWeight: 600, fontSize: '0.62rem' }}>{w.source.replace(/_/g, ' ').slice(0, 12)}</span>
+                    )}
+                    {tr?.definition ? tr.definition.slice(0, 30) + (tr.definition.length > 30 ? '...' : '') : (w.flags ? w.flags.slice(0, 6) + '..' : '—')}
                   </span>
                 </div>
               )

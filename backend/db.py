@@ -250,7 +250,12 @@ class RulesCache:
             conn = sqlite3.connect(DB_PATH)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT id, wrong_form, correct_form, error_type, lang, frequency FROM sayqallash_rules")
+            # Exclude rules flagged as noisy by bidirectional verifier (GECTurk-style)
+            cursor.execute("""
+                SELECT id, wrong_form, correct_form, error_type, lang, frequency
+                FROM sayqallash_rules
+                WHERE COALESCE(quality_flag, 'clean') NOT IN ('noisy')
+            """)
             rows = cursor.fetchall()
             conn.close()
 

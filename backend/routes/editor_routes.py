@@ -30,11 +30,11 @@ async def spellcheck_endpoint(payload: Dict[str, Any]):
 
 @router.get("/api/dictionary/words")
 async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: int = 50, search: str = ""):
-    """Get hunspell dictionary words with pagination."""
+    """Get hunspell dictionary words enriched with frequency + source from user_dictionary."""
     import hunspell_data
+    import sqlite3, os as _os
     all_words = hunspell_data.get_dictionary_words(language)
 
-    # Filter
     if search:
         s = search.lower()
         all_words = [w for w in all_words if s in w['word'].lower()]
@@ -42,8 +42,33 @@ async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: 
     total = len(all_words)
     start = page * per_page
     end = start + per_page
+    page_words = all_words[start:end]
+
+    # Enrich with frequency + source from user_dictionary
+    if page_words:
+        try:
+            db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "pharma_editor.db"))
+            conn = sqlite3.connect(db_p)
+            cur = conn.cursor()
+            word_keys = [w['word'].lower() for w in page_words]
+            placeholders = ",".join("?" for _ in word_keys)
+            cur.execute(f"""
+                SELECT word, COALESCE(frequency, 0), source
+                FROM user_dictionary
+                WHERE LOWER(word) IN ({placeholders})
+            """, word_keys)
+            meta = {row[0].lower(): (row[1], row[2]) for row in cur.fetchall()}
+            conn.close()
+            for w in page_words:
+                info = meta.get(w['word'].lower())
+                if info:
+                    w['frequency'] = info[0]
+                    w['source'] = info[1]
+        except Exception:
+            pass
+
     return {
-        "words": all_words[start:end],
+        "words": page_words,
         "total": total,
         "page": page,
         "per_page": per_page,
