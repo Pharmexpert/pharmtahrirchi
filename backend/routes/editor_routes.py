@@ -64,6 +64,11 @@ async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: 
                 if info:
                     w['frequency'] = info[0]
                     w['source'] = info[1]
+                else:
+                    w['frequency'] = 0
+                    w['source'] = None
+            # Sort current page by frequency descending (most-used first)
+            page_words.sort(key=lambda x: -(x.get('frequency') or 0))
         except Exception:
             pass
 

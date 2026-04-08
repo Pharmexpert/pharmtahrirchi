@@ -1030,7 +1030,12 @@ def get_all_rules(lang: str = 'uz', limit: int = 500) -> List[Dict]:
     cursor = conn.cursor()
     # Explicitly exclude 'vector' as it contains binary data that breaks JSON encoding
     cursor.execute(
-        "SELECT id, wrong_form, correct_form, error_type, context, lang, frequency, created_at, updated_at FROM sayqallash_rules WHERE lang = ? ORDER BY frequency DESC LIMIT ?",
+        """SELECT id, wrong_form, correct_form, error_type, context, lang, frequency,
+                  created_at, updated_at,
+                  COALESCE(quality_flag, 'unverified') as quality_flag,
+                  COALESCE(source, '') as source
+           FROM sayqallash_rules WHERE lang = ?
+           ORDER BY frequency DESC LIMIT ?""",
         (lang, limit)
     )
     rows = cursor.fetchall()

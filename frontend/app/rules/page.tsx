@@ -18,6 +18,15 @@ interface Rule {
   frequency: number
   updated_at: string
   modified_by?: string
+  quality_flag?: string
+  source?: string
+}
+
+const QUALITY_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  clean:       { bg: '#DCFCE7', color: '#15803D', label: 'TOZA' },
+  noisy:       { bg: '#FEE2E2', color: '#B91C1C', label: 'NOISY' },
+  suspicious:  { bg: '#FEF3C7', color: '#B45309', label: 'SHUB' },
+  unverified:  { bg: '#F1F5F9', color: '#64748B', label: 'TEK.QIL' },
 }
 
 export default function RulesPage() {
@@ -283,13 +292,21 @@ export default function RulesPage() {
                     style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}
                   >
                     <td style={{ padding: '20px 24px' }}>
-                      <span style={{ 
+                      <span style={{
                         fontFamily: 'monospace', fontSize: '0.9rem', padding: '4px 10px',
                         background: 'var(--danger-bg)', color: 'var(--danger)',
                         borderRadius: 'var(--radius-sm)', border: '1px solid rgba(196, 77, 77, 0.15)'
                       }}>
                         {rule.wrong_form}
                       </span>
+                      {rule.quality_flag && rule.quality_flag !== 'clean' && (() => {
+                        const q = QUALITY_COLORS[rule.quality_flag] || QUALITY_COLORS.unverified
+                        return (
+                          <span style={{ marginLeft: 6, padding: '2px 6px', borderRadius: 4, fontSize: '0.6rem', fontWeight: 800, background: q.bg, color: q.color }} title={`quality: ${rule.quality_flag}${rule.source ? ' / ' + rule.source : ''}`}>
+                            {q.label}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td style={{ padding: '20px 24px' }}>
                       <span style={{ 
