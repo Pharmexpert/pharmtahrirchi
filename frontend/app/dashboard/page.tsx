@@ -114,6 +114,12 @@ export default function DashboardPage() {
     { label: 'Қисқартмалар', value: stats.abbreviations, icon: Hash, color: '#9B3B9B', bg: '#FDF0FF', path: '/linguistic/abbreviations' },
     { label: 'Синонимлар', value: stats.synonyms, icon: TrendingUp, color: '#0891B2', bg: '#F0FDFF', path: '/synonyms' },
     { label: 'Хатбошилар', value: stats.alignments, icon: BarChart3, color: '#D97706', bg: '#FFFBEB', path: '/paragraphs' },
+    // Янги карталар — Phase 2026:
+    { label: 'Луғат сўзлари', value: dbMetrics?.user_dictionary || 0, icon: BookOpen, color: '#16A34A', bg: '#F0FDF4', path: '/dictionary' },
+    { label: 'Синтаксис таҳлили', value: dbMetrics?.syntax_parsed_sentences || 0, icon: Sparkles, color: '#7C3AED', bg: '#F5F3FF', path: '/syntax' },
+    { label: 'Бирикмалар', value: dbMetrics?.syntax_phrases || 0, icon: TrendingUp, color: '#0E7490', bg: '#ECFEFF', path: '/syntax' },
+    { label: 'Parallel corpus', value: dbMetrics?.translation_memory || 0, icon: Database, color: '#BE185D', bg: '#FDF2F8', path: '/syntax' },
+    { label: 'Pharma Editor', value: '▶', icon: Sparkles, color: '#DC2626', bg: '#FEF2F2', path: '/' },
   ]
 
   return (
