@@ -170,3 +170,8 @@ img, video, table { max-width: 100%; }
 .responsive-table-wrap > table {
   min-width: 720px;
 }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
