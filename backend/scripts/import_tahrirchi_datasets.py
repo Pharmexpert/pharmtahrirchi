@@ -156,15 +156,27 @@ def import_dilmash(cur, limit: int) -> int:
             log.warning("dilmash: no valid split found")
             return 0
         inserted = 0
-        for i, example in enumerate(ds):
-            if i >= limit:
+        for example in ds:
+            if inserted >= limit:
                 break
             if not isinstance(example, dict):
                 continue
-            # Common field names: src_lang/tgt_lang OR language pairs
-            src = example.get("source", example.get("src", example.get("en", "")))
-            tgt = example.get("target", example.get("tgt", example.get("uz", "")))
-            src_lang = example.get("source_lang", "en")
+            # Auto-detect: first 2 string fields as src/tgt
+            str_fields = [(k, v) for k, v in example.items() if isinstance(v, str) and v.strip()]
+            if len(str_fields) >= 2:
+                src_key, src = str_fields[0]
+                tgt_key, tgt = str_fields[1]
+                src_lang = src_key[:3] if len(src_key) <= 5 else "en"
+                tgt_lang = tgt_key[:3] if len(tgt_key) <= 5 else "uz"
+            else:
+                continue
+            # Legacy fallback if auto-detect gave empty
+            if not src:
+                src = example.get("source", example.get("src", example.get("en", "")))
+            if not tgt:
+                tgt = example.get("target", example.get("tgt", example.get("uz", "")))
+            if 'src_lang' not in locals():
+                src_lang = example.get("source_lang", "en")
             tgt_lang = example.get("target_lang", "uz")
             # Try other common structures
             if not src and "translation" in example:
@@ -193,28 +205,40 @@ def import_dilmash(cur, limit: int) -> int:
 
 
 def import_lutfiy(cur, limit: int) -> int:
-    """Import lutfiy literary pairs."""
+    """Import lutfiy literary pairs (non-streaming + field auto-detection)."""
     try:
         from datasets import load_dataset
     except ImportError:
         return 0
     try:
-        ds = load_dataset("tahrirchi/lutfiy", split="train", streaming=True, token=HF_TOKEN)
+        ds = None
+        for split_attempt in ["train", "validation", "test"]:
+            try:
+                ds = load_dataset("tahrirchi/lutfiy", split=f"{split_attempt}[:{limit}]", token=HF_TOKEN)
+                log.info(f"lutfiy loaded: {len(ds)}, fields={ds.column_names}")
+                break
+            except Exception:
+                continue
+        if ds is None:
+            log.warning("lutfiy: no split found")
+            return 0
         inserted = 0
-        for i, example in enumerate(ds):
-            if i >= limit:
+        for example in ds:
+            if inserted >= limit:
                 break
             if not isinstance(example, dict):
                 continue
-            src = example.get("source", example.get("en", ""))
-            tgt = example.get("target", example.get("uz", ""))
-            if not src or not tgt:
+            # Auto-detect fields: first 2 string fields are src/tgt
+            str_fields = [(k, v) for k, v in example.items() if isinstance(v, str) and v.strip()]
+            if len(str_fields) < 2:
                 continue
+            src_key, src = str_fields[0]
+            tgt_key, tgt = str_fields[1]
             try:
                 cur.execute("""
                     INSERT INTO translation_memory (source_lang, target_lang, source_text, target_text, source_db, quality_score)
-                    VALUES ('en', 'uz', ?, ?, 'tahrirchi_lutfiy', 0.95)
-                """, (str(src)[:2000], str(tgt)[:2000]))
+                    VALUES (?, ?, ?, ?, 'tahrirchi_lutfiy', 0.95)
+                """, (src_key[:3], tgt_key[:3], str(src)[:2000], str(tgt)[:2000]))
                 inserted += 1
             except Exception:
                 pass
@@ -226,28 +250,35 @@ def import_lutfiy(cur, limit: int) -> int:
 
 
 def import_uzlib(cur, limit: int) -> int:
-    """Import uzlib literary corpus."""
+    """Import uzlib (splits: correct_word, meaning, meaning_in_context, fill_in)."""
     try:
         from datasets import load_dataset
     except ImportError:
         return 0
     try:
-        ds = load_dataset("tahrirchi/uzlib", split="train", streaming=True, token=HF_TOKEN)
-        inserted = 0
-        for i, example in enumerate(ds):
-            if i >= limit:
-                break
-            text = example.get("text", "") if isinstance(example, dict) else ""
-            if not text or len(text) < 20:
-                continue
+        total_inserted = 0
+        for split_name in ["correct_word", "meaning", "meaning_in_context", "fill_in"]:
             try:
-                cur.execute("INSERT INTO uzbek_literature (text, source, metadata) VALUES (?, 'tahrirchi_uzlib', ?)",
-                            (text[:5000], f"sample_{i}"))
-                inserted += 1
-            except Exception:
-                pass
-        log.info(f"uzlib: +{inserted}")
-        return inserted
+                ds = load_dataset("tahrirchi/uzlib", split=f"{split_name}[:{limit // 4}]", token=HF_TOKEN)
+                log.info(f"uzlib {split_name}: {len(ds)}, fields={ds.column_names}")
+                for example in ds:
+                    if not isinstance(example, dict):
+                        continue
+                    # Concatenate all string fields as text
+                    parts = [f"{k}: {v}" for k, v in example.items() if isinstance(v, str) and v.strip()]
+                    if not parts:
+                        continue
+                    text = " | ".join(parts)
+                    try:
+                        cur.execute("INSERT INTO uzbek_literature (text, source, metadata) VALUES (?, 'tahrirchi_uzlib', ?)",
+                                    (text[:5000], split_name))
+                        total_inserted += 1
+                    except Exception:
+                        pass
+            except Exception as ee:
+                log.warning(f"uzlib split {split_name} failed: {ee}")
+        log.info(f"uzlib: +{total_inserted}")
+        return total_inserted
     except Exception as e:
         log.warning(f"uzlib import failed: {e}")
         return 0
