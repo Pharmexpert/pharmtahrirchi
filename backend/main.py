@@ -261,7 +261,15 @@ app.include_router(syntax_router)
 # ═══════════════════════════════════════════════════
 @app.on_event("startup")
 async def auto_seed_databases():
-    """Seed drugs DB + Uzbek rules from book on first startup if tables are empty."""
+    """Seed databases in background to avoid Railway startup timeout."""
+    import asyncio
+    asyncio.create_task(_auto_seed_background())
+
+
+async def _auto_seed_background():
+    """Background auto-seed — runs after app is serving traffic."""
+    import asyncio
+    await asyncio.sleep(5)  # Let app fully start first
     try:
         import db as _db
         conn = _db.connect_db()
