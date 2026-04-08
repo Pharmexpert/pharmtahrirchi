@@ -297,6 +297,12 @@ export default function AdminPage() {
               ['📐 Syntax: Generate synth pairs (×5)', () => api.syntax.generateSynth(2000, 5)],
               ['📐 Syntax: Export training JSONL', () => api.syntax.exportTraining()],
               ['📐 Syntax: List noisy rules', () => api.syntax.noisyRules(50)],
+              ['📚 uzbek-spell/spellchecker', () => api.admin.importUzbekSpell()],
+              ['📚 uzbek-net/uz-hunspell', () => api.admin.importUzbekNet()],
+              ['📚 u2b3k/uz-hungen .qoida', () => api.admin.importUzhungenQoida()],
+              ['📊 Freq rankings (corpus)', () => api.admin.buildFreqRankings()],
+              ['🔗 Merge affix descriptions', () => api.admin.mergeAffixDescriptions()],
+              ['⚙️ Auto-generate REP rules', () => api.admin.autoRepRules()],
             ].map(([label, fn]) => (
               <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
                 style={{

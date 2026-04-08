@@ -305,6 +305,71 @@ async def import_extras_route(current_user: dict = Depends(get_admin_user)):
         return {"success": False, "error": str(e)}
 
 
+def _run_script(module_name: str, fn_name: str = "main", **kwargs):
+    """Generic helper to import and run a scripts/ module."""
+    import sys as _sys, os as _os
+    sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+    if sd not in _sys.path:
+        _sys.path.insert(0, sd)
+    mod = __import__(module_name)
+    fn = getattr(mod, fn_name)
+    return fn(**kwargs) if kwargs else fn()
+
+
+@router.post("/wordlists/import-uzbek-spell")
+async def import_uzbek_spell_route(current_user: dict = Depends(get_admin_user)):
+    """Import uzbek-spell/spellchecker v1.0 Latin dict."""
+    try:
+        return {"success": True, **_run_script("import_uzbek_spell")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/wordlists/import-uzbek-net")
+async def import_uzbek_net_route(current_user: dict = Depends(get_admin_user)):
+    """Import uzbek-net/uz-hunspell (Latin + Cyrillic)."""
+    try:
+        return {"success": True, **_run_script("import_uzbek_net_hunspell")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/wordlists/import-uzhungen-qoida")
+async def import_uzhungen_route(current_user: dict = Depends(get_admin_user)):
+    """Parse .qoida affix descriptions from u2b3k/uz-hungen."""
+    try:
+        return {"success": True, **_run_script("import_uzhungen_qoida")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/post-process/freq-rankings")
+async def post_freq_rankings_route(current_user: dict = Depends(get_admin_user)):
+    """Compute word frequencies from corpus sources."""
+    try:
+        return {"success": True, **_run_script("build_freq_rankings")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/post-process/merge-affix")
+async def post_merge_affix_route(current_user: dict = Depends(get_admin_user)):
+    """Merge .qoida descriptions into affix_flag_mapping."""
+    try:
+        return {"success": True, **_run_script("merge_affix_descriptions")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/post-process/auto-rep-rules")
+async def post_auto_rep_route(current_user: dict = Depends(get_admin_user)):
+    """Auto-generate REP rules from expanded dictionary (bidirectional-verified)."""
+    try:
+        return {"success": True, **_run_script("auto_generate_rep_rules", max_words=5000)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/tahrirchi/import-datasets")
 async def import_tahrirchi_datasets_route(current_user: dict = Depends(get_admin_user)):
     """Import Tahrirchi HF datasets: uz-crawl, dilmash, lutfiy, uzlib."""

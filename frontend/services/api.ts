@@ -405,6 +405,14 @@ export const admin = {
   segmentDomains: () => post<any>('/api/admin/sayqallash/domain-segment', {}),
   importWhoInn: () => post<any>('/api/admin/drugs/import-who', {}),
   dbBackup: () => post<any>('/api/admin/db/backup', {}),
+  // New Uzbek spellcheck sources
+  importUzbekSpell: () => post<any>('/api/admin/wordlists/import-uzbek-spell', {}),
+  importUzbekNet: () => post<any>('/api/admin/wordlists/import-uzbek-net', {}),
+  importUzhungenQoida: () => post<any>('/api/admin/wordlists/import-uzhungen-qoida', {}),
+  // Post-processing
+  buildFreqRankings: () => post<any>('/api/admin/post-process/freq-rankings', {}),
+  mergeAffixDescriptions: () => post<any>('/api/admin/post-process/merge-affix', {}),
+  autoRepRules: () => post<any>('/api/admin/post-process/auto-rep-rules', {}),
 }
 
 // ═══════════════════════════════════════════════════
