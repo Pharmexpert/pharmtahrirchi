@@ -416,6 +416,7 @@ export const admin = {
   buildFreqRankings: () => post<any>('/api/admin/post-process/freq-rankings', {}),
   mergeAffixDescriptions: () => post<any>('/api/admin/post-process/merge-affix', {}),
   autoRepRules: () => post<any>('/api/admin/post-process/auto-rep-rules', {}),
+  importPharmacopoeia: () => post<any>('/api/admin/pharmacopoeia/import', {}),
 }
 
 // ═══════════════════════════════════════════════════

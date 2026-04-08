@@ -303,6 +303,7 @@ export default function AdminPage() {
               ['📊 Freq rankings (corpus)', () => api.admin.buildFreqRankings()],
               ['🔗 Merge affix descriptions', () => api.admin.mergeAffixDescriptions()],
               ['⚙️ Auto-generate REP rules', () => api.admin.autoRepRules()],
+              ['💊 Pharmacopoeia Vol 1 (4848 + 829 + error lists)', () => api.admin.importPharmacopoeia()],
             ].map(([label, fn]) => (
               <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
                 style={{
