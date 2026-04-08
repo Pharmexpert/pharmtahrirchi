@@ -483,6 +483,14 @@ async def _auto_seed_background():
                 logger.info(f"[post-process] izohli_lugat: {r}")
             except Exception as ee:
                 logger.warning(f"[post-process] izohli_lugat failed: {ee}")
+
+            # 9. Style rules seed (55+ USP/Ph.Eur./ICH/WHO rules)
+            try:
+                import seed_style_rules_full
+                r = seed_style_rules_full.main()
+                logger.info(f"[post-process] style_rules: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] style_rules failed: {ee}")
         except Exception as e:
             logger.warning(f"[post-process] setup failed: {e}")
 
