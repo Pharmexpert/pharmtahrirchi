@@ -61,39 +61,149 @@ export default function MonitoringPage() {
     </div>
   )
 
-  // Simple SVG bar chart
+  // Enhanced SVG chart: area + line + gradient + grid + tooltip markers
   const BarChart = ({ data: chartData, color = '#7C3AED', label = 'Кунлик' }: { data: Array<{ date: string; count: number }>; color?: string; label?: string }) => {
-    if (!chartData || chartData.length === 0) return <div style={{ textAlign: 'center', color: '#9CA3AF', padding: 30 }}>Маълумот йўқ</div>
+    if (!chartData || chartData.length === 0) return (
+      <div style={{ background: 'white', border: '1.5px solid var(--border)', borderRadius: 14, padding: 30, textAlign: 'center', color: '#9CA3AF' }}>
+        📊 {label}: маълумот йўқ
+      </div>
+    )
     const max = Math.max(...chartData.map(d => d.count), 1)
+    const total = chartData.reduce((a, b) => a + b.count, 0)
+    const avg = Math.round(total / chartData.length)
+    // Growth: compare last 3 days avg vs previous 3 days avg
+    const lastN = chartData.slice(-3).reduce((a, b) => a + b.count, 0) / 3
+    const prevN = chartData.slice(-6, -3).reduce((a, b) => a + b.count, 0) / 3
+    const growth = prevN > 0 ? ((lastN - prevN) / prevN) * 100 : 0
+
     const W = 800
-    const H = 200
-    const padding = 30
-    const barW = (W - padding * 2) / chartData.length - 4
+    const H = 220
+    const padL = 40
+    const padB = 30
+    const padT = 20
+    const innerW = W - padL - 10
+    const innerH = H - padT - padB
+    const stepX = innerW / Math.max(1, chartData.length - 1)
+
+    // Area path
+    const points = chartData.map((d, i) => ({
+      x: padL + i * stepX,
+      y: padT + innerH - (d.count / max) * innerH,
+      v: d.count,
+      date: d.date,
+    }))
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+    const areaPath = linePath + ` L${points[points.length - 1].x},${padT + innerH} L${points[0].x},${padT + innerH} Z`
+
+    // Grid lines (4 horizontal)
+    const gridLines = [0.25, 0.5, 0.75, 1].map(p => ({
+      y: padT + innerH - p * innerH,
+      label: Math.round(p * max),
+    }))
+
     return (
       <div style={{ background: 'white', border: '1.5px solid var(--border)', borderRadius: 14, padding: 18 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <BarChart3 size={16} color={color} /> {label}
-        </h3>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 200 }}>
-          {chartData.map((d, i) => {
-            const h = (d.count / max) * (H - padding * 2)
-            const x = padding + i * (barW + 4)
-            const y = H - padding - h
-            return (
-              <g key={i}>
-                <rect x={x} y={y} width={barW} height={h} fill={color} rx={2}>
-                  <title>{d.date}: {d.count}</title>
-                </rect>
-                {i % Math.max(1, Math.floor(chartData.length / 10)) === 0 && (
-                  <text x={x + barW / 2} y={H - 10} fontSize="9" textAnchor="middle" fill="#9CA3AF">{d.date.slice(5)}</text>
-                )}
-              </g>
-            )
-          })}
-          {/* Y-axis label */}
-          <text x={5} y={padding + 5} fontSize="10" fill="#9CA3AF">{max}</text>
-          <text x={5} y={H - padding} fontSize="10" fill="#9CA3AF">0</text>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <BarChart3 size={16} color={color} /> {label}
+          </h3>
+          <div style={{ display: 'flex', gap: 10, fontSize: '0.72rem' }}>
+            <span style={{ color: '#64748B' }}>Жами: <b style={{ color }}>{total.toLocaleString()}</b></span>
+            <span style={{ color: '#64748B' }}>Ўрт: <b style={{ color }}>{avg}</b></span>
+            {growth !== 0 && (
+              <span style={{
+                color: growth > 0 ? '#16A34A' : '#DC2626',
+                fontWeight: 700,
+                display: 'flex', alignItems: 'center', gap: 2
+              }}>
+                {growth > 0 ? '↗' : '↘'} {Math.abs(growth).toFixed(0)}%
+              </span>
+            )}
+          </div>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 220 }}>
+          <defs>
+            <linearGradient id={`grad-${label}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          {/* Grid lines */}
+          {gridLines.map((g, i) => (
+            <g key={i}>
+              <line x1={padL} y1={g.y} x2={W - 10} y2={g.y} stroke="#F1F5F9" strokeWidth={1} strokeDasharray="3,3" />
+              <text x={padL - 8} y={g.y + 3} fontSize="9" fill="#94A3B8" textAnchor="end">{g.label}</text>
+            </g>
+          ))}
+          {/* Area fill */}
+          <path d={areaPath} fill={`url(#grad-${label})`} />
+          {/* Line */}
+          <path d={linePath} fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+          {/* Points */}
+          {points.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={2.5} fill={color}>
+              <title>{p.date}: {p.v}</title>
+            </circle>
+          ))}
+          {/* X labels */}
+          {points.map((p, i) => (
+            i % Math.max(1, Math.floor(points.length / 8)) === 0 ? (
+              <text key={i} x={p.x} y={H - 8} fontSize="9" fill="#94A3B8" textAnchor="middle">{p.date.slice(5)}</text>
+            ) : null
+          ))}
         </svg>
+      </div>
+    )
+  }
+
+  // Donut chart for AI usage breakdown
+  const DonutChart = ({ data: d }: { data: Record<string, number> }) => {
+    const entries = Object.entries(d).sort(([, a], [, b]) => b - a)
+    const total = entries.reduce((a, [, v]) => a + v, 0)
+    if (total === 0) return null
+    const colors = ['#7C3AED', '#0EA5E9', '#16A34A', '#F59E0B', '#EC4899', '#0891B2', '#DC2626']
+    const R = 70
+    const cx = 100
+    const cy = 100
+    let cum = 0
+    const slices = entries.map(([k, v], i) => {
+      const pct = v / total
+      const startAngle = cum * Math.PI * 2
+      cum += pct
+      const endAngle = cum * Math.PI * 2
+      const x1 = cx + R * Math.sin(startAngle)
+      const y1 = cy - R * Math.cos(startAngle)
+      const x2 = cx + R * Math.sin(endAngle)
+      const y2 = cy - R * Math.cos(endAngle)
+      const large = pct > 0.5 ? 1 : 0
+      return {
+        key: k, v, pct,
+        path: `M${cx},${cy} L${x1},${y1} A${R},${R} 0 ${large} 1 ${x2},${y2} Z`,
+        color: colors[i % colors.length],
+      }
+    })
+    return (
+      <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+        <svg viewBox="0 0 200 200" style={{ width: 180, height: 180, flexShrink: 0 }}>
+          {slices.map(s => (
+            <path key={s.key} d={s.path} fill={s.color} stroke="white" strokeWidth={2}>
+              <title>{s.key}: {s.v}</title>
+            </path>
+          ))}
+          <circle cx={cx} cy={cy} r={R * 0.55} fill="white" />
+          <text x={cx} y={cy - 4} textAnchor="middle" fontSize="14" fontWeight="800" fill="#1E293B">{total}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fontSize="10" fill="#94A3B8">AI calls</text>
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+          {slices.map(s => (
+            <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem' }}>
+              <div style={{ width: 10, height: 10, background: s.color, borderRadius: 2 }} />
+              <span style={{ flex: 1, fontWeight: 600 }}>{s.key}</span>
+              <span style={{ color: '#64748B', fontWeight: 700 }}>{s.v}</span>
+              <span style={{ color: '#94A3B8', fontSize: '0.72rem', minWidth: 35, textAlign: 'right' }}>{(s.pct * 100).toFixed(0)}%</span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -153,17 +263,11 @@ export default function MonitoringPage() {
             <BarChart data={data.ai_chart} color="#7C3AED" label="AI чақирувлар (30 кун)" />
           </div>
 
-          {/* AI usage breakdown */}
+          {/* AI usage breakdown — donut chart */}
           {Object.keys(data.ai_usage || {}).length > 0 && (
             <div style={{ background: 'white', border: '1.5px solid var(--border)', borderRadius: 14, padding: 18, marginBottom: 18 }}>
               <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 700 }}>🤖 AI ишлатилиши тури бўйича</h3>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {Object.entries(data.ai_usage as Record<string, number>).sort(([, a], [, b]) => b - a).map(([k, v]) => (
-                  <div key={k} style={{ padding: '8px 14px', borderRadius: 10, background: '#F3E8FF', color: '#7C3AED', fontWeight: 700, fontSize: '0.85rem' }}>
-                    {k}: <span style={{ fontSize: '1.1rem' }}>{v}</span>
-                  </div>
-                ))}
-              </div>
+              <DonutChart data={data.ai_usage as Record<string, number>} />
             </div>
           )}
 
