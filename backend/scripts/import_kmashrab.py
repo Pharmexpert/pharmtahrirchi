@@ -54,7 +54,7 @@ def fetch(filename: str) -> list:
 
 
 def ensure_tables(cur):
-    """Create all target tables."""
+    """Create all target tables. Idempotent + migrates old schema."""
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_dictionary (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +65,11 @@ def ensure_tables(cur):
             UNIQUE(word, lang)
         )
     """)
+    # Migrate: old user_dictionary had no 'source' column
+    try:
+        cur.execute("ALTER TABLE user_dictionary ADD COLUMN source TEXT")
+    except Exception:
+        pass  # already exists
     cur.execute("""
         CREATE TABLE IF NOT EXISTS person_names (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

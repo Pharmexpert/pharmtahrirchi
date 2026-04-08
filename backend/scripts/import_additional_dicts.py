@@ -133,6 +133,11 @@ def main():
             UNIQUE(word, lang)
         )
     """)
+    # Migrate: add source column if missing
+    try:
+        cur.execute("ALTER TABLE user_dictionary ADD COLUMN source TEXT")
+    except Exception:
+        pass
 
     result = {}
 
