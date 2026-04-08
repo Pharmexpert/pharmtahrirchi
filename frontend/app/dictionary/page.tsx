@@ -41,9 +41,15 @@ export default function DictionaryPage() {
   const [translations, setTranslations] = useState<Record<string, Translation>>({})
   const [translatingAll, setTranslatingAll] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [minFreq, setMinFreq] = useState<number>(0)
 
-  const visibleWords = sourceFilter ? words.filter(w => (w.source || '') === sourceFilter) : words
+  const visibleWords = words.filter(w => {
+    if (sourceFilter && (w.source || '') !== sourceFilter) return false
+    if (minFreq > 0 && (w.frequency || 0) < minFreq) return false
+    return true
+  })
   const availableSources = Array.from(new Set(words.map(w => w.source).filter(Boolean))) as string[]
+  const maxFreqInPage = Math.max(0, ...words.map(w => w.frequency || 0))
 
   const fetchWords = useCallback(async () => {
     setLoading(true)
@@ -148,6 +154,14 @@ export default function DictionaryPage() {
           <option value="">Манба: барчаси</option>
           {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        {maxFreqInPage > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border)', background: 'white' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Мин freq:</span>
+            <input type="range" min={0} max={maxFreqInPage} value={minFreq} onChange={e => setMinFreq(Number(e.target.value))}
+              style={{ width: 100 }} />
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#2563EB', minWidth: 30 }}>{minFreq}</span>
+          </div>
+        )}
         <button onClick={fetchWords} style={{
           padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)',
           background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'

@@ -230,6 +230,18 @@ export default function SyntaxPage() {
         <button onClick={() => { setText(''); setResult(null) }} style={secondaryBtn()}>
           <Trash2 size={14} /> Тозалаш
         </button>
+        {result && (
+          <>
+            <button onClick={() => {
+              const json = JSON.stringify(result.tokens, null, 2)
+              navigator.clipboard.writeText(json).then(() => showToast('JSON clipboard\'га кўчирилди'))
+            }} style={secondaryBtn()}>📋 JSON</button>
+            <button onClick={() => {
+              const csv = 'word,pos,role\n' + result.tokens.map(t => `"${t.word}","${t.pos}","${t.role}"`).join('\n')
+              navigator.clipboard.writeText(csv).then(() => showToast('CSV clipboard\'га кўчирилди'))
+            }} style={secondaryBtn()}>📋 CSV</button>
+          </>
+        )}
       </div>
 
       {/* Text input */}
@@ -259,6 +271,17 @@ export default function SyntaxPage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
             {result.tokens.map((tok, i) => {
               const c = ROLE_COLORS[tok.role] || ROLE_COLORS.other
+              const total = result.tokens.length
+              const moveLeft = () => {
+                if (i === 0 || !result) return
+                const nt = [...result.tokens]; [nt[i - 1], nt[i]] = [nt[i], nt[i - 1]]
+                setResult({ ...result, tokens: nt })
+              }
+              const moveRight = () => {
+                if (i === total - 1 || !result) return
+                const nt = [...result.tokens]; [nt[i + 1], nt[i]] = [nt[i], nt[i + 1]]
+                setResult({ ...result, tokens: nt })
+              }
               return (
                 <div
                   key={i}
@@ -266,12 +289,24 @@ export default function SyntaxPage() {
                   onDragStart={() => onDragStart(i)}
                   onDragOver={onDragOver}
                   onDrop={() => onDrop(i)}
+                  role={mode === 'enrich' ? 'listitem' : undefined}
+                  tabIndex={mode === 'enrich' ? 0 : -1}
+                  aria-label={`${tok.word} — ${c.label}, POS ${tok.pos}, position ${i + 1} of ${total}`}
+                  aria-grabbed={mode === 'enrich' && dragIdx === i ? 'true' : undefined}
+                  onKeyDown={e => {
+                    if (mode !== 'enrich') return
+                    if (e.key === 'ArrowLeft') { e.preventDefault(); moveLeft() }
+                    else if (e.key === 'ArrowRight') { e.preventDefault(); moveRight() }
+                  }}
                   style={{
                     padding: '10px 14px', borderRadius: 10,
                     background: c.bg, border: `1.5px solid ${c.color}`,
                     cursor: mode === 'enrich' ? 'grab' : 'default',
-                    minWidth: 60, textAlign: 'center'
+                    minWidth: 60, textAlign: 'center',
+                    outline: 'none'
                   }}
+                  onFocus={e => { if (mode === 'enrich') e.currentTarget.style.boxShadow = `0 0 0 3px ${c.color}55` }}
+                  onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
                 >
                   <div style={{ fontWeight: 800, color: c.color, fontSize: '.95rem' }}>{tok.word}</div>
                   <div style={{ fontSize: '.65rem', color: c.color, marginTop: 4, fontWeight: 700 }}>{c.label}</div>
@@ -280,6 +315,11 @@ export default function SyntaxPage() {
               )
             })}
           </div>
+          {mode === 'enrich' && (
+            <div style={{ fontSize: '.68rem', color: '#94A3B8', marginTop: -8, marginBottom: 12 }}>
+              💡 Сичqoncha билан drag, клавиатурада Tab + ← → стрелкалари билан тартиблаш мумкин
+            </div>
+          )}
 
           {/* Validity */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
