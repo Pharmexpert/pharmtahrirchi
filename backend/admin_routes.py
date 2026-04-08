@@ -4,6 +4,8 @@ import db
 from auth import get_admin_user, get_current_user, can_edit_db
 import pandas as pd
 import io
+import os
+from datetime import datetime
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -1066,3 +1068,47 @@ async def get_activity_logs(limit: int = 100, current_user: dict = Depends(get_a
         return {"logs": [dict(r) for r in rows]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/email/test")
+async def send_test_email(payload: Dict[str, Any] = None, current_user: dict = Depends(get_admin_user)):
+    """Send a test email to verify SMTP config."""
+    import email_helper
+    if not email_helper.is_configured():
+        return {
+            "success": False,
+            "configured": False,
+            "error": "SMTP not configured",
+            "checked": {
+                "SMTP_HOST": bool(email_helper.SMTP_HOST),
+                "SMTP_USER": bool(email_helper.SMTP_USER),
+                "SMTP_PASS": bool(email_helper.SMTP_PASS),
+            },
+        }
+    to_email = (payload or {}).get("to") or os.getenv("ADMIN_EMAIL") or email_helper.SMTP_USER
+    subject = "✅ Pharma Expert — SMTP Test"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background: linear-gradient(135deg, #B48C64, #8B5E3C); color: white; padding: 20px; border-radius: 12px 12px 0 0;">
+        <h2 style="margin: 0;">✅ SMTP Ишлаяпти</h2>
+      </div>
+      <div style="padding: 20px; background: #FFF8F0; border-radius: 0 0 12px 12px;">
+        <p><b>Табриклаймиз!</b> Агар сиз бу email'ни ўқиётган бўлсангиз, Pharma Expert SMTP созламаси муваффақиятли ишлаяпти.</p>
+        <p><b>Host:</b> {email_helper.SMTP_HOST}:{email_helper.SMTP_PORT}<br>
+           <b>User:</b> {email_helper.SMTP_USER}<br>
+           <b>From:</b> {email_helper.SMTP_FROM}</p>
+        <p>Бундан буён:</p>
+        <ul>
+          <li>Фойдаланувчилар паролни тиклаш учун email олади</li>
+          <li>Янги регистрация тасдиқ учун сизга келади</li>
+          <li>Ҳафталик learning cycle отчёти автомат юборилади</li>
+        </ul>
+        <p style="color:#64748B; font-size: 0.85rem;">Pharma Expert autonomy test · {datetime.now().isoformat()}</p>
+      </div>
+    </div>
+    """
+    try:
+        sent = email_helper.send_email(to_email, subject, html)
+        return {"success": bool(sent), "to": to_email, "configured": True}
+    except Exception as e:
+        return {"success": False, "error": str(e), "configured": True}
