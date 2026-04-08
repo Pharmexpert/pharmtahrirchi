@@ -172,6 +172,21 @@ async def startup_event():
         except Exception as ee:
             logger.warning(f"[Scheduler] Daily learning cycle skipped: {ee}")
 
+        # Daily DB backup (02:00 Tashkent — before other cycles)
+        try:
+            from scripts.db_backup import run_backup as _run_backup
+            scheduler.add_job(
+                _run_backup,
+                CronTrigger(hour=2, minute=0),
+                id="daily_backup",
+                name="Daily DB backup",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            logger.info("[Scheduler] Daily DB backup scheduled (02:00 Asia/Tashkent)")
+        except Exception as ee:
+            logger.warning(f"[Scheduler] Daily backup skipped: {ee}")
+
         scheduler.start()
         logger.info("[Scheduler] Nightly dictionary growth scheduled at 03:00 Asia/Tashkent")
     except ImportError:
