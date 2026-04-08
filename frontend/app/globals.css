@@ -140,6 +140,24 @@ img, video, table { max-width: 100%; }
 @media (max-width: 480px) {
   body { font-size: 13px; }
   h1 { font-size: 1.2rem !important; }
+  /* Mobile padding shrink */
+  [style*="padding: 24px"], [style*="padding:24px"] { padding: 12px !important; }
+  [style*="padding: 18px"], [style*="padding:18px"] { padding: 10px !important; }
+  /* Stack flex groups vertically */
+  [style*="display: flex"][style*="gap: 14"], [style*="display:flex"][style*="gap:14"] {
+    flex-wrap: wrap !important;
+  }
+  /* Tables become horizontally scrollable */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  /* Smaller buttons */
+  button { font-size: 0.78rem !important; padding: 6px 10px !important; }
+  /* Chat bubbles full width */
+  [style*="maxWidth: '75%'"], [style*="max-width: 75%"] { max-width: 92% !important; }
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  button, a, select, input { min-height: 40px; }
 }
 
 .responsive-table-wrap {
