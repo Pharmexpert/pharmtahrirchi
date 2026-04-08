@@ -100,24 +100,48 @@ def ensure_tables(cur):
         pass
 
 
-def insert_into(cur, table: str, word: str, source: str):
-    """Insert a word into the appropriate table."""
+def insert_into(cur, table: str, word: str, source: str) -> bool:
+    """Insert a word; returns True if a new row was added."""
     try:
         if table == "user_dictionary":
-            cur.execute("INSERT OR IGNORE INTO user_dictionary (word, lang, source) VALUES (?, 'uz', ?)", (word, source))
+            # Check first — reliable across SQLite versions
+            cur.execute("SELECT 1 FROM user_dictionary WHERE word = ? AND lang = 'uz'", (word,))
+            if cur.fetchone():
+                return False
+            cur.execute("INSERT INTO user_dictionary (word, lang, source) VALUES (?, 'uz', ?)", (word, source))
+            return True
         elif table == "person_names":
-            cur.execute("INSERT OR IGNORE INTO person_names (name, source) VALUES (?, ?)", (word, source))
+            cur.execute("SELECT 1 FROM person_names WHERE name = ?", (word,))
+            if cur.fetchone():
+                return False
+            cur.execute("INSERT INTO person_names (name, source) VALUES (?, ?)", (word, source))
+            return True
         elif table == "places":
-            cur.execute("INSERT OR IGNORE INTO places (name, source) VALUES (?, ?)", (word, source))
+            cur.execute("SELECT 1 FROM places WHERE name = ?", (word,))
+            if cur.fetchone():
+                return False
+            cur.execute("INSERT INTO places (name, source) VALUES (?, ?)", (word, source))
+            return True
         elif table == "numbers":
-            cur.execute("INSERT OR IGNORE INTO numbers (number_word, source) VALUES (?, ?)", (word, source))
+            cur.execute("SELECT 1 FROM numbers WHERE number_word = ?", (word,))
+            if cur.fetchone():
+                return False
+            cur.execute("INSERT INTO numbers (number_word, source) VALUES (?, ?)", (word, source))
+            return True
         elif table == "word_blacklist":
-            cur.execute("INSERT OR IGNORE INTO word_blacklist (word, reason, source) VALUES (?, 'blacklisted', ?)", (word, source))
+            cur.execute("SELECT 1 FROM word_blacklist WHERE word = ?", (word,))
+            if cur.fetchone():
+                return False
+            cur.execute("INSERT INTO word_blacklist (word, reason, source) VALUES (?, 'blacklisted', ?)", (word, source))
+            return True
         elif table == "abbreviations":
-            cur.execute("INSERT OR IGNORE INTO abbreviations (uz, source) VALUES (?, ?)", (word, source))
-        return cur.rowcount > 0
-    except Exception:
-        return False
+            # Don't dedupe abbreviations — just insert
+            cur.execute("INSERT INTO abbreviations (uz, source) VALUES (?, ?)", (word, source))
+            return True
+    except Exception as e:
+        logger = logging.getLogger("kmashrab")
+        logger.debug(f"Insert failed {word}: {e}")
+    return False
 
 
 def main():

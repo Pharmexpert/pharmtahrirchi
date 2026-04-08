@@ -94,7 +94,7 @@ def load_munis_words() -> list:
 def import_quvonchbek():
     """
     Extract word lists from QuvonchbekBobojonov Python package.
-    uzwords.py and uzwords_latin.py are large Python lists.
+    uzwords.py and uzwords_latin.py contain words = [...] format.
     """
     urls = [
         ("uzwords.py", "uzbek_language/uzwords.py"),
@@ -103,17 +103,19 @@ def import_quvonchbek():
     base = "https://raw.githubusercontent.com/QuvonchbekBobojonov/Uzbek-language/main"
 
     all_words = []
+    # Simple pattern: match any quoted string with 1+ characters
+    pattern = re.compile(r'"([^"]{1,60})"')
+
     for name, path in urls:
         url = f"{base}/{path}"
         content = fetch_raw(url)
         if not content:
             continue
-        # Python file may contain: WORDS = [...] or just list literals
-        # Extract all string literals
-        pattern = re.compile(r"['\"]([a-zA-Z'\u02bb\u2019\u0400-\u04ff]{2,40})['\"]")
         matches = pattern.findall(content)
-        log.info(f"  {name}: extracted {len(matches)} strings")
-        all_words.extend(matches)
+        # Filter: valid Uzbek words (Cyrillic or Latin)
+        valid = [m for m in matches if len(m) >= 2 and not any(c in m for c in ['=', '(', ')', '[', ']', '\\', '\n'])]
+        log.info(f"  {name}: extracted {len(valid)} words (from {len(matches)} strings)")
+        all_words.extend(valid)
 
     return all_words
 
