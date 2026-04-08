@@ -81,6 +81,46 @@ async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: 
     }
 
 
+@router.get("/api/dictionary/export-csv")
+async def export_dictionary_csv(language: str = "all"):
+    """Export full user_dictionary as CSV for offline analysis."""
+    import sqlite3 as _sql, os as _os, io as _io, csv as _csv
+    from fastapi.responses import StreamingResponse
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    cur = conn.cursor()
+    where = ""
+    params: list = []
+    if language != "all":
+        where = "WHERE lang = ?"
+        params.append(language)
+    try:
+        cur.execute(f"""
+            SELECT word, lang, COALESCE(source,'') as source,
+                   COALESCE(frequency,0) as frequency,
+                   COALESCE(hunspell_flags,'') as flags
+            FROM user_dictionary {where}
+            ORDER BY frequency DESC, word ASC
+        """, params)
+        rows = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+    conn.close()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(["word", "lang", "source", "frequency", "flags"])
+    for r in rows:
+        writer.writerow(r)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=dictionary_{language}.csv"},
+    )
+
+
 @router.get("/api/dictionary/affix-flags")
 async def get_affix_flags(language: str = "cyrl", page: int = 0, per_page: int = 25, search: str = ""):
     """Get affix flags with descriptions and examples."""
