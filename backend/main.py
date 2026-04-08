@@ -238,6 +238,15 @@ async def auto_seed_databases():
                 logger.info(f"[auto-seed] Uzbek rules: {result}")
         except Exception as e:
             logger.info(f"[auto-seed] uzbek rules skipped: {e}")
+
+        # Parse u2b3k Hunspell affix rules if files present
+        try:
+            import parse_hunspell_affix
+            if os.path.exists(parse_hunspell_affix.HUNSPELL_DIR):
+                affix_result = parse_hunspell_affix.import_rules()
+                logger.info(f"[auto-seed] Hunspell affix rules: {affix_result}")
+        except Exception as e:
+            logger.info(f"[auto-seed] hunspell affix skipped: {e}")
     except Exception as e:
         logger.warning(f"[auto-seed] outer failed: {e}")
 
