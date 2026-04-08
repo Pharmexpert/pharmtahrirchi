@@ -14,6 +14,10 @@ pypdf>=4.0.0
 # Mistral-7B-Instruct-Uz: HF Inference API (no llama-cpp needed for cloud mode)
 # To enable local GGUF mode later: pip install llama-cpp-python (~10 min build with cmake)
 huggingface-hub>=0.20.0
+
+# Accelerate — for efficient model loading (device_map, 8-bit, low_cpu_mem_usage)
+accelerate>=0.27.0
+bitsandbytes>=0.42.0; platform_system != "Windows"
 pandas==2.2.3
 numpy==2.2.5
 faiss-cpu==1.13.2

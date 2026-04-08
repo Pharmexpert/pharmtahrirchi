@@ -80,13 +80,15 @@ def _get_hf_model():
                 from transformers import AutoModelForCausalLM, AutoTokenizer
                 logger.info(f"[Llama] Loading full HF: {MODEL_ID} (~16GB RAM, 3-5 min)")
                 _hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=HF_TOKEN)
-                _hf_model = AutoModelForCausalLM.from_pretrained(
-                    MODEL_ID,
-                    token=HF_TOKEN,
-                    torch_dtype=torch.float16,
-                    device_map="auto" if torch.cuda.is_available() else "cpu",
-                    low_cpu_mem_usage=True,
-                )
+                # Use accelerate's low_cpu_mem_usage + device_map=cpu (auto-detected)
+                load_kwargs = {
+                    "token": HF_TOKEN,
+                    "torch_dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
+                    "low_cpu_mem_usage": True,
+                }
+                if torch.cuda.is_available():
+                    load_kwargs["device_map"] = "auto"
+                _hf_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **load_kwargs)
                 _hf_model.eval()
                 logger.info("[Llama] Full HF model READY")
     except Exception as e:

@@ -22,7 +22,7 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger("ner_engine")
 
-MODEL_ID = os.getenv("NER_MODEL_ID", "elmurod1202/parc-ner-uzbek")
+MODEL_ID = os.getenv("NER_MODEL_ID", "elmurod1202/bertbek-ner-uznews")
 HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 LOCAL_MODE = os.getenv("NER_LOCAL", "1") == "1"  # Default ON — small model (~400MB)
 
