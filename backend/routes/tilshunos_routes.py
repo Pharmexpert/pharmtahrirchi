@@ -909,6 +909,59 @@ async def export_training_log(kind: str = None, limit: int = 10000, current_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/training-log/download")
+async def download_training_log(kind: str = None, limit: int = 50000, current_user: Dict = Depends(get_current_user)):
+    """Download JSONL file of training dataset (for Colab/Kaggle fine-tuning)."""
+    try:
+        from fastapi.responses import StreamingResponse
+        import json as _json
+        import io
+
+        conn = db.connect_db()
+        conn.row_factory = db.sqlite3.Row
+        cur = conn.cursor()
+        buf = io.StringIO()
+
+        # Sayqallash pairs
+        cur.execute("SELECT wrong_form, correct_form, error_type, lang FROM sayqallash_rules LIMIT ?", (limit,))
+        for r in cur.fetchall():
+            sample = {
+                "instruction": f"Матнни тузат ({r['lang']}):",
+                "input": r["wrong_form"],
+                "output": r["correct_form"],
+                "error_type": r["error_type"],
+                "source": "sayqallash",
+            }
+            buf.write(_json.dumps(sample, ensure_ascii=False) + "\n")
+
+        # LLM log
+        try:
+            if kind:
+                cur.execute("SELECT kind, prompt, response FROM llm_training_log WHERE kind = ? AND LENGTH(prompt) BETWEEN 10 AND 2000 LIMIT ?", (kind, limit))
+            else:
+                cur.execute("SELECT kind, prompt, response FROM llm_training_log WHERE LENGTH(prompt) BETWEEN 10 AND 2000 LIMIT ?", (limit,))
+            for r in cur.fetchall():
+                sample = {
+                    "instruction": "Илмий-фарма матнни тузат:",
+                    "input": r["prompt"][:1500],
+                    "output": r["response"][:1500],
+                    "source": r["kind"],
+                }
+                buf.write(_json.dumps(sample, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+        conn.close()
+        content = buf.getvalue().encode("utf-8")
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/x-jsonlines",
+            headers={"Content-Disposition": 'attachment; filename="pharma_expert_finetune.jsonl"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/extract-linguistic")
 async def extract_linguistic(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
     """

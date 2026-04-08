@@ -307,6 +307,92 @@ async def auto_seed_databases():
                 logger.info(f"[auto-seed] Hunspell affix rules: {affix_result}")
         except Exception as e:
             logger.info(f"[auto-seed] hunspell affix skipped: {e}")
+
+        # Auto-run WHO INN import if drugs < 300
+        try:
+            conn4 = _db.connect_db()
+            cur4 = conn4.cursor()
+            cur4.execute("SELECT COUNT(*) FROM drugs")
+            drugs_c = cur4.fetchone()[0]
+            conn4.close()
+            if drugs_c < 300:
+                import sys as _sys, os as _os
+                sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+                if sd not in _sys.path:
+                    _sys.path.insert(0, sd)
+                import import_who_inn
+                r = import_who_inn.seed()
+                logger.info(f"[auto-seed] WHO INN: {r}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] WHO INN failed: {e}")
+
+        # Auto-run sayqallash domain segmentation
+        try:
+            conn5 = _db.connect_db()
+            cur5 = conn5.cursor()
+            try:
+                cur5.execute("SELECT COUNT(*) FROM sayqallash_rules WHERE domain IS NULL")
+                null_domain = cur5.fetchone()[0]
+            except Exception:
+                null_domain = 0
+            if null_domain > 0:
+                try:
+                    cur5.execute("ALTER TABLE sayqallash_rules ADD COLUMN domain TEXT DEFAULT 'general'")
+                except Exception:
+                    pass
+                cur5.execute("""
+                    UPDATE sayqallash_rules SET domain = 'pharma'
+                    WHERE context LIKE '%doz%' OR context LIKE '%mg%' OR context LIKE '%ml%'
+                       OR wrong_form IN (SELECT inn FROM drugs WHERE inn IS NOT NULL)
+                """)
+                pharma_n = cur5.rowcount
+                try:
+                    cur5.execute("""
+                        UPDATE sayqallash_rules SET domain = 'medical'
+                        WHERE (domain = 'general' OR domain IS NULL)
+                          AND wrong_form IN (SELECT term_uz FROM medical_terms WHERE term_uz IS NOT NULL)
+                    """)
+                    med_n = cur5.rowcount
+                except Exception:
+                    med_n = 0
+                conn5.commit()
+                logger.info(f"[auto-seed] domain segment: pharma={pharma_n}, medical={med_n}")
+            conn5.close()
+        except Exception as e:
+            logger.warning(f"[auto-seed] domain segment failed: {e}")
+
+        # Auto-run Sayqallash consolidator (dedup + conflict flag)
+        try:
+            import sayqallash_consolidator
+            cons_result = sayqallash_consolidator.consolidate(semantic=False)  # skip BERT for speed
+            logger.info(f"[auto-seed] consolidate: removed {cons_result.get('removed_total', 0)}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] consolidate failed: {e}")
+
+        # Auto-trigger Tahrirchi datasets (only if translation_memory is empty)
+        try:
+            conn6 = _db.connect_db()
+            cur6 = conn6.cursor()
+            try:
+                cur6.execute("SELECT COUNT(*) FROM translation_memory")
+                tm_count = cur6.fetchone()[0]
+            except Exception:
+                tm_count = -1
+            conn6.close()
+            if tm_count == 0:
+                import sys as _sys, os as _os
+                sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+                if sd not in _sys.path:
+                    _sys.path.insert(0, sd)
+                try:
+                    import import_tahrirchi_datasets
+                    r = import_tahrirchi_datasets.main()
+                    logger.info(f"[auto-seed] tahrirchi datasets: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] tahrirchi datasets failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[auto-seed] tahrirchi check failed: {e}")
+
     except Exception as e:
         logger.warning(f"[auto-seed] outer failed: {e}")
 
