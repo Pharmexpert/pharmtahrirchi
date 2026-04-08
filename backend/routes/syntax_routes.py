@@ -93,6 +93,21 @@ async def syntax_stats():
                 stats[table] = cur.fetchone()[0]
             except Exception:
                 stats[table] = 0
+        # Quality distribution of sayqallash rules (used by syntax checker)
+        try:
+            cur.execute("""
+                SELECT COALESCE(quality_flag, 'unverified') as q, COUNT(*)
+                FROM sayqallash_rules GROUP BY q
+            """)
+            stats["sayqallash_quality"] = {row[0]: row[1] for row in cur.fetchall()}
+        except Exception:
+            stats["sayqallash_quality"] = {}
+        # Synth pair count from translation_memory
+        try:
+            cur.execute("SELECT COUNT(*) FROM translation_memory WHERE source_db='syntax_synth'")
+            stats["synth_pairs"] = cur.fetchone()[0]
+        except Exception:
+            stats["synth_pairs"] = 0
         conn.close()
         return stats
     except Exception as e:

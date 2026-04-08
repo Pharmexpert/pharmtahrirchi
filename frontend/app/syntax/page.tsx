@@ -152,11 +152,28 @@ export default function SyntaxPage() {
           </div>
         </div>
         {stats && (
-          <div style={{ display: 'flex', gap: 10, fontSize: '.78rem', color: '#64748B' }}>
-            <span>📊 Парсе: <b>{stats.syntax_parsed_sentences}</b></span>
-            <span>🔗 Бирикма: <b>{stats.syntax_phrases}</b></span>
-            <span>📋 Шаблон: <b>{stats.syntax_sentence_templates}</b></span>
-            <span>⚖️ Қоида: <b>{stats.syntax_word_order_rules}</b></span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, fontSize: '.78rem', color: '#64748B', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <span>📊 Парсе: <b>{stats.syntax_parsed_sentences}</b></span>
+              <span>🔗 Бирикма: <b>{stats.syntax_phrases}</b></span>
+              <span>📋 Шаблон: <b>{stats.syntax_sentence_templates}</b></span>
+              <span>⚖️ Қоида: <b>{stats.syntax_word_order_rules}</b></span>
+              {typeof stats.synth_pairs === 'number' && stats.synth_pairs > 0 && (
+                <span>🔬 Synth: <b>{stats.synth_pairs}</b></span>
+              )}
+            </div>
+            {stats.sayqallash_quality && typeof stats.sayqallash_quality === 'object' && Object.keys(stats.sayqallash_quality).length > 0 && (
+              <div style={{ display: 'flex', gap: 6, fontSize: '.68rem' }}>
+                {Object.entries(stats.sayqallash_quality).map(([k, v]: any) => {
+                  const c: any = { clean: '#16A34A', noisy: '#DC2626', suspicious: '#D97706', unverified: '#64748B' }
+                  return (
+                    <span key={k} style={{ padding: '2px 7px', borderRadius: 10, fontWeight: 700, background: `${c[k] || '#999'}18`, color: c[k] || '#555' }}>
+                      {k}: {v}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
