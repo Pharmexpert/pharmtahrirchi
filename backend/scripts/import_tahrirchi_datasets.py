@@ -64,27 +64,39 @@ def ensure_tables(cur):
 
 
 def import_uz_crawl(cur, limit: int) -> int:
-    """Streaming import of uz-crawl corpus."""
+    """Import uz-crawl corpus via non-streaming (streaming returns IterableDataset)."""
     try:
         from datasets import load_dataset
     except ImportError:
         log.error("datasets library not installed")
         return 0
     try:
-        ds = load_dataset("tahrirchi/uz-crawl", split="train", streaming=True, token=HF_TOKEN)
+        log.info(f"Loading tahrirchi/uz-crawl (split='train', first {limit})...")
+        # Non-streaming — small sample
+        ds = load_dataset("tahrirchi/uz-crawl", split=f"train[:{limit}]", token=HF_TOKEN)
+        log.info(f"Dataset loaded: {len(ds)} examples, fields: {ds.column_names if hasattr(ds, 'column_names') else '?'}")
         inserted = 0
         for i, example in enumerate(ds):
             if i >= limit:
                 break
-            text = example.get("text", "") if isinstance(example, dict) else ""
+            # Try multiple possible field names
+            text = ""
+            if isinstance(example, dict):
+                text = example.get("text") or example.get("content") or example.get("sentence") or ""
+                if not text:
+                    # Take first string field
+                    for k, v in example.items():
+                        if isinstance(v, str) and len(v) > 20:
+                            text = v
+                            break
             if not text or len(text) < 20:
                 continue
             try:
                 cur.execute("INSERT INTO uz_crawl_corpus (text, metadata) VALUES (?, ?)",
-                            (text[:10000], f"example_{i}"))
+                            (str(text)[:10000], f"example_{i}"))
                 inserted += 1
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug(f"  insert fail: {e}")
         log.info(f"uz-crawl: +{inserted}")
         return inserted
     except Exception as e:
