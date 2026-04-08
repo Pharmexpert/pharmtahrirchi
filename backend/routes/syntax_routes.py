@@ -209,20 +209,89 @@ async def export_parsed_sentences(limit: int = 5000, format: str = "jsonl"):
 
 @router.get("/parts/{word}")
 async def get_word_roles(word: str):
-    """Get all known roles for a word."""
+    """Get frequency distribution of roles for a word.
+    Returns all 5 roles (ega/kesim/toldiruvchi/aniqlovchi/hol) with counts.
+    """
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("""
-            SELECT role, COUNT(*) as freq, MAX(example_uz) as example
+            SELECT role, SUM(COALESCE(frequency, 1)) as freq, MAX(example_uz) as example
             FROM syntax_sentence_parts
-            WHERE word = ? OR lemma = ?
+            WHERE LOWER(word) = ? OR LOWER(lemma) = ?
             GROUP BY role
             ORDER BY freq DESC
         """, (word.lower(), word.lower()))
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
-        return {"word": word, "roles": rows}
+
+        # Ensure all 5 main roles present (with 0 if not in DB)
+        all_roles = ["ega", "kesim", "toldiruvchi", "aniqlovchi", "hol"]
+        found = {r["role"]: r for r in rows}
+        result_list = []
+        for role in all_roles:
+            if role in found:
+                result_list.append(found[role])
+            else:
+                result_list.append({"role": role, "freq": 0, "example": None})
+        total = sum(r["freq"] for r in result_list)
+        for r in result_list:
+            r["percentage"] = round(100 * r["freq"] / total, 1) if total > 0 else 0
+        return {"word": word, "roles": result_list, "total_observations": total}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/assign-role")
+async def assign_word_role(payload: Dict[str, Any]):
+    """User-driven role assignment — increments frequency in syntax_sentence_parts.
+    Used by Syntax page 'Enrich mode' token role picker.
+
+    body: { word: str, role: str, pos?: str, context?: str, lang?: str }
+    """
+    word = (payload.get("word") or "").strip()
+    role = (payload.get("role") or "").strip().lower()
+    if not word or not role:
+        raise HTTPException(status_code=400, detail="word and role required")
+    if role not in ("ega", "kesim", "toldiruvchi", "aniqlovchi", "hol", "other"):
+        raise HTTPException(status_code=400, detail="invalid role")
+
+    pos = payload.get("pos", "")
+    context = payload.get("context", "")
+    lang = payload.get("lang", "uz")
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        # Check if this word+role already exists
+        cur.execute("""
+            SELECT id, frequency FROM syntax_sentence_parts
+            WHERE LOWER(word) = ? AND role = ?
+            LIMIT 1
+        """, (word.lower(), role))
+        existing = cur.fetchone()
+        if existing:
+            # Increment frequency
+            cur.execute("""
+                UPDATE syntax_sentence_parts
+                SET frequency = COALESCE(frequency, 1) + 1,
+                    source = 'user_assigned'
+                WHERE id = ?
+            """, (existing[0],))
+            action = "incremented"
+            new_freq = (existing[1] or 1) + 1
+        else:
+            # Insert new
+            cur.execute("""
+                INSERT INTO syntax_sentence_parts
+                (word, lemma, pos, role, example_uz, source, confidence, frequency, language)
+                VALUES (?, ?, ?, ?, ?, 'user_assigned', 0.9, 1, ?)
+            """, (word, word.lower(), pos, role, context[:300], lang))
+            action = "created"
+            new_freq = 1
+        conn.commit()
+        conn.close()
+        return {"success": True, "action": action, "word": word, "role": role, "frequency": new_freq}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

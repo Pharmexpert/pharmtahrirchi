@@ -56,6 +56,28 @@ export default function SyntaxPage() {
   // Role picker state (click on token → popup with role options)
   const [rolePicker, setRolePicker] = useState<{ tokenIdx: number; x: number; y: number } | null>(null)
   const [pickerDrag, setPickerDrag] = useState<{ offsetX: number; offsetY: number } | null>(null)
+  const [wordRoleFreq, setWordRoleFreq] = useState<Record<string, number>>({})
+  const [wordTotalObs, setWordTotalObs] = useState(0)
+
+  // Fetch word role frequencies when picker opens
+  useEffect(() => {
+    if (!rolePicker || !result) return
+    const word = result.tokens[rolePicker.tokenIdx]?.clean || result.tokens[rolePicker.tokenIdx]?.word
+    if (!word) return
+    setWordRoleFreq({})
+    setWordTotalObs(0)
+    api.syntax.parts(word).then((r: any) => {
+      const map: Record<string, number> = {}
+      let total = 0
+      for (const item of r.roles || []) {
+        map[item.role] = item.freq || 0
+        total += item.freq || 0
+      }
+      setWordRoleFreq(map)
+      setWordTotalObs(total)
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolePicker?.tokenIdx])
 
   // Drag handlers for role picker popup
   React.useEffect(() => {
@@ -90,17 +112,17 @@ export default function SyntaxPage() {
     const newTokens = [...result.tokens]
     newTokens[tokenIdx] = { ...newTokens[tokenIdx], role: newRole }
     setResult({ ...result, tokens: newTokens })
-    setRolePicker(null)
-    // Persist to DB: save role mapping to syntax_sentence_parts
+    // Persist: increment word-role frequency in syntax_sentence_parts
     try {
       const word = newTokens[tokenIdx].clean || newTokens[tokenIdx].word
       const pos = newTokens[tokenIdx].pos
-      await api.syntax.saveRule(
-        word,
-        `${word}/${newRole}`,
-        `POS=${pos}, user-assigned role=${newRole}`
-      )
+      const context = result.tokens.map(t => t.word).join(' ').slice(0, 200)
+      const resp: any = await api.syntax.assignRole(word, newRole, pos, context)
+      // Update local frequencies
+      setWordRoleFreq(prev => ({ ...prev, [newRole]: resp.frequency || (prev[newRole] || 0) + 1 }))
+      setWordTotalObs(prev => prev + 1)
     } catch { /* silent */ }
+    setRolePicker(null)
   }
 
   useEffect(() => {
@@ -427,28 +449,56 @@ export default function SyntaxPage() {
                   {ROLES.map(r => {
                     const isCurrent = result.tokens[rolePicker.tokenIdx]?.role === r.key
                     const color = ROLE_COLORS[r.key] || ROLE_COLORS.other
+                    const freq = wordRoleFreq[r.key] || 0
+                    const pct = wordTotalObs > 0 ? Math.round((freq / wordTotalObs) * 100) : 0
+                    const isDominant = freq > 0 && freq === Math.max(...Object.values(wordRoleFreq))
                     return (
                       <button
                         key={r.key}
                         onClick={() => setTokenRole(rolePicker.tokenIdx, r.key)}
                         style={{
-                          padding: '8px 12px', borderRadius: 8, border: 'none',
+                          padding: '8px 12px', borderRadius: 8,
+                          border: isDominant ? `2px solid ${color.color}` : 'none',
                           background: isCurrent ? color.color : color.bg,
                           color: isCurrent ? 'white' : color.color,
                           fontWeight: 700, fontSize: '.82rem',
                           cursor: 'pointer', textAlign: 'left',
                           display: 'flex', alignItems: 'center', gap: 8,
+                          position: 'relative', overflow: 'hidden',
                         }}
                       >
-                        <span style={{ fontSize: '1rem' }}>{r.icon}</span>
-                        <span>{r.label}</span>
-                        {isCurrent && <span style={{ marginLeft: 'auto', fontSize: '.7rem' }}>✓</span>}
+                        {/* Background fill showing frequency % */}
+                        {freq > 0 && !isCurrent && (
+                          <div style={{
+                            position: 'absolute', left: 0, top: 0, bottom: 0,
+                            width: `${pct}%`, background: `${color.color}25`,
+                            pointerEvents: 'none',
+                          }} />
+                        )}
+                        <span style={{ fontSize: '1rem', position: 'relative' }}>{r.icon}</span>
+                        <span style={{ position: 'relative' }}>{r.label}</span>
+                        <span style={{ marginLeft: 'auto', position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {freq > 0 && (
+                            <span style={{
+                              padding: '2px 7px', borderRadius: 10, fontSize: '.64rem',
+                              background: isCurrent ? 'rgba(255,255,255,.25)' : `${color.color}`,
+                              color: 'white', fontWeight: 800,
+                            }}>
+                              {freq}×
+                            </span>
+                          )}
+                          {isCurrent && <span style={{ fontSize: '.7rem' }}>✓</span>}
+                        </span>
                       </button>
                     )
                   })}
                 </div>
                 <div style={{ padding: '8px 14px', background: '#F8FAFC', fontSize: '.64rem', color: '#94A3B8', borderTop: '1px solid #E2E8F0' }}>
-                  Танловингиз Sayqallash базасига сақланади
+                  {wordTotalObs > 0 ? (
+                    <>📊 Жами {wordTotalObs} та кузатув · Танловингиз частотани оширaди</>
+                  ) : (
+                    <>🆕 Ҳали маълумот йўқ · Танлаган ролингиз биринчи кузатув бўлади</>
+                  )}
                 </div>
               </div>
               <style jsx>{`

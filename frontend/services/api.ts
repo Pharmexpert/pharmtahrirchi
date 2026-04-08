@@ -772,7 +772,9 @@ export const syntax = {
     post<{ success: boolean; id?: number }>('/api/syntax/save-rule', { wrong, correct, explanation }),
   templates: (limit = 50) => get<{ templates: any[] }>(`/api/syntax/templates?limit=${limit}`),
   stats: () => get<Record<string, number>>('/api/syntax/stats'),
-  parts: (word: string) => get<{ word: string; roles: any[] }>(`/api/syntax/parts/${encodeURIComponent(word)}`),
+  parts: (word: string) => get<{ word: string; roles: Array<{ role: string; freq: number; percentage: number }>; total_observations: number }>(`/api/syntax/parts/${encodeURIComponent(word)}`),
+  assignRole: (word: string, role: string, pos?: string, context?: string) =>
+    post<{ success: boolean; action: string; frequency: number }>('/api/syntax/assign-role', { word, role, pos, context }),
   // GECTurk endpoints
   verifyRules: (limit = 5000) => post<any>('/api/syntax/verify-rules', { limit }),
   noisyRules: (limit = 100) => get<{ rules: any[] }>(`/api/syntax/noisy-rules?limit=${limit}`),
