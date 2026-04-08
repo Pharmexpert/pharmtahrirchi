@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Save, Sparkles, Loader2, Plus, Trash2, Search, Users } from 'lucide-react'
+import { Save, Sparkles, Loader2, Plus, Trash2, Search, Users, History, CheckCircle2, Circle, AlertCircle } from 'lucide-react'
 import type { RowData } from '../types/api'
 import SynonymPopup from './editor/SynonymPopup'
 import TermHighlighter from './editor/TermHighlighter'
 import RichContent from './editor/RichContent'
 import LangCell from './editor/LangCell'
 import TableToolbar from './editor/TableToolbar'
+import DocumentVersionsModal from './DocumentVersionsModal'
 import { useTableEditor } from './editor/useTableEditor'
 import { useAuth } from './LoginGuard'
 import useWebSocket from '../hooks/useWebSocket'
@@ -44,6 +45,7 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
   // Real-time collaboration toggle (available to all users)
   const { user } = useAuth()
   const [collabOn, setCollabOn] = useState(false)
+  const [versionsModal, setVersionsModal] = useState<{ sentenceNo: number; lang: string } | null>(null)
   const ws = useWebSocket(
     collabOn && textId ? textId : null,
     user?.id || 'anonymous',
@@ -352,6 +354,10 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
                             style={{ background: 'none', border: '1px solid #ddd', borderRadius: 3, padding: '2px 3px', cursor: 'pointer', color: '#64748b', display: 'flex', lineHeight: 1 }}>
                             {savingRow === idx ? <Loader2 size={10} style={{ animation: 'spin .8s linear infinite' }} /> : <Save size={10} />}
                           </button>
+                          <button onClick={() => setVersionsModal({ sentenceNo: row.sentence_no || idx, lang: 'uz' })} title="Версия тарихи"
+                            style={{ background: 'none', border: '1px solid #ddd', borderRadius: 3, padding: '2px 3px', cursor: 'pointer', color: '#7C3AED', display: 'flex', lineHeight: 1 }}>
+                            <History size={10} />
+                          </button>
                           <button onClick={() => onMagicSplit(idx)} title="AI Bo'lish"
                             style={{ background: 'none', border: '1px solid #ddd', borderRadius: 3, padding: '2px 3px', cursor: 'pointer', color: '#6366f1', display: 'flex', lineHeight: 1 }}>
                             <Sparkles size={10} />
@@ -479,6 +485,15 @@ export default function TableEditor({ initialData, filename, textId = '' }: Prop
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       `}</style>
+
+      {versionsModal && (
+        <DocumentVersionsModal
+          textId={textId}
+          sentenceNo={versionsModal.sentenceNo}
+          lang={versionsModal.lang}
+          onClose={() => setVersionsModal(null)}
+        />
+      )}
     </div>
   )
 }

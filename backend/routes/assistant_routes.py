@@ -16,6 +16,7 @@ Endpoints:
 """
 import os
 import io
+from routes.rate_limit import ai_limiter, upload_limiter
 import logging
 from typing import Dict, Any, Optional, List
 
@@ -349,7 +350,10 @@ async def delete_chat(session_id: str, current_user: Dict = Depends(get_current_
 
 @router.post("/chat")
 async def chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """General-purpose chat with engine selection."""
+    """General-purpose chat with engine selection. Rate limit: 20/min per user."""
+    user_key = str(current_user.get("id", "anon"))
+    if not ai_limiter.is_allowed(user_key):
+        raise HTTPException(status_code=429, detail="Сўровлар лимити ошди (20/мин). 1 минутдан сўнг қайта уриниб кўринг.")
     message = (payload.get("message") or "").strip()
     if not message:
         return {"text": ""}
@@ -385,19 +389,24 @@ async def chat(payload: Dict[str, Any], current_user: Dict = Depends(get_current
 
 @router.post("/edit")
 async def edit(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """Scientific editing — Pharma Expert prompt applied."""
+    """Scientific editing — Pharma Expert prompt applied. Rate: 20/min."""
+    user_key = str(current_user.get("id", "anon"))
+    if not ai_limiter.is_allowed(user_key):
+        raise HTTPException(status_code=429, detail="Сўровлар лимити ошди (20/мин).")
     text = (payload.get("text") or "").strip()
     engine = payload.get("engine", "auto")
     lang = payload.get("lang", "uz")
     if not text:
         return {"text": ""}
-    # Wrap user text with the Pharma Expert system prompt for consistent behavior
     return await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, lang=lang, task="edit")
 
 
 @router.post("/translate")
 async def translate(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
-    """Translation — Pharma Expert prompt applied (preserves INN, ATC, doses)."""
+    """Translation — Pharma Expert prompt applied. Rate: 20/min."""
+    user_key = str(current_user.get("id", "anon"))
+    if not ai_limiter.is_allowed(user_key):
+        raise HTTPException(status_code=429, detail="Сўровлар лимити ошди (20/мин).")
     text = (payload.get("text") or "").strip()
     engine = payload.get("engine", "auto")
     src = payload.get("source_lang", "en")
@@ -409,6 +418,10 @@ async def translate(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
 
 @router.post("/upload")
 async def upload(file: UploadFile = File(...), kind: str = Form("auto"), current_user: Dict = Depends(get_current_user)):
+    # Upload limiter: 5 files/minute
+    user_key = str(current_user.get("id", "anon"))
+    if not upload_limiter.is_allowed(user_key):
+        raise HTTPException(status_code=429, detail="Файл юклаш лимити ошди (5/мин).")
     """
     Multimodal upload (image, file, audio).
     Returns extracted text + metadata.
