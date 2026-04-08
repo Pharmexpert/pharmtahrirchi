@@ -277,6 +277,93 @@ async def run_sayqallash_consolidate(current_user: dict = Depends(get_admin_user
         return {"success": False, "error": str(e)}
 
 
+@router.post("/wordlists/import-kmashrab")
+async def import_kmashrab_route(current_user: dict = Depends(get_admin_user)):
+    """Import kmashrab/uzbek-wordlist (~70K words + places + names)."""
+    try:
+        import sys as _sys, os as _os
+        sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if sd not in _sys.path:
+            _sys.path.insert(0, sd)
+        import import_kmashrab
+        return {"success": True, **import_kmashrab.main()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/wordlists/import-extras")
+async def import_extras_route(current_user: dict = Depends(get_admin_user)):
+    """Import MUNIS soros + QuvonchbekBobojonov Uzbek wordlists."""
+    try:
+        import sys as _sys, os as _os
+        sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if sd not in _sys.path:
+            _sys.path.insert(0, sd)
+        import import_additional_dicts
+        return {"success": True, **import_additional_dicts.main()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/tahrirchi/import-datasets")
+async def import_tahrirchi_datasets_route(current_user: dict = Depends(get_admin_user)):
+    """Import Tahrirchi HF datasets: uz-crawl, dilmash, lutfiy, uzlib."""
+    try:
+        import sys as _sys, os as _os
+        sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if sd not in _sys.path:
+            _sys.path.insert(0, sd)
+        import import_tahrirchi_datasets
+        return {"success": True, **import_tahrirchi_datasets.main()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/sayqallash/domain-segment")
+async def segment_domains(current_user: dict = Depends(get_admin_user)):
+    """Add 'domain' column to sayqallash_rules and tag pharma/medical rules."""
+    try:
+        conn = db.connect_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("ALTER TABLE sayqallash_rules ADD COLUMN domain TEXT DEFAULT 'general'")
+        except Exception:
+            pass  # already exists
+
+        # Tag pharma rules
+        cur.execute("""
+            UPDATE sayqallash_rules SET domain = 'pharma'
+            WHERE context LIKE '%doz%' OR context LIKE '%INN%' OR context LIKE '%ATC%'
+               OR context LIKE '%mg%' OR context LIKE '%ml%'
+               OR wrong_form IN (SELECT inn FROM drugs WHERE inn IS NOT NULL)
+               OR wrong_form IN (SELECT brand_name FROM drugs WHERE brand_name IS NOT NULL)
+        """)
+        pharma = cur.rowcount
+
+        # Tag medical rules
+        try:
+            cur.execute("""
+                UPDATE sayqallash_rules SET domain = 'medical'
+                WHERE domain = 'general' AND (
+                    wrong_form IN (SELECT term_uz FROM medical_terms WHERE term_uz IS NOT NULL)
+                    OR wrong_form IN (SELECT term_ru FROM medical_terms WHERE term_ru IS NOT NULL)
+                )
+            """)
+            medical = cur.rowcount
+        except Exception:
+            medical = 0
+
+        conn.commit()
+
+        # Stats
+        cur.execute("SELECT domain, COUNT(*) FROM sayqallash_rules GROUP BY domain")
+        stats = {r[0]: r[1] for r in cur.fetchall()}
+        conn.close()
+        return {"success": True, "pharma_tagged": pharma, "medical_tagged": medical, "stats": stats}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/drugs/import-who")
 async def import_who_inn(current_user: dict = Depends(get_admin_user)):
     """Import 200+ WHO INN essential medicines."""
