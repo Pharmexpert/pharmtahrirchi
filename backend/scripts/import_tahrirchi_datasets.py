@@ -19,11 +19,11 @@ log = logging.getLogger()
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
 HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 
-# Limits (control memory + time)
-UZ_CRAWL_SAMPLES = int(os.getenv("UZ_CRAWL_SAMPLES", "5000"))
-DILMASH_SAMPLES = int(os.getenv("DILMASH_SAMPLES", "10000"))
-LUTFIY_SAMPLES = int(os.getenv("LUTFIY_SAMPLES", "5000"))
-UZLIB_SAMPLES = int(os.getenv("UZLIB_SAMPLES", "2000"))
+# Limits (control memory + time) — small defaults to avoid download bottleneck
+UZ_CRAWL_SAMPLES = int(os.getenv("UZ_CRAWL_SAMPLES", "500"))
+DILMASH_SAMPLES = int(os.getenv("DILMASH_SAMPLES", "2000"))
+LUTFIY_SAMPLES = int(os.getenv("LUTFIY_SAMPLES", "1000"))
+UZLIB_SAMPLES = int(os.getenv("UZLIB_SAMPLES", "500"))
 
 
 def ensure_tables(cur):
@@ -72,11 +72,43 @@ def import_uz_crawl(cur, limit: int) -> int:
         return 0
     try:
         log.info(f"Loading tahrirchi/uz-crawl (split='train', first {limit})...")
-        # Non-streaming — small sample
-        ds = load_dataset("tahrirchi/uz-crawl", split=f"train[:{limit}]", token=HF_TOKEN)
-        log.info(f"Dataset loaded: {len(ds)} examples, fields: {ds.column_names if hasattr(ds, 'column_names') else '?'}")
+        # uz-crawl has splits: 'news', 'telegram_blogs' (no 'train')
+        total_inserted = 0
+        for split_name in ["news", "telegram_blogs"]:
+            try:
+                per_split = limit // 2
+                ds = load_dataset("tahrirchi/uz-crawl", split=f"{split_name}[:{per_split}]", token=HF_TOKEN)
+                log.info(f"Dataset {split_name}: {len(ds)} examples, fields: {ds.column_names if hasattr(ds, 'column_names') else '?'}")
+                for example in ds:
+                    text = ""
+                    if isinstance(example, dict):
+                        text = example.get("text") or example.get("content") or example.get("body") or example.get("sentence") or ""
+                        if not text:
+                            for k, v in example.items():
+                                if isinstance(v, str) and len(v) > 20:
+                                    text = v
+                                    break
+                    if not text or len(text) < 20:
+                        continue
+                    try:
+                        cur.execute("INSERT INTO uz_crawl_corpus (text, metadata) VALUES (?, ?)",
+                                    (str(text)[:10000], f"{split_name}"))
+                        total_inserted += 1
+                    except Exception:
+                        pass
+            except Exception as ee:
+                log.warning(f"uz-crawl split {split_name} failed: {ee}")
+        log.info(f"uz-crawl: +{total_inserted}")
+        return total_inserted
+    except Exception as e:
+        log.warning(f"uz-crawl import failed: {e}")
+        return 0
+
+def _unused_old_uz_crawl(cur, limit):
+    try:
+        ds = None
         inserted = 0
-        for i, example in enumerate(ds):
+        for i, example in enumerate([]):
             if i >= limit:
                 break
             # Try multiple possible field names
@@ -105,13 +137,24 @@ def import_uz_crawl(cur, limit: int) -> int:
 
 
 def import_dilmash(cur, limit: int) -> int:
-    """Import dilmash translation pairs."""
+    """Import dilmash translation pairs (non-streaming)."""
     try:
         from datasets import load_dataset
     except ImportError:
         return 0
     try:
-        ds = load_dataset("tahrirchi/dilmash", split="train", streaming=True, token=HF_TOKEN)
+        # Try 'train' split; if fails, try other names
+        ds = None
+        for split_attempt in ["train", "validation", "test"]:
+            try:
+                ds = load_dataset("tahrirchi/dilmash", split=f"{split_attempt}[:{limit}]", token=HF_TOKEN)
+                log.info(f"dilmash loaded from split={split_attempt}: {len(ds)}, fields={ds.column_names}")
+                break
+            except Exception:
+                continue
+        if ds is None:
+            log.warning("dilmash: no valid split found")
+            return 0
         inserted = 0
         for i, example in enumerate(ds):
             if i >= limit:
