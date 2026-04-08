@@ -373,6 +373,13 @@ async def _auto_seed_background():
                     logger.info(f"[auto-seed] auto REP rules: {r}")
                 except Exception as ee:
                     logger.warning(f"[auto-seed] auto REP rules failed: {ee}")
+                # Pharmacopoeia Volume 1 data (State pharmacopoeia)
+                try:
+                    import import_pharmacopoeia
+                    r = import_pharmacopoeia.main()
+                    logger.info(f"[auto-seed] pharmacopoeia: {r}")
+                except Exception as ee:
+                    logger.warning(f"[auto-seed] pharmacopoeia failed: {ee}")
         except Exception as e:
             logger.warning(f"[auto-seed] user_dictionary check failed: {e}")
 

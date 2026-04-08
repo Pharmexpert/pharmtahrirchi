@@ -401,6 +401,15 @@ async def import_uzbek_spell_route(current_user: dict = Depends(get_admin_user))
         return {"success": False, "error": str(e)}
 
 
+@router.post("/pharmacopoeia/import")
+async def import_pharmacopoeia_route(current_user: dict = Depends(get_admin_user)):
+    """Import State Pharmacopoeia Volume 1 data (glossary + error lists)."""
+    try:
+        return {"success": True, **_run_script("import_pharmacopoeia")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/wordlists/import-uzbek-net")
 async def import_uzbek_net_route(current_user: dict = Depends(get_admin_user)):
     """Import uzbek-net/uz-hunspell (Latin + Cyrillic)."""
