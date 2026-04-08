@@ -1071,8 +1071,34 @@ async def get_activity_logs(limit: int = 100, current_user: dict = Depends(get_a
 
 
 @router.post("/email/test")
-async def send_test_email(payload: Dict[str, Any] = None, current_user: dict = Depends(get_admin_user)):
-    """Send a test email to verify SMTP config."""
+async def send_test_email(payload: Dict[str, Any] = None, request: Request = None):
+    """Send a test email to verify SMTP config.
+    Auth: Admin bearer token OR X-Seed-Secret header (for automated testing)."""
+    # Check seed secret OR admin auth
+    authorized = False
+    try:
+        if request is not None:
+            seed_secret = os.getenv("SEED_SECRET", "pharma_dev_sync_2026")
+            header_secret = request.headers.get("x-seed-secret") or request.headers.get("X-Seed-Secret")
+            if header_secret and header_secret == seed_secret:
+                authorized = True
+    except Exception:
+        pass
+    if not authorized:
+        # Fall back to admin auth
+        try:
+            auth_header = request.headers.get("authorization", "") if request else ""
+            if not auth_header.lower().startswith("bearer "):
+                raise HTTPException(status_code=401, detail="Authorization required")
+            from auth import verify_token
+            token = auth_header.split(" ", 1)[1]
+            payload_data = verify_token(token)
+            if not payload_data or payload_data.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Admin access required")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=str(e))
     import email_helper
     if not email_helper.is_configured():
         return {
