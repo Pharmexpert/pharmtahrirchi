@@ -96,11 +96,9 @@ class BertEngine:
             logger.info(f"[*] [UzBERT] Loading tokenizer for {UZBERT_MODEL}...")
             self.uzbert_tokenizer = AutoTokenizer.from_pretrained(UZBERT_MODEL)
             logger.info(f"[*] [UzBERT] Loading model {UZBERT_MODEL}...")
-            uz_fp32 = AutoModelForMaskedLM.from_pretrained(UZBERT_MODEL)
-            logger.info(f"[*] [UzBERT] Quantizing (8-bit)...")
-            self.uzbert_model = torch.quantization.quantize_dynamic(
-                uz_fp32, {torch.nn.Linear}, dtype=torch.qint8
-            )
+            # Skip quantization (causes meta tensor issue on newer transformers)
+            self.uzbert_model = AutoModelForMaskedLM.from_pretrained(UZBERT_MODEL)
+            self.uzbert_model.eval()
             self.uzbert_nlp = pipeline("fill-mask", model=self.uzbert_model, tokenizer=self.uzbert_tokenizer, device=device)
             self.uzbert_initialized = True
             logger.info(f"[+] UzBERT ({UZBERT_MODEL}) is READY (ensemble enabled).")
