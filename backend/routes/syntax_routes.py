@@ -12,7 +12,7 @@ import os
 import sqlite3
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
-from auth_utils import get_current_user
+from auth import get_current_user
 
 import syntax_engine
 
