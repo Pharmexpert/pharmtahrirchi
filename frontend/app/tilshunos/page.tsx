@@ -1076,7 +1076,17 @@ export default function TilshunosPage() {
                   style={{ width: '100%', minHeight: 500, padding: 20, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.9rem', fontFamily: 'Times New Roman, Georgia, serif', background: 'white', lineHeight: 1.6, outline: 'none', overflow: 'auto' }}
                 />
               ) : (
-                <textarea value={targetText} onChange={e => setTargetText(e.target.value)} placeholder="Таржима..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+                <>
+                  <textarea value={targetText} onChange={e => setTargetText(e.target.value)} placeholder="Таржима..." style={{ width: '100%', minHeight: 300, padding: 10, border: '1.5px solid var(--border)', borderRadius: 8, fontSize: '0.88rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none', background: 'var(--bg-secondary)' }} />
+                  {(linguistic.annotated.length + linguistic.disputed.length + linguistic.abbreviations.length) > 0 && targetText && (
+                    <div style={{ marginTop: 6, padding: '6px 10px', background: '#FAFBFF', border: '1px dashed #E5E7EB', borderRadius: 6, fontSize: '0.72rem', lineHeight: 1.5 }}>
+                      <div style={{ fontSize: '0.58rem', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>🧬 Лингвистик аниқланган (таржима)</div>
+                      {linguistic.annotated.map((a, i) => <span key={`ta${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#F3E8FF', color: '#7C3AED', borderRadius: 4, fontWeight: 600 }}>{a.text}</span>)}
+                      {linguistic.disputed.map((d, i) => <span key={`td${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#FEE2E2', color: '#DC2626', borderRadius: 4, fontWeight: 600 }}>{d.text}</span>)}
+                      {linguistic.abbreviations.map((b, i) => <span key={`tb${i}`} style={{ display: 'inline-block', margin: 2, padding: '1px 6px', background: '#DCFCE7', color: '#16A34A', borderRadius: 4, fontWeight: 600 }}>{b.text}</span>)}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
