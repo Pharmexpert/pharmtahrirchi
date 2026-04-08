@@ -628,6 +628,16 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
     needs_russian = "ru" in (base_src, base_tgt)
 
     try:
+        # 0. Tahrirchi dilmash — native Uzbek model (best for uz/en/ru/kaa pairs)
+        try:
+            import tahrirchi_engine
+            if tahrirchi_engine.is_available():
+                tr = await tahrirchi_engine.translate_async(text, src, tgt)
+                if tr and len(tr.strip()) > 1 and tr.strip() != text.strip():
+                    return {"translated": tr.strip(), "engine": "tahrirchi_" + tahrirchi_engine.get_mode()}
+        except Exception as e:
+            logger.warning(f"[translate] Tahrirchi failed: {e}")
+
         # 1. NLLB-200 — for any pair involving Russian
         if needs_russian:
             try:
@@ -988,6 +998,41 @@ async def learn_linguistic(payload: Dict[str, Any], current_user: Dict = Depends
         return {"success": True, "added": added}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/tahrirchi/translate")
+async def tahrirchi_translate_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Translate via tahrirchi/dilmash (native Uzbek model, en/ru/uz/kaa)."""
+    text = (payload.get("text") or "").strip()
+    src = payload.get("source_lang", "en")
+    tgt = payload.get("target_lang", "uz")
+    if not text:
+        return {"translated": ""}
+    try:
+        import tahrirchi_engine
+        if tahrirchi_engine.is_available():
+            result = await tahrirchi_engine.translate_async(text, src, tgt)
+            return {"translated": result, "engine": "tahrirchi_" + tahrirchi_engine.get_mode()}
+    except Exception as e:
+        logger.warning(f"[tahrirchi translate] {e}")
+        return {"translated": "", "error": str(e)}
+    return {"translated": "", "error": "unavailable"}
+
+
+@router.post("/tahrirchi/transliterate")
+async def tahrirchi_transliterate_endpoint(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Transliterate Uzbek (Latin ↔ Cyrillic) via tahrirchi/dilmash-til."""
+    text = (payload.get("text") or "").strip()
+    target = payload.get("target", "latin")
+    if not text:
+        return {"text": ""}
+    try:
+        import tahrirchi_engine
+        result = await tahrirchi_engine.transliterate_async(text, target)
+        return {"text": result, "engine": "tahrirchi_til"}
+    except Exception as e:
+        logger.warning(f"[tahrirchi transliterate] {e}")
+        return {"text": text, "error": str(e)}
 
 
 @router.get("/style-rules")
