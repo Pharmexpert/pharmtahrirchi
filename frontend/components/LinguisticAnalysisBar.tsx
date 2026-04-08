@@ -144,6 +144,119 @@ export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = fal
       {error && (
         <span style={{ fontSize: '.7rem', color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>⚠ {error}</span>
       )}
+
+      {/* Detailed results panel — shows errors + suggestions */}
+      {result && result.total > 0 && (
+        <ResultsPanel result={result} text={text} />
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════
+// Results Panel — detailed issues with positions + suggestions
+// ═══════════════════════════════════════════════════
+function ResultsPanel({ result, text }: { result: AnalysisResult; text: string }) {
+  const [openLayer, setOpenLayer] = useState<string | null>(null)
+
+  const layers: Array<{ key: 'sayqallash' | 'syntax' | 'style' | 'morph'; label: string; color: string }> = [
+    { key: 'sayqallash', label: '🟠 Сайқаллаш', color: '#8B5E3C' },
+    { key: 'syntax', label: '🟣 Синтаксис', color: '#7C3AED' },
+    { key: 'style', label: '🌸 Стиль', color: '#DB2777' },
+    { key: 'morph', label: '🔵 Morph', color: '#0891B2' },
+  ]
+
+  const getContext = (from: number, to: number): string => {
+    if (typeof from !== 'number') return ''
+    const start = Math.max(0, from - 20)
+    const end = Math.min(text.length, to + 20)
+    return text.slice(start, end)
+  }
+
+  return (
+    <div style={{
+      flex: '1 0 100%', marginTop: 10, padding: 12, background: 'white',
+      border: '1.5px solid #E2E8F0', borderRadius: 10, maxHeight: 320, overflowY: 'auto',
+    }}>
+      <div style={{ fontSize: '.72rem', fontWeight: 800, color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>
+        📋 Аниқланган хатолар ({result.total})
+      </div>
+      {layers.map(layer => {
+        const items: any[] = (result as any)[layer.key] || []
+        if (items.length === 0) return null
+        const isOpen = openLayer === layer.key || openLayer === null
+        return (
+          <div key={layer.key} style={{ marginBottom: 8 }}>
+            <div
+              onClick={() => setOpenLayer(isOpen && openLayer !== null ? null : layer.key)}
+              style={{
+                padding: '6px 10px', borderRadius: 6, background: `${layer.color}15`,
+                color: layer.color, fontWeight: 800, fontSize: '.74rem',
+                cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
+              }}
+            >
+              <span>{layer.label} — {items.length} та</span>
+              <span>{isOpen ? '▼' : '▶'}</span>
+            </div>
+            {isOpen && (
+              <div style={{ marginTop: 4 }}>
+                {items.slice(0, 20).map((issue, i) => (
+                  <div key={i} style={{
+                    padding: '6px 10px', fontSize: '.72rem', borderLeft: `3px solid ${layer.color}`,
+                    marginLeft: 4, marginBottom: 3, background: '#FAFBFC', borderRadius: 4,
+                  }}>
+                    {layer.key === 'sayqallash' && (
+                      <>
+                        <span style={{ color: '#991B1B', textDecoration: 'line-through', fontFamily: 'monospace' }}>{issue.old || issue.old_value}</span>
+                        {' → '}
+                        <span style={{ color: '#15803D', fontFamily: 'monospace', fontWeight: 700 }}>{issue.new || issue.new_value}</span>
+                        <span style={{ marginLeft: 8, fontSize: '.64rem', color: '#94A3B8' }}>
+                          [{issue.error_type}] conf:{issue.confidence || '?'}%
+                        </span>
+                      </>
+                    )}
+                    {layer.key === 'syntax' && (
+                      <>
+                        <span style={{ color: '#5B21B6', fontWeight: 700 }}>{issue.message}</span>
+                        {issue.suggestion && (
+                          <div style={{ color: '#64748B', marginTop: 2, fontSize: '.68rem' }}>💡 {issue.suggestion}</div>
+                        )}
+                        {issue.sentence && (
+                          <div style={{ color: '#94A3B8', marginTop: 2, fontStyle: 'italic', fontSize: '.68rem' }}>"{String(issue.sentence).slice(0, 80)}"</div>
+                        )}
+                      </>
+                    )}
+                    {layer.key === 'style' && (
+                      <>
+                        <span style={{ color: '#BE185D', fontWeight: 700 }}>{issue.description}</span>
+                        <div style={{ marginTop: 2, fontFamily: 'monospace' }}>
+                          <span style={{ color: '#991B1B', textDecoration: 'line-through' }}>{issue.old}</span>
+                          {issue.suggestion && <> → <span style={{ color: '#15803D', fontWeight: 700 }}>{issue.suggestion}</span></>}
+                        </div>
+                        <div style={{ marginTop: 2, fontSize: '.64rem', color: '#94A3B8' }}>
+                          [{issue.rule_id}] {issue.severity?.toUpperCase()} · Manba: {issue.source || issue.source_ref || '—'}
+                          {issue.source_url && <> · <a href={issue.source_url} target="_blank" rel="noreferrer" style={{ color: '#2563EB' }}>🔗</a></>}
+                        </div>
+                      </>
+                    )}
+                    {layer.key === 'morph' && (
+                      <>
+                        <span style={{ fontFamily: 'monospace', color: '#0891B2', fontWeight: 700 }}>{issue.word}</span>
+                        <span style={{ marginLeft: 8, fontSize: '.64rem', color: '#64748B' }}>[{issue.pos}]</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {items.length > 20 && (
+                  <div style={{ fontSize: '.68rem', color: '#94A3B8', padding: '4px 10px' }}>
+                    + yana {items.length - 20} ta…
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
