@@ -7,6 +7,7 @@ import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 import WordDocumentViewer from '../../components/WordDocumentViewer'
 import SuperDocEditor from '../../components/SuperDocEditor'
 import LinguisticAnalysisBar from '../../components/LinguisticAnalysisBar'
+import { useInlineSynonymPopup } from '../../components/InlineSynonymPopup'
 
 type Mode = 'edit' | 'translate' | 'word'
 type Lang = 'en' | 'ru' | 'uz-cyr' | 'uz-lat'
@@ -87,6 +88,7 @@ interface WordSpan {
 
 export default function TilshunosPage() {
   const { token } = useAuth()
+  const synonymPopup = useInlineSynonymPopup()
   const [mode, setMode] = useState<Mode>('edit')
   const [lang, setLang] = useState<Lang>('uz-lat')
   const [text, setText] = useState('')
@@ -825,7 +827,7 @@ export default function TilshunosPage() {
             </div>
 
             {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
-            <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }} onDoubleClick={synonymPopup.handleClick}>
               {richHtml && !result ? (
                 <div
                   ref={richEditRef}
@@ -1031,7 +1033,7 @@ export default function TilshunosPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
-            <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
+            <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }} onDoubleClick={synonymPopup.handleClick}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[sourceLang]}</div>
               {richSrcHtml ? (
                 <div
@@ -1352,6 +1354,9 @@ export default function TilshunosPage() {
           </div>
         </>
       )}
+
+      {/* Inline synonym popup — floating */}
+      {synonymPopup.PopupElement}
     </div>
   )
 }
