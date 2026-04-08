@@ -383,6 +383,77 @@ async def _auto_seed_background():
         except Exception as e:
             logger.warning(f"[auto-seed] user_dictionary check failed: {e}")
 
+        # ═════════════════════════════════════════════════════════════════
+        # POST-PROCESSING — runs regardless of user_dictionary count
+        # These are idempotent + check own conditions (needed on every startup)
+        # ═════════════════════════════════════════════════════════════════
+        try:
+            import sys as _sys, os as _os
+            sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+            if sd not in _sys.path:
+                _sys.path.insert(0, sd)
+
+            # 1. uzhungen .qoida descriptions (fetches from GitHub API)
+            try:
+                conn_q = _db.connect_db()
+                cur_q = conn_q.cursor()
+                try:
+                    cur_q.execute("SELECT COUNT(*) FROM hunspell_affix_descriptions")
+                    qcount = cur_q.fetchone()[0]
+                except Exception:
+                    qcount = 0
+                conn_q.close()
+                if qcount < 50:
+                    import import_uzhungen_qoida
+                    r = import_uzhungen_qoida.main()
+                    logger.info(f"[post-process] uzhungen qoida: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] uzhungen qoida failed: {ee}")
+
+            # 2. Affix flag mapping (depends on #1)
+            try:
+                conn_m = _db.connect_db()
+                cur_m = conn_m.cursor()
+                try:
+                    cur_m.execute("SELECT COUNT(*) FROM affix_flag_mapping")
+                    mcount = cur_m.fetchone()[0]
+                except Exception:
+                    mcount = 0
+                conn_m.close()
+                if mcount < 5:
+                    import merge_affix_descriptions
+                    r = merge_affix_descriptions.main()
+                    logger.info(f"[post-process] affix merge: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] affix merge failed: {ee}")
+
+            # 3. Word frequency rankings (always refresh — rebuild from corpus)
+            try:
+                conn_f = _db.connect_db()
+                cur_f = conn_f.cursor()
+                try:
+                    cur_f.execute("SELECT COUNT(*) FROM word_frequency_corpus")
+                    fcount = cur_f.fetchone()[0]
+                except Exception:
+                    fcount = 0
+                conn_f.close()
+                if fcount < 100:
+                    import build_freq_rankings
+                    r = build_freq_rankings.main()
+                    logger.info(f"[post-process] freq rankings: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] freq rankings failed: {ee}")
+
+            # 4. Pharmacopoeia (always try — idempotent, skips duplicates)
+            try:
+                import import_pharmacopoeia
+                r = import_pharmacopoeia.main()
+                logger.info(f"[post-process] pharmacopoeia: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] pharmacopoeia failed: {ee}")
+        except Exception as e:
+            logger.warning(f"[post-process] setup failed: {e}")
+
         # Try to seed Uzbek rules from book if PDF text is bundled
         try:
             import seed_uzbek_rules_from_book
