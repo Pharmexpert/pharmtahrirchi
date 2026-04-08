@@ -39,6 +39,9 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(os.path.join(TEMP_DIR, "imgs"), exist_ok=True)
 
+import datetime as _dt
+os.environ["APP_STARTED_AT"] = _dt.datetime.utcnow().isoformat() + "Z"
+
 app = FastAPI()
 
 
@@ -46,6 +49,25 @@ app = FastAPI()
 async def health_check():
     """Lightweight healthcheck for Railway."""
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+async def api_version():
+    """Build/version info — git SHA, env, deploy timestamp."""
+    import subprocess
+    sha = "unknown"
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=BACKEND_DIR, stderr=subprocess.DEVNULL, timeout=2
+        ).decode().strip()
+    except Exception:
+        sha = os.getenv("RAILWAY_GIT_COMMIT_SHA", "unknown")[:7]
+    return {
+        "sha": sha,
+        "env": "railway" if IS_RAILWAY else "local",
+        "started_at": os.environ.get("APP_STARTED_AT", ""),
+    }
 
 
 @app.get("/api/ai-engines")
