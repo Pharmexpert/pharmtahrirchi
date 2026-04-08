@@ -43,6 +43,7 @@ export default function RulesPage() {
   const [filterWrong, setFilterWrong] = useState('')
   const [filterCorrect, setFilterCorrect] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [filterQuality, setFilterQuality] = useState('')
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -95,7 +96,8 @@ export default function RulesPage() {
     const matchWrong = !filterWrong || r.wrong_form.toLowerCase().includes(filterWrong.toLowerCase())
     const matchCorrect = !filterCorrect || r.correct_form.toLowerCase().includes(filterCorrect.toLowerCase())
     const matchType = !filterType || r.error_type === filterType
-    return matchSearch && matchWrong && matchCorrect && matchType
+    const matchQuality = !filterQuality || (r.quality_flag || 'unverified') === filterQuality
+    return matchSearch && matchWrong && matchCorrect && matchType && matchQuality
   })
   const totalPages = Math.ceil(filteredRules.length / perPage)
   const pageRules = filteredRules.slice(page * perPage, (page + 1) * perPage)
@@ -261,7 +263,16 @@ export default function RulesPage() {
                   <option value="G/SPLIT">G/SPLIT</option>
                 </select>
               </th>
-              <th style={{ padding: '8px 24px' }}></th>
+              <th style={{ padding: '8px 24px' }}>
+                <select value={filterQuality} onChange={e => { setFilterQuality(e.target.value); setPage(0) }}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white', cursor: 'pointer' }}>
+                  <option value="">Сифат: барчаси</option>
+                  <option value="clean">🟢 Toza</option>
+                  <option value="noisy">🔴 Noisy</option>
+                  <option value="suspicious">🟡 Shubhali</option>
+                  <option value="unverified">⚪ Tekshirilmagan</option>
+                </select>
+              </th>
               <th style={{ padding: '8px 24px' }}></th>
               <th style={{ padding: '8px 24px' }}></th>
             </tr>
