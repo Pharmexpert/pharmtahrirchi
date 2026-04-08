@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { CheckCircle2, CreditCard, Star, Zap, Crown, Loader2 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
+import api from '../../services/api'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -37,28 +38,19 @@ export default function BillingPage() {
 
   useEffect(() => {
     if (!token) return
-    Promise.all([
-      fetch(`${API_BASE}/api/billing/plans`).then(r => r.json()),
-      fetch(`${API_BASE}/api/billing/subscription`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then(r => r.json()),
-    ]).then(([plansRes, subRes]) => {
-      setPlans(plansRes.plans || {})
-      setStripeConfigured(plansRes.stripe_configured || false)
-      setCurrent(subRes)
-    }).catch(() => {})
-    .finally(() => setLoading(false))
+    Promise.all([api.billing.plans(), api.billing.subscription()])
+      .then(([plansRes, subRes]: any[]) => {
+        setPlans(plansRes.plans || {})
+        setStripeConfigured(plansRes.stripe_configured || false)
+        setCurrent(subRes)
+      }).catch(() => {})
+      .finally(() => setLoading(false))
   }, [token])
 
   const handleUpgrade = async (planKey: string) => {
     setCheckoutLoading(planKey)
     try {
-      const r = await fetch(`${API_BASE}/api/billing/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ plan: planKey }),
-      })
-      const data = await r.json()
+      const data: any = await api.billing.checkout(planKey)
       if (data.checkout_url) {
         window.location.href = data.checkout_url
       } else {

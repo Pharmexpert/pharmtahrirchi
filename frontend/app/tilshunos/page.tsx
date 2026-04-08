@@ -249,18 +249,11 @@ export default function TilshunosPage() {
   const transliterate = async (target: 'cyrillic' | 'latin') => {
     if (!text.trim()) return
     try {
-      const res = await fetch(`${api.API_BASE}/api/transliterate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ text, target }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setText(data.text)
-        setLang(target === 'cyrillic' ? 'uz-cyr' : 'uz-lat')
-        setResult(null)
-        setClassified(null)
-      }
+      const data: any = await api.linguistic.transliterate(text, target)
+      setText(data.text)
+      setLang(target === 'cyrillic' ? 'uz-cyr' : 'uz-lat')
+      setResult(null)
+      setClassified(null)
     } catch (_) {}
   }
 

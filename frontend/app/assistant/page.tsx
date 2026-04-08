@@ -264,8 +264,7 @@ export default function AssistantPage() {
     setLoading(true)
     try {
       const r = await api.tilshunos.decomposeTerm(word)
-      const m = await fetch(`${api.API_BASE}/api/tilshunos/normalize-drug`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: word }) })
-      const norm = m.ok ? await m.json() : null
+      const norm: any = await api.linguistic.normalizeDrug(word).catch(() => null)
       let response = `**💊 Дори таҳлили: "${word}"**\n\n`
       if (norm?.best) {
         response += `**Канон INN:** ${norm.best.inn}\n**Бренд:** ${norm.best.brand_name || '—'}\n**ATC код:** ${norm.best.atc_code || '—'}\n**Шакл:** ${norm.best.form || '—'}\n**Доза:** ${norm.best.dose || '—'}\n\n`

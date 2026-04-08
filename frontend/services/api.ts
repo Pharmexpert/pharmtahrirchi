@@ -336,6 +336,16 @@ export const linguistic = {
     put<{ success: boolean }>(`/api/linguistic/update/${category}/${id}`, data),
   remove: (category: string, id: number) =>
     del<{ success: boolean }>(`/api/linguistic/delete/${category}/${id}`),
+  transliterate: (text: string, target: string) =>
+    post<{ text: string }>('/api/transliterate', { text, target }),
+  normalizeDrug: (name: string) =>
+    post<any>('/api/tilshunos/normalize-drug', { name }),
+}
+
+export const billing = {
+  plans: () => get<any>('/api/billing/plans'),
+  subscription: () => get<any>('/api/billing/subscription'),
+  checkout: (plan: string) => post<any>('/api/billing/checkout', { plan }),
 }
 
 // ═══════════════════════════════════════════════════
@@ -718,7 +728,7 @@ export const assistant = {
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp, tilshunos, assistant,
+  morph, grammar, learn, nlp, tilshunos, assistant, billing,
   API_BASE,
 }
 
