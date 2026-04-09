@@ -288,6 +288,99 @@ rules_cache = RulesCache()
 def connect_db():
     return sqlite3.connect(DB_PATH)
 
+
+# ═══════════════════════════════════════════════════
+# Dual-script lookup helper (Cyrillic ↔ Latin)
+# ═══════════════════════════════════════════════════
+def dual_script_variants(value: str) -> list:
+    """Return all script variants of a value (original + lowercase + transliterated).
+    Used by all lookup endpoints that need to match regardless of Cyr/Lat.
+    """
+    if not value:
+        return []
+    try:
+        import dual_script
+    except Exception:
+        return [value, value.lower()]
+    variants = [value, value.lower()]
+    detected = dual_script.detect_script(value)
+    if detected == "cyr":
+        lat = dual_script.to_latin(value)
+        if lat:
+            variants.extend([lat, lat.lower()])
+    elif detected == "lat":
+        cyr = dual_script.to_cyrillic(value)
+        if cyr:
+            variants.extend([cyr, cyr.lower()])
+    # De-duplicate while preserving order
+    seen = set()
+    out = []
+    for v in variants:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def dual_script_lookup(table: str, column: str, value: str,
+                       extra_where: str = "", extra_params: tuple = (),
+                       limit: int = 100, order_by: str = "id DESC") -> list:
+    """Generic dual-script lookup — tries all script variants of `value` against `column`.
+
+    Args:
+        table: DB table name
+        column: Column to match against (case-insensitive)
+        value: Search value (any script)
+        extra_where: Additional WHERE clause (e.g., "lang = ?")
+        extra_params: Parameters for extra_where
+        limit: Max rows
+        order_by: Sort clause
+
+    Returns:
+        List of dict rows (all matches across scripts, de-duplicated by id).
+    """
+    variants = dual_script_variants(value)
+    if not variants:
+        return []
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    placeholders = ",".join("?" for _ in variants)
+    where = f"LOWER({column}) IN ({placeholders})"
+    if extra_where:
+        where += f" AND ({extra_where})"
+
+    params = [v.lower() for v in variants] + list(extra_params)
+    params.append(limit)
+
+    try:
+        cur.execute(
+            f"SELECT * FROM {table} WHERE {where} ORDER BY {order_by} LIMIT ?",
+            params
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        import logging
+        logging.getLogger("dual_lookup").warning(f"{table}.{column}: {e}")
+        rows = []
+    finally:
+        conn.close()
+
+    # De-dupe by id
+    seen = set()
+    out = []
+    for r in rows:
+        rid = r.get("id")
+        if rid and rid in seen:
+            continue
+        if rid:
+            seen.add(rid)
+        out.append(r)
+    return out
+
+
 def init_db():
     conn = connect_db()
     cursor = conn.cursor()

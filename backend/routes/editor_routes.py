@@ -30,14 +30,29 @@ async def spellcheck_endpoint(payload: Dict[str, Any]):
 
 @router.get("/api/dictionary/words")
 async def get_dictionary_words(language: str = "cyrl", page: int = 0, per_page: int = 50, search: str = ""):
-    """Get hunspell dictionary words enriched with frequency + source from user_dictionary."""
+    """Get hunspell dictionary words enriched with frequency + source from user_dictionary.
+    Search supports dual-script (Cyr ↔ Lat auto-transliteration).
+    """
     import hunspell_data
     import sqlite3, os as _os
     all_words = hunspell_data.get_dictionary_words(language)
 
     if search:
-        s = search.lower()
-        all_words = [w for w in all_words if s in w['word'].lower()]
+        # Dual-script search: try original + transliterated variants
+        try:
+            import dual_script
+            variants = [search.lower()]
+            detected = dual_script.detect_script(search)
+            if detected == "cyr":
+                lat = dual_script.to_latin(search)
+                if lat: variants.append(lat.lower())
+            elif detected == "lat":
+                cyr = dual_script.to_cyrillic(search)
+                if cyr: variants.append(cyr.lower())
+            all_words = [w for w in all_words if any(v in w['word'].lower() for v in variants)]
+        except Exception:
+            s = search.lower()
+            all_words = [w for w in all_words if s in w['word'].lower()]
 
     total = len(all_words)
     start = page * per_page

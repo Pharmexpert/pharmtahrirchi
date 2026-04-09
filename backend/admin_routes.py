@@ -501,7 +501,7 @@ async def import_colors_route(current_user: dict = Depends(get_admin_user)):
 
 @router.get("/pharma-db/toc")
 async def pharma_toc(q: str = None, edition: str = None, limit: int = 3000, current_user: dict = Depends(get_current_user)):
-    """Pharmacopoeia Table of Contents (both editions)."""
+    """Pharmacopoeia Table of Contents — dual-script search (Cyr ↔ Lat)."""
     conn = _pharma_db_conn()
     cur = conn.cursor()
     try:
@@ -511,9 +511,24 @@ async def pharma_toc(q: str = None, edition: str = None, limit: int = 3000, curr
             where += " AND edition = ?"
             params.append(edition)
         if q:
-            where += " AND (name_uz LIKE ? OR name_en LIKE ? OR name_ru LIKE ? OR text_no LIKE ?)"
-            like = f"%{q}%"
-            params.extend([like, like, like, like])
+            search_variants = [q]
+            try:
+                import dual_script
+                detected = dual_script.detect_script(q)
+                if detected == "cyr":
+                    lat = dual_script.to_latin(q)
+                    if lat: search_variants.append(lat)
+                elif detected == "lat":
+                    cyr = dual_script.to_cyrillic(q)
+                    if cyr: search_variants.append(cyr)
+            except Exception:
+                pass
+            or_clauses = []
+            for v in search_variants:
+                like = f"%{v}%"
+                or_clauses.append("(name_uz LIKE ? OR name_en LIKE ? OR name_ru LIKE ? OR text_no LIKE ?)")
+                params.extend([like, like, like, like])
+            where += " AND (" + " OR ".join(or_clauses) + ")"
         params.append(limit)
         cur.execute(f"SELECT * FROM pharma_toc {where} ORDER BY edition, seq_no LIMIT ?", params)
         rows = [dict(r) for r in cur.fetchall()]
@@ -524,7 +539,7 @@ async def pharma_toc(q: str = None, edition: str = None, limit: int = 3000, curr
 
 @router.get("/pharma-db/registry")
 async def drug_registry(q: str = None, country: str = None, atc: str = None, limit: int = 2000, current_user: dict = Depends(get_current_user)):
-    """State Drug Registry (local + foreign drugs)."""
+    """State Drug Registry — dual-script search (Cyr ↔ Lat)."""
     conn = _pharma_db_conn()
     cur = conn.cursor()
     try:
@@ -537,9 +552,25 @@ async def drug_registry(q: str = None, country: str = None, atc: str = None, lim
             where += " AND atc_code LIKE ?"
             params.append(f"{atc}%")
         if q:
-            where += " AND (trade_name LIKE ? OR inn LIKE ? OR manufacturer LIKE ? OR atc_code LIKE ? OR registration_no LIKE ?)"
-            like = f"%{q}%"
-            params.extend([like, like, like, like, like])
+            # Dual-script search
+            search_variants = [q]
+            try:
+                import dual_script
+                detected = dual_script.detect_script(q)
+                if detected == "cyr":
+                    lat = dual_script.to_latin(q)
+                    if lat: search_variants.append(lat)
+                elif detected == "lat":
+                    cyr = dual_script.to_cyrillic(q)
+                    if cyr: search_variants.append(cyr)
+            except Exception:
+                pass
+            or_clauses = []
+            for v in search_variants:
+                like = f"%{v}%"
+                or_clauses.append("(trade_name LIKE ? OR inn LIKE ? OR manufacturer LIKE ? OR atc_code LIKE ? OR registration_no LIKE ?)")
+                params.extend([like, like, like, like, like])
+            where += " AND (" + " OR ".join(or_clauses) + ")"
         params.append(limit)
         cur.execute(f"SELECT * FROM drug_registry {where} ORDER BY seq_no LIMIT ?", params)
         rows = [dict(r) for r in cur.fetchall()]

@@ -88,25 +88,43 @@ def detect_role(token: dict, idx: int, total: int) -> str:
 
 def lookup_role_from_db(word: str) -> str | None:
     """Check syntax_sentence_parts for the most frequent role of this word.
-    Uses SUM(frequency) (respects user-assigned role counts) + case-insensitive match.
+    Uses SUM(frequency) + dual-script fallback (Cyr ↔ Lat).
     """
     if not word:
         return None
     try:
+        # Generate all script variants (original + case + transliterated)
+        try:
+            import dual_script
+            variants = set([word.lower().strip()])
+            detected = dual_script.detect_script(word)
+            if detected == "cyr":
+                lat = dual_script.to_latin(word)
+                if lat: variants.add(lat.lower().strip())
+            elif detected == "lat":
+                cyr = dual_script.to_cyrillic(word)
+                if cyr: variants.add(cyr.lower().strip())
+            variants = list(variants)
+        except Exception:
+            variants = [word.lower().strip()]
+
+        if not variants:
+            return None
+
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-        w = word.lower().strip()
-        cur.execute("""
+        placeholders = ",".join("?" for _ in variants)
+        cur.execute(f"""
             SELECT role, SUM(COALESCE(frequency, 1)) as total_freq
             FROM syntax_sentence_parts
-            WHERE LOWER(word) = ? OR LOWER(COALESCE(lemma, '')) = ?
+            WHERE LOWER(word) IN ({placeholders})
+               OR LOWER(COALESCE(lemma, '')) IN ({placeholders})
             GROUP BY role
             ORDER BY total_freq DESC
             LIMIT 1
-        """, (w, w))
+        """, variants + variants)
         row = cur.fetchone()
         conn.close()
-        # Only return if at least 1 real observation
         if row and row[1] and row[1] > 0:
             return row[0]
         return None
