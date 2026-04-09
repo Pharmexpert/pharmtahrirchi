@@ -73,12 +73,7 @@ def import_docx(data_dir: Path = None) -> dict:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) FROM disputed_board")
-    existing = cur.fetchone()[0]
-    if existing > 100:
-        conn.close()
-        return {"skipped": True, "reason": "already populated", "count": existing}
-
+    # No idempotent guard — INSERT OR IGNORE handles duplicates
     doc = Document(str(p))
     if not doc.tables:
         conn.close()
@@ -101,12 +96,19 @@ def import_docx(data_dir: Path = None) -> dict:
         if not ru_term:
             continue
         try:
+            # Write to legacy disputed_board table
             cur.execute("""
-                INSERT INTO disputed_board
+                INSERT OR IGNORE INTO disputed_board
                 (seq_no, ru_term, en_context, ru_context, definition_uz,
                  existing_variants, proposed_variant, references_text)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (seq, ru_term, cells[2], cells[3], cells[4], cells[5], cells[6], cells[7]))
+            # Also write to UI-facing disputed_words table
+            cur.execute("""
+                INSERT INTO disputed_words
+                (en, ru, uz, context_en, context_ru, context_uz, source_lang, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'Russian', 'active')
+            """, (cells[2], ru_term, cells[6], cells[2], cells[3], cells[4]))
             added += 1
         except Exception as e:
             log.debug(f"row {r_idx} skip: {e}")

@@ -213,8 +213,8 @@ def import_to_db(si_data: dict, bob_data: dict) -> dict:
         try:
             cur.execute("""
                 INSERT OR IGNORE INTO style_rules
-                (rule_id, category, description, pattern, suggestion, severity, examples, source, source_ref)
-                VALUES (?, 'si_format', ?, ?, ?, 'should', ?, 'CM 21 (10.01.2018)', 'CM-21-10.01.2018')
+                (rule_id, category, description, pattern, suggestion, severity, examples, source)
+                VALUES (?, 'si_format', ?, ?, ?, 'should', ?, 'CM 21 (10.01.2018)')
             """, (rule_id, desc, f"(\\d+){re.escape(sym)}", f"{{n}} {sym}", f"5{sym} → 5 {sym}"))
             if cur.rowcount > 0:
                 style_added += 1

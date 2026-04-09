@@ -85,12 +85,10 @@ def import_toc(data_dir: Path = None) -> dict:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # Check if already populated
-    cur.execute("SELECT COUNT(*) FROM pharma_toc")
-    existing = cur.fetchone()[0]
-    if existing > 500:
-        conn.close()
-        return {"skipped": True, "reason": "already populated", "count": existing}
+    # Idempotent via UNIQUE on (edition, seq_no, name_uz)
+    try:
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uniq_toc_row ON pharma_toc(edition, seq_no, name_uz)")
+    except Exception: pass
 
     xl = pd.ExcelFile(p)
     total = 0
@@ -111,7 +109,7 @@ def import_toc(data_dir: Path = None) -> dict:
                 if not name_uz or name_uz == "nan":
                     continue
                 cur.execute("""
-                    INSERT INTO pharma_toc (edition, volume, seq_no, name_uz, name_en, name_ru, text_no)
+                    INSERT OR IGNORE INTO pharma_toc (edition, volume, seq_no, name_uz, name_en, name_ru, text_no)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (sheet_name, volume, seq, name_uz, name_en, name_ru, text_no))
                 added += 1
@@ -141,11 +139,9 @@ def import_registry(data_dir: Path = None) -> dict:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) FROM drug_registry")
-    existing = cur.fetchone()[0]
-    if existing > 5000:
-        conn.close()
-        return {"skipped": True, "reason": "already populated", "count": existing}
+    try:
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uniq_reg_row ON drug_registry(trade_name, inn, registration_no)")
+    except Exception: pass
 
     df = pd.read_excel(p, sheet_name="ПРОСМОТР")
 
@@ -193,7 +189,7 @@ def import_registry(data_dir: Path = None) -> dict:
                 continue
 
             cur.execute("""
-                INSERT INTO drug_registry
+                INSERT OR IGNORE INTO drug_registry
                 (seq_no, trade_name, inn, dosage_form, country, manufacturer,
                  pharm_group, atc_code, registration_no, registration_date, modification_date, dispense_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

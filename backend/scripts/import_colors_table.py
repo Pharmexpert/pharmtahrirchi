@@ -52,11 +52,6 @@ def main():
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM colors_table")
-    if cur.fetchone()[0] > 100:
-        conn.close()
-        return {"skipped": True, "reason": "already populated"}
-
     df = pd.read_excel(p, sheet_name="Ўзбек", header=None)
     added = 0
     for i in range(5, len(df)):  # data starts at row 5
