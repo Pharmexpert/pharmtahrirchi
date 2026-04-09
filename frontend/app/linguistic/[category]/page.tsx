@@ -101,10 +101,11 @@ function getEditFields(cat: Category) {
 
 function getCellValue(item: LingItem, key: string, cat: Category): string {
   if (key === 'context') {
-    return (item as any).context_en || (item as any).context_ru || ''
+    return (item as any).context_en || (item as any).context_ru || (item as any).context_uz || ''
   }
   if (key === 'description') {
-    return (item as any).description_en || (item as any).description_ru || ''
+    // Fallback order: EN → RU → UZ (many pharmacopoeia terms only have Uzbek definitions)
+    return (item as any).description_en || (item as any).description_ru || (item as any).description_uz || ''
   }
   return (item as any)[key] || ''
 }

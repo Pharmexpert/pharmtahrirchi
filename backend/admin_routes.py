@@ -465,58 +465,6 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
-@router.get("/_diag/sample-annotated")
-async def diag_sample_annotated():
-    """TEMPORARY PUBLIC — return a few first rows so we can see the actual column contents."""
-    import sqlite3 as _sql, os as _os
-    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
-    conn = _sql.connect(db_p)
-    conn.row_factory = _sql.Row
-    cur = conn.cursor()
-    cur.execute("PRAGMA table_info(annotated_words)")
-    cols = [r[1] for r in cur.fetchall()]
-    cur.execute("SELECT * FROM annotated_words ORDER BY id DESC LIMIT 5")
-    newest = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT * FROM annotated_words WHERE (en IS NULL OR en='') AND (ru IS NULL OR ru='') LIMIT 5")
-    empty_en_ru = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT COUNT(*) FROM annotated_words WHERE (en IS NULL OR en='') AND (ru IS NULL OR ru='')")
-    empty_count = cur.fetchone()[0]
-    conn.close()
-    return {"columns": cols, "newest": newest, "empty_en_ru_count": empty_count, "empty_sample": empty_en_ru}
-
-
-@router.post("/_diag/cleanup-annotated")
-async def diag_cleanup_annotated():
-    """TEMPORARY PUBLIC — delete annotated_words rows where EN, RU and all
-    3 descriptions (en/ru/uz) are empty or missing. Keeps rows that at
-    least have uz+description_uz or any multilingual content."""
-    import sqlite3 as _sql, os as _os
-    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
-    conn = _sql.connect(db_p)
-    cur = conn.cursor()
-
-    def _norm(col):
-        # Empty/'—'/'-'/'None'/'nan' style placeholders
-        return (
-            f"({col} IS NULL OR TRIM(COALESCE({col},'')) IN ('', '—', '-', 'None', 'nan', 'NaN', '—', '–'))"
-        )
-
-    where = " AND ".join([
-        _norm("en"),
-        _norm("ru"),
-        _norm("description_en"),
-        _norm("description_ru"),
-        _norm("description_uz"),
-    ])
-    cur.execute(f"SELECT COUNT(*) FROM annotated_words WHERE {where}")
-    to_delete = cur.fetchone()[0]
-    cur.execute(f"DELETE FROM annotated_words WHERE {where}")
-    deleted = cur.rowcount
-    cur.execute("SELECT COUNT(*) FROM annotated_words")
-    remaining = cur.fetchone()[0]
-    conn.commit()
-    conn.close()
-    return {"matched": to_delete, "deleted": deleted, "remaining": remaining}
 
 
 @router.get("/data-files/check")
