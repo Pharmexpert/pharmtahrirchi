@@ -14,7 +14,7 @@ import logging
 
 log = logging.getLogger("import_pharma_reports")
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "pharmacopoeia")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "source_data", "pharmacopoeia")
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pharma_editor.db"))
 
 

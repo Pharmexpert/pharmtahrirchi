@@ -466,26 +466,17 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
 
 
 @router.get("/data-files/check")
-async def check_data_files():
-    """PUBLIC diag — no auth. Report which backend/data/* source files exist."""
+async def check_data_files(current_user: dict = Depends(get_admin_user)):
+    """Report which source_data/* files exist. Source files live OUTSIDE the
+    persistent Volume (/app/data) which only holds DB + uploads."""
     import os as _os
-    base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data")
-    # Diagnostic: list what's actually at the base dir and try alt locations
+    base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "source_data")
     diag = {
         "cwd": _os.getcwd(),
-        "__file__": _os.path.abspath(__file__),
         "base": base,
         "base_exists": _os.path.isdir(base),
         "base_listing": sorted(_os.listdir(base))[:50] if _os.path.isdir(base) else [],
     }
-    # Try alt locations if base missing
-    if not diag["base_exists"]:
-        for alt in ("/app/backend/data", "/app/data", "./backend/data", "./data"):
-            if _os.path.isdir(alt):
-                base = _os.path.abspath(alt)
-                diag["base_resolved_to"] = base
-                diag["base_listing"] = sorted(_os.listdir(base))[:50]
-                break
     files = {
         "pharma_db/toc.xlsx": "ДФ мундарижаси",
         "pharma_db/drug_registry.xls": "Давлат реестри",

@@ -26,7 +26,7 @@ DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__fi
 
 DEFAULT_DATA_DIR = Path(os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "pharmacopoeia"
+    "source_data", "pharmacopoeia"
 ))
 
 

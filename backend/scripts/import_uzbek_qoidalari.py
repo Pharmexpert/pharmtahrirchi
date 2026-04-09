@@ -20,7 +20,7 @@ log = logging.getLogger()
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
 DATA_DIR = Path(os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "uzbek_qoidalari"
+    "source_data", "uzbek_qoidalari"
 ))
 
 MARKDOWN_FILE = DATA_DIR / "uzbek_til_qoidalari_va_xatolar.md"

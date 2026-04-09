@@ -17,7 +17,7 @@ log = logging.getLogger()
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
 DATA_DIR = Path(os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "pharma_db"
+    "source_data", "pharma_db"
 ))
 
 
