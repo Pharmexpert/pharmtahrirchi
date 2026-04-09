@@ -268,70 +268,86 @@ async def update_linguistic_item(category: str, item_id: int, payload: Dict[str,
 
 @router.get("/all")
 async def get_all_linguistic_data(q: str = Query(None), current_user: Dict = Depends(get_current_user)):
-    """Get linguistic data with optional keyword search."""
+    """Get linguistic data — dual-script search (Cyr ↔ Lat)."""
     conn = db.connect_db()
     conn.row_factory = db.sqlite3.Row
     cursor = conn.cursor()
-    
-    search_clause = ""
-    params = []
+
+    # Build dual-script search variants
+    search_variants = []
     if q:
-        search_clause = " WHERE en LIKE ? OR ru LIKE ? OR uz LIKE ? "
-        params = [f"%{q}%", f"%{q}%", f"%{q}%"]
+        search_variants = [q]
+        try:
+            import dual_script
+            detected = dual_script.detect_script(q)
+            if detected == "cyr":
+                lat = dual_script.to_latin(q)
+                if lat: search_variants.append(lat)
+            elif detected == "lat":
+                cyr = dual_script.to_cyrillic(q)
+                if cyr: search_variants.append(cyr)
+        except Exception:
+            pass
+
+    def _build_search(columns: list) -> tuple:
+        """Return (where_clause, params) for dual-script search across columns."""
+        if not search_variants:
+            return "", []
+        or_clauses = []
+        params = []
+        for v in search_variants:
+            like = f"%{v}%"
+            col_clause = " OR ".join(f"{c} LIKE ?" for c in columns)
+            or_clauses.append(f"({col_clause})")
+            params.extend([like] * len(columns))
+        return " WHERE " + " OR ".join(or_clauses), params
 
     # 1. Annotated
+    an_where, an_params = _build_search(["en", "ru", "uz"])
     cursor.execute(f"""
-        SELECT a.*, 
+        SELECT a.*,
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM annotated_words a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN users m ON a.modified_by_id = m.id
-        {search_clause}
+        {an_where}
         ORDER BY a.created_at DESC
-    """, params)
+    """, an_params)
     annotated = [dict(r) for r in cursor.fetchall()]
-    
+
     # 2. Disputed
     cursor.execute(f"""
-        SELECT d.*, 
+        SELECT d.*,
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM disputed_words d
         LEFT JOIN users u ON d.user_id = u.id
         LEFT JOIN users m ON d.modified_by_id = m.id
-        {search_clause}
+        {an_where}
         ORDER BY d.created_at DESC
-    """, params)
+    """, an_params)
     disputed = [dict(r) for r in cursor.fetchall()]
-    
-    # 3. Abbreviations
-    abbrev_search = ""
-    abbrev_params = []
-    if q:
-        abbrev_search = " WHERE short_form LIKE ? OR long_en LIKE ? OR long_ru LIKE ? OR long_uz LIKE ? "
-        abbrev_params = [f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"]
 
+    # 3. Abbreviations — dual-script
+    ab_where, ab_params = _build_search(["short_form", "long_en", "long_ru", "long_uz"])
     cursor.execute(f"""
-        SELECT b.*, 
+        SELECT b.*,
                u.name as user_name, u.email as user_email,
                m.name as modified_by_name, m.email as modified_by_email
         FROM abbreviations b
         LEFT JOIN users u ON b.user_id = u.id
         LEFT JOIN users m ON b.modified_by_id = m.id
-        {abbrev_search}
+        {ab_where}
         ORDER BY b.created_at DESC
-    """, abbrev_params)
+    """, ab_params)
     abbreviations = [dict(r) for r in cursor.fetchall()]
-    
-    # 4. Paragraphs (Search in en_text/ru_text/uz_text)
-    para_search = ""
-    if q:
-        para_search = " WHERE en_text LIKE ? OR ru_text LIKE ? OR uz_text LIKE ? "
-    
+
+    # 4. Paragraphs — dual-script search
+    pa_where, pa_params = _build_search(["en_text", "ru_text", "uz_text"])
     cursor.execute(f"""
-        SELECT * FROM paragraphs_dashboard {para_search} ORDER BY created_at DESC
-    """, params)
+        SELECT * FROM paragraphs_dashboard {pa_where} ORDER BY created_at DESC
+    """, pa_params)
     paragraphs = [dict(r) for r in cursor.fetchall()]
     
     conn.close()

@@ -85,11 +85,30 @@ async def export_rules_xlsx(lang: str = None, current_user: dict = Depends(get_a
 
 @router.get("/rules")
 async def get_all_rules(lang: str = None, q: str = None, current_user: dict = Depends(get_current_user)):
-    """Retrieve all rules for administration with filtering (read-only for all users)."""
+    """Retrieve all rules — dual-script search (Cyr ↔ Lat)."""
     rules = db.get_all_rules(lang or 'uz', limit=100000)
     if q:
-        q = q.lower()
-        rules = [r for r in rules if q in r['wrong_form'].lower() or q in r['correct_form'].lower() or q in (r.get('context') or '').lower()]
+        search_variants = [q.lower()]
+        try:
+            import dual_script
+            detected = dual_script.detect_script(q)
+            if detected == "cyr":
+                lat = dual_script.to_latin(q)
+                if lat: search_variants.append(lat.lower())
+            elif detected == "lat":
+                cyr = dual_script.to_cyrillic(q)
+                if cyr: search_variants.append(cyr.lower())
+        except Exception:
+            pass
+        rules = [
+            r for r in rules
+            if any(
+                v in r['wrong_form'].lower()
+                or v in r['correct_form'].lower()
+                or v in (r.get('context') or '').lower()
+                for v in search_variants
+            )
+        ]
     return {"rules": rules, "total": len(rules)}
 
 @router.post("/rules")
@@ -440,7 +459,7 @@ async def import_disputed_board_route(current_user: dict = Depends(get_admin_use
 
 @router.get("/disputed-board")
 async def list_disputed_board(q: str = None, limit: int = 500, current_user: dict = Depends(get_current_user)):
-    """List editorial-approved disputed terms. All users can view."""
+    """List editorial-approved disputed terms — dual-script search."""
     import sqlite3 as _sql, os as _os
     db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
     conn = _sql.connect(db_p)
@@ -448,13 +467,31 @@ async def list_disputed_board(q: str = None, limit: int = 500, current_user: dic
     cur = conn.cursor()
     try:
         if q:
-            like = f"%{q}%"
-            cur.execute("""
+            search_variants = [q]
+            try:
+                import dual_script
+                detected = dual_script.detect_script(q)
+                if detected == "cyr":
+                    lat = dual_script.to_latin(q)
+                    if lat: search_variants.append(lat)
+                elif detected == "lat":
+                    cyr = dual_script.to_cyrillic(q)
+                    if cyr: search_variants.append(cyr)
+            except Exception:
+                pass
+            or_clauses = []
+            params: list = []
+            for v in search_variants:
+                like = f"%{v}%"
+                or_clauses.append("(ru_term LIKE ? OR proposed_variant LIKE ? OR definition_uz LIKE ? OR existing_variants LIKE ?)")
+                params.extend([like, like, like, like])
+            params.append(limit)
+            cur.execute(f"""
                 SELECT * FROM disputed_board
-                WHERE ru_term LIKE ? OR proposed_variant LIKE ? OR definition_uz LIKE ? OR existing_variants LIKE ?
+                WHERE {' OR '.join(or_clauses)}
                 ORDER BY COALESCE(updated_at, created_at) DESC, seq_no ASC
                 LIMIT ?
-            """, (like, like, like, like, limit))
+            """, params)
         else:
             cur.execute("""
                 SELECT * FROM disputed_board
@@ -581,14 +618,34 @@ async def drug_registry(q: str = None, country: str = None, atc: str = None, lim
 
 @router.get("/pharma-db/colors")
 async def colors_table(q: str = None, limit: int = 500, current_user: dict = Depends(get_current_user)):
-    """Colors table (uz/ru/en)."""
+    """Colors table — dual-script search."""
     conn = _pharma_db_conn()
     cur = conn.cursor()
     try:
         if q:
-            like = f"%{q}%"
-            cur.execute("SELECT * FROM colors_table WHERE uz LIKE ? OR ru LIKE ? OR en LIKE ? ORDER BY seq_no LIMIT ?",
-                        (like, like, like, limit))
+            search_variants = [q]
+            try:
+                import dual_script
+                detected = dual_script.detect_script(q)
+                if detected == "cyr":
+                    lat = dual_script.to_latin(q)
+                    if lat: search_variants.append(lat)
+                elif detected == "lat":
+                    cyr = dual_script.to_cyrillic(q)
+                    if cyr: search_variants.append(cyr)
+            except Exception:
+                pass
+            or_clauses = []
+            params: list = []
+            for v in search_variants:
+                like = f"%{v}%"
+                or_clauses.append("(uz LIKE ? OR ru LIKE ? OR en LIKE ?)")
+                params.extend([like, like, like])
+            params.append(limit)
+            cur.execute(
+                f"SELECT * FROM colors_table WHERE {' OR '.join(or_clauses)} ORDER BY seq_no LIMIT ?",
+                params
+            )
         else:
             cur.execute("SELECT * FROM colors_table ORDER BY seq_no LIMIT ?", (limit,))
         rows = [dict(r) for r in cur.fetchall()]
