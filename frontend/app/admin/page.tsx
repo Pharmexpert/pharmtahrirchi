@@ -346,6 +346,9 @@ export default function AdminPage() {
               ['📝 Ўзбек тили қоидалари (.md)', () => api.admin.importUzbekQoidalari()],
               ['⚖️ Мунозарали сўзлар кенгаши (234)', () => api.admin.importDisputedBoard()],
               ['💎 ДФ ҳисоботлари (глоссарий 4849 + хатолар)', () => api.admin.importPharmaReports()],
+              ['🌐 AI таржима: 100 та (UZ → EN + RU)', () => api.admin.translateAnnotatedBatch(100)],
+              ['🌐 AI таржима: 500 та (UZ → EN + RU)', () => api.admin.translateAnnotatedBatch(500)],
+              ['🌐 AI таржима: 2000 та (UZ → EN + RU)', () => api.admin.translateAnnotatedBatch(2000)],
             ].map(([label, fn]) => (
               <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
                 style={{

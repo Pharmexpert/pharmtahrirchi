@@ -465,6 +465,26 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
+@router.post("/annotated/translate-batch")
+async def translate_annotated_batch(
+    limit: int = 100,
+    current_user: dict = Depends(get_admin_user),
+):
+    """Batch-translate annotated_words rows missing EN/RU via Claude Haiku.
+    Uses description_uz as source. Processes `limit` rows per invocation
+    (default 100). Admin can call repeatedly until remaining_after == 0."""
+    try:
+        import sys as _sys, os as _os
+        sd = _os.path.join(_os.path.dirname(__file__), "scripts")
+        if sd not in _sys.path:
+            _sys.path.insert(0, sd)
+        import translate_annotated
+        return {"success": True, **translate_annotated.run(limit=limit)}
+    except Exception as e:
+        import traceback
+        return {"success": False, "error": str(e), "trace": traceback.format_exc()[-1500:]}
+
+
 
 
 @router.get("/data-files/check")

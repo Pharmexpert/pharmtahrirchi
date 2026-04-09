@@ -425,6 +425,7 @@ export const admin = {
   importIzohliLugat: () => post<any>('/api/admin/izohli-lugat/import', {}),
   importSiUnits: () => post<any>('/api/admin/si-units/import', {}),
   importUzbekQoidalari: () => post<any>('/api/admin/uzbek-qoidalari/import', {}),
+  translateAnnotatedBatch: (limit = 100) => post<{ success: boolean; processed?: number; updated?: number; remaining_before?: number; remaining_after?: number; error?: string }>(`/api/admin/annotated/translate-batch?limit=${limit}`, {}),
   dataFilesCheck: () => get<{ files: any[]; total: number; present: number; missing: number }>('/api/admin/data-files/check'),
   pharmaToc: (q = '', edition = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/toc?${new URLSearchParams({ q, edition }).toString()}`),
   pharmaRegistry: (q = '', country = '', atc = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/registry?${new URLSearchParams({ q, country, atc }).toString()}`),
