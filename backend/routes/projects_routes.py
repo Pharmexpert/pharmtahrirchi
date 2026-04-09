@@ -331,7 +331,42 @@ async def get_specialists():
 
 @router.get("/api/synonyms")
 async def get_synonyms_list(word: str = None, lang: str = None, grouped: str = None, current_user: Dict = Depends(get_current_user)):
-    syns = db.get_synonyms(word=word, lang=lang, limit=10000000)
+    # Dual-script lookup: if user queries 'китоб' (Cyrillic) but DB has 'kitob' (Latin),
+    # try both variants and merge results.
+    syns = []
+    tried_variants = set()
+
+    def try_query(w):
+        if not w or w in tried_variants:
+            return []
+        tried_variants.add(w)
+        return db.get_synonyms(word=w, lang=lang, limit=10000000) or []
+
+    if word:
+        # Primary query
+        syns = try_query(word)
+
+        # If no results, try script conversion
+        if not syns:
+            try:
+                import dual_script
+                detected = dual_script.detect_script(word)
+                if detected == 'cyr':
+                    lat_variant = dual_script.to_latin(word)
+                    if lat_variant and lat_variant != word:
+                        syns = try_query(lat_variant)
+                elif detected == 'lat':
+                    cyr_variant = dual_script.to_cyrillic(word)
+                    if cyr_variant and cyr_variant != word:
+                        syns = try_query(cyr_variant)
+            except Exception:
+                pass
+
+        # If still no results, try lowercase
+        if not syns and word.lower() != word:
+            syns = try_query(word.lower())
+    else:
+        syns = db.get_synonyms(word=None, lang=lang, limit=10000000)
 
     if grouped == "true":
         # Group synonyms by word: word → [synonym1, synonym2, ...]
