@@ -42,6 +42,15 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'seed'>('all')
   const [seedLog, setSeedLog] = useState<string[]>([])
   const [seedBusy, setSeedBusy] = useState<string | null>(null)
+  const [dataFiles, setDataFiles] = useState<any>(null)
+  const checkDataFiles = async () => {
+    try {
+      const r = await api.admin.dataFilesCheck()
+      setDataFiles(r)
+    } catch (e: any) {
+      setSeedLog(prev => [`❌ data-files check: ${e?.message || e}`, ...prev])
+    }
+  }
   const runSeed = async (label: string, fn: () => Promise<any>) => {
     setSeedBusy(label)
     setSeedLog(prev => [`▶ ${label}…`, ...prev])
@@ -285,6 +294,30 @@ export default function AdminPage() {
           <p style={{ color: '#64748B', fontSize: '0.85rem', marginBottom: '20px' }}>
             Бу тугмалар DB'га янги маълумотларни импорт қилади (idempotent — қайта босиш зарарсиз).
           </p>
+          <div style={{ marginBottom: 20, padding: 14, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <strong style={{ color: '#0F172A' }}>📂 Манба файллар (серверда)</strong>
+              <button onClick={checkDataFiles} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #0EA5E9', background: '#E0F2FE', color: '#0369A1', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}>
+                🔍 Текшириш
+              </button>
+            </div>
+            {dataFiles ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 6, fontSize: '0.75rem' }}>
+                <div style={{ gridColumn: '1/-1', fontSize: '0.75rem', color: '#64748B', marginBottom: 4 }}>
+                  Топилди: <strong style={{ color: '#059669' }}>{dataFiles.present}</strong> / Етишмайди: <strong style={{ color: '#DC2626' }}>{dataFiles.missing}</strong>
+                </div>
+                {dataFiles.files.map((f: any) => (
+                  <div key={f.path} style={{ display: 'flex', gap: 6, padding: '4px 8px', background: f.exists ? '#F0FDF4' : '#FEF2F2', borderRadius: 6, border: `1px solid ${f.exists ? '#BBF7D0' : '#FECACA'}` }}>
+                    <span>{f.exists ? '✅' : '❌'}</span>
+                    <span style={{ flex: 1, color: '#334155' }}>{f.label}</span>
+                    <span style={{ color: '#64748B' }}>{f.exists ? `${f.size_kb} KB` : '—'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#94A3B8', fontSize: '0.78rem' }}>Файлларни текшириш учун юқоридаги тугмани босинг</div>
+            )}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
             {[
               ['kmashrab wordlist', () => api.admin.importKmashrab()],
@@ -308,6 +341,11 @@ export default function AdminPage() {
               ['📘 ДФ мундарижаси (toc.xlsx)', () => api.admin.importPharmaDb()],
               ['💊 Давлат реестри (drug_registry)', () => api.admin.importPharmaDb()],
               ['🎨 Ранглар жадвали (colors.xlsx)', () => api.admin.importPharmaColors()],
+              ['📖 Изоҳли луғат (docx → definitions)', () => api.admin.importIzohliLugat()],
+              ['📏 СИ бирликлар (услуб қоидалар)', () => api.admin.importSiUnits()],
+              ['📝 Ўзбек тили қоидалари (.md)', () => api.admin.importUzbekQoidalari()],
+              ['⚖️ Мунозарали сўзлар кенгаши (234)', () => api.admin.importDisputedBoard()],
+              ['💎 ДФ ҳисоботлари (глоссарий 4849 + хатолар)', () => api.admin.importPharmaReports()],
             ].map(([label, fn]) => (
               <button key={label as string} disabled={!!seedBusy} onClick={() => runSeed(label as string, fn as any)}
                 style={{

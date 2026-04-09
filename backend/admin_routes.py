@@ -429,6 +429,76 @@ async def import_pharmacopoeia_route(current_user: dict = Depends(get_admin_user
         return {"success": False, "error": str(e)}
 
 
+@router.post("/pharma-reports/import")
+async def import_pharma_reports_route(current_user: dict = Depends(get_admin_user)):
+    """Import 3 previously-unused pharmacopoeia reports: glossary, jildlar, linguistic."""
+    try:
+        return {"success": True, **_run_script("import_pharma_reports")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/izohli-lugat/import")
+async def import_izohli_lugat_route(current_user: dict = Depends(get_admin_user)):
+    """Import Izohli lugat (annotated dictionary) .docx into definitions table."""
+    try:
+        return {"success": True, **_run_script("import_izohli_lugat")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/si-units/import")
+async def import_si_units_route(current_user: dict = Depends(get_admin_user)):
+    """Import SI units style rules from .doc/.docx files."""
+    try:
+        return {"success": True, **_run_script("import_si_units_style")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/uzbek-qoidalari/import")
+async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_user)):
+    """Import Uzbek spelling/grammar rules from markdown tables."""
+    try:
+        return {"success": True, **_run_script("import_uzbek_qoidalari")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/data-files/check")
+async def check_data_files(current_user: dict = Depends(get_admin_user)):
+    """Report which backend/data/* source files exist on this server + sizes."""
+    import os as _os
+    base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data")
+    files = {
+        "pharma_db/toc.xlsx": "ДФ мундарижаси",
+        "pharma_db/drug_registry.xls": "Давлат реестри",
+        "colors_table/colors_table.xlsx": "Ранглар жадвали",
+        "pharmacopoeia/glossary_report.xlsx": "Фармакопея глоссарийси (4849)",
+        "pharmacopoeia/jildlar_tahlil_hisoboti.xlsx": "Жилдлар таҳлил ҳисоботи",
+        "pharmacopoeia/linguistic_analysis_report.xlsx": "Лингвистик таҳлил ҳисоботи",
+        "izohli_lugat/izohli_lugat.docx": "Изоҳли луғат",
+        "disputed_board/disputed_board.docx": "Мунозарали сўзлар кенгаши",
+        "si_units/pharma_ch1.docx": "СИ бирликлар (боб 1)",
+        "si_units/si_units_resolution.doc": "СИ бирликлар (қарор)",
+        "uzbek_qoidalari/uzbek_til_qoidalari_va_xatolar.md": "Ўзбек тили қоидалари (МД)",
+    }
+    result = []
+    for rel, label in files.items():
+        full = _os.path.join(base, rel)
+        exists = _os.path.exists(full)
+        size = _os.path.getsize(full) if exists else 0
+        result.append({
+            "path": rel,
+            "label": label,
+            "exists": exists,
+            "size": size,
+            "size_kb": round(size / 1024, 1) if size else 0,
+        })
+    present = sum(1 for r in result if r["exists"])
+    return {"files": result, "total": len(result), "present": present, "missing": len(result) - present}
+
+
 @router.post("/bertbek/info")
 async def bertbek_info_route(current_user: dict = Depends(get_admin_user)):
     """Get BERTbek engine status."""
