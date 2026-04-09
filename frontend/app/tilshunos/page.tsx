@@ -1101,24 +1101,27 @@ export default function TilshunosPage() {
       ) : (
         /* ───────── WORD MODE (docx-preview) ───────── */
         <WordMode
-          onRunSayqallash={async (text) => {
-            if (!text.trim()) { alert('Матн танланмаган'); return }
+          onRunSayqallash={async (txt) => {
+            if (!txt || !txt.trim()) { alert('⚠ Матн бўш. Ҳужжатдан матнни танланг ёки кутинг matn yuklansin.'); return }
             try {
-              const res: any = await api.sayqallash.check(text, 'uz')
-              const cnt = (res?.annotations || []).length
-              alert(`🧠 Сайқаллаш натижаси: ${cnt} та таклиф топилди`)
-            } catch { alert('Xatolik') }
+              const res: any = await api.analyze.full(txt.slice(0, 5000), 'uz', ['sayqallash', 'style'])
+              const say = (res?.sayqallash || []).length
+              const sty = (res?.style || []).length
+              alert(`✅ Сайқаллаш + Style натижа:\n\n• Имло / қоидалар: ${say} та\n• Style Guide: ${sty} та\n\nУмумий: ${say + sty}`)
+            } catch (e: any) { alert('❌ Сайқаллаш xatosi: ' + (e?.message || 'тармоқ xatosi')) }
           }}
-          onRunSyntax={async (text) => {
-            if (!text.trim()) { alert('Матн танланмаган'); return }
+          onRunSyntax={async (txt) => {
+            if (!txt || !txt.trim()) { alert('⚠ Матн бўш'); return }
             try {
-              const res: any = await api.syntax.check(text)
-              alert(`📐 Синтаксис: ${res.count || 0} та xato аниқланди`)
-            } catch { alert('Xatolik') }
+              const res: any = await api.analyze.full(txt.slice(0, 5000), 'uz', ['syntax', 'morph'])
+              const syn = (res?.syntax || []).length
+              const mor = (res?.morph || []).length
+              alert(`✅ Синтаксис натижа:\n\n• Гап тузилиши xatoлари: ${syn} та\n• Сўз таҳлили: ${mor} та\n\nБатафсил: /syntax саҳифасига ўтинг.`)
+            } catch (e: any) { alert('❌ Синтаксис xatosi: ' + (e?.message || 'тармоқ xatosi')) }
           }}
-          onRunTranslate={(text) => {
-            if (!text.trim()) { alert('Матн танланмаган'); return }
-            setSourceText(text)
+          onRunTranslate={(txt) => {
+            if (!txt || !txt.trim()) { alert('⚠ Матн бўш'); return }
+            setSourceText(txt.slice(0, 5000))
             setMode('translate')
           }}
         />

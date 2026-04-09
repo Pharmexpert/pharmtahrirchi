@@ -1,9 +1,19 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import { Loader2, FileText, Upload, X, ZoomIn, ZoomOut, Printer, Sparkles } from 'lucide-react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { Loader2, FileText, X, ZoomIn, ZoomOut, Printer, Sparkles } from 'lucide-react'
 
-// docx-preview is SSR-unsafe (uses DOM), import only in effect
+/**
+ * WordDocumentViewer — Stage 1 of Hybrid Word editor.
+ *
+ * Robust against React DOM conflicts:
+ *   - docx-preview renders into an **isolated DOM subtree** not managed by React
+ *   - React only sees a single empty div; all children are managed by us manually
+ *   - Clean unmount on file change or component unmount
+ *
+ * Key + remount strategy: when file changes, parent key forces unmount → clean React cleanup.
+ */
+
 type RenderAsyncFn = (file: Blob | ArrayBuffer | Uint8Array, container: HTMLElement, styleContainer?: HTMLElement | null, options?: any) => Promise<any>
 
 interface Props {
@@ -18,82 +28,6 @@ interface Props {
 }
 
 export default function WordDocumentViewer({ file, onTextExtracted, aiActions = [] }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [zoom, setZoom] = useState(100)
-  const [fullText, setFullText] = useState('')
-  const [selectedText, setSelectedText] = useState('')
-
-  useEffect(() => {
-    if (!file || !containerRef.current) return
-    let cancelled = false
-
-    const render = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        // Dynamic import (client-only)
-        const { renderAsync } = await import('docx-preview') as { renderAsync: RenderAsyncFn }
-
-        // Clear previous render
-        const container = containerRef.current!
-        container.innerHTML = ''
-
-        await renderAsync(file, container, null, {
-          className: 'docx-viewer',
-          inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-          ignoreFonts: false,
-          breakPages: true,
-          ignoreLastRenderedPageBreak: true,
-          experimental: true,
-          trimXmlDeclaration: true,
-          useBase64URL: false,
-          renderChanges: false,
-          renderHeaders: true,
-          renderFooters: true,
-          renderFootnotes: true,
-          renderEndnotes: true,
-          debug: false,
-        })
-
-        if (cancelled) return
-
-        // Extract plain text for AI
-        const text = (container.innerText || '').trim()
-        setFullText(text)
-        onTextExtracted?.(text)
-
-        // Apply initial zoom
-        container.style.transform = `scale(${zoom / 100})`
-        container.style.transformOrigin = 'top left'
-      } catch (err: any) {
-        console.error('Word render error:', err)
-        setError(err?.message || 'Word файлни рендеринг қилишда xato')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    render()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file])
-
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.style.transform = `scale(${zoom / 100})`
-      containerRef.current.style.transformOrigin = 'top left'
-    }
-  }, [zoom])
-
-  const handleSelection = () => {
-    const sel = window.getSelection()?.toString().trim() || ''
-    setSelectedText(sel)
-  }
-
   if (!file) {
     return (
       <div style={{
@@ -107,16 +41,107 @@ export default function WordDocumentViewer({ file, onTextExtracted, aiActions = 
     )
   }
 
+  // Force fresh mount when file changes
+  return <DocxViewerInner key={file.name + '_' + file.size + '_' + file.lastModified} file={file} onTextExtracted={onTextExtracted} aiActions={aiActions} />
+}
+
+function DocxViewerInner({ file, onTextExtracted, aiActions }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const renderRootRef = useRef<HTMLDivElement | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(100)
+  const [fullText, setFullText] = useState('')
+  const [selectedText, setSelectedText] = useState('')
+
+  useEffect(() => {
+    if (!file || !containerRef.current) return
+    let cancelled = false
+    const parent = containerRef.current
+
+    // Create an isolated child div that React doesn't touch
+    const renderRoot = document.createElement('div')
+    renderRoot.className = 'docx-render-root'
+    renderRoot.style.cssText = 'margin:0 auto; transform-origin:top left;'
+    parent.appendChild(renderRoot)
+    renderRootRef.current = renderRoot
+
+    const render = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const mod = await import('docx-preview') as { renderAsync: RenderAsyncFn }
+
+        if (cancelled || !renderRootRef.current) return
+
+        await mod.renderAsync(file!, renderRootRef.current, null, {
+          className: 'docx-viewer',
+          inWrapper: true,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: true,
+          experimental: true,
+          trimXmlDeclaration: true,
+          useBase64URL: false,
+          renderChanges: false,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+          renderEndnotes: true,
+          debug: false,
+        })
+
+        if (cancelled || !renderRootRef.current) return
+
+        // Extract plain text — use textContent which is more reliable than innerText
+        const text = (renderRootRef.current.textContent || '').replace(/\s+/g, ' ').trim()
+        setFullText(text)
+        onTextExtracted?.(text)
+      } catch (err: any) {
+        console.error('Word render error:', err)
+        if (!cancelled) setError(err?.message || 'Word файлни рендеринг қилишда xato')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    render()
+
+    return () => {
+      cancelled = true
+      // Safe cleanup: clear the render root (not the React-managed parent)
+      try {
+        if (renderRootRef.current && renderRootRef.current.parentNode) {
+          renderRootRef.current.parentNode.removeChild(renderRootRef.current)
+        }
+      } catch {}
+      renderRootRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file])
+
+  // Zoom effect — apply to the isolated render root only
+  useEffect(() => {
+    if (renderRootRef.current) {
+      renderRootRef.current.style.transform = `scale(${zoom / 100})`
+    }
+  }, [zoom])
+
+  const handleSelection = useCallback(() => {
+    try {
+      const sel = window.getSelection()?.toString().trim() || ''
+      setSelectedText(sel)
+    } catch {}
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         padding: '10px 14px', background: '#1E293B', color: 'white', borderRadius: '12px 12px 0 0',
-        position: 'sticky', top: 0, zIndex: 10,
       }}>
         <FileText size={16} color="#60A5FA" />
-        <span style={{ fontSize: '.82rem', fontWeight: 700, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+        <span style={{ fontSize: '.82rem', fontWeight: 700, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file!.name}</span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           <button onClick={() => setZoom(Math.max(50, zoom - 10))} style={tbBtn}><ZoomOut size={14} /></button>
@@ -127,7 +152,7 @@ export default function WordDocumentViewer({ file, onTextExtracted, aiActions = 
       </div>
 
       {/* AI Actions bar */}
-      {aiActions.length > 0 && (
+      {aiActions && aiActions.length > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
           padding: '10px 14px', background: '#F1F5F9', borderBottom: '1px solid #E2E8F0',
@@ -153,14 +178,15 @@ export default function WordDocumentViewer({ file, onTextExtracted, aiActions = 
         </div>
       )}
 
-      {/* Content */}
+      {/* Content — containerRef is a LEAF. React doesn't manage any children inside. */}
       <div
         style={{
-          background: '#E2E8F0', padding: 20, minHeight: 600,
+          background: '#E2E8F0', padding: 20, minHeight: 400,
           borderRadius: '0 0 12px 12px', overflow: 'auto', maxHeight: '75vh',
           position: 'relative',
         }}
         onMouseUp={handleSelection}
+        onDoubleClick={handleSelection}
       >
         {loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(226,232,240,0.9)', zIndex: 5 }}>
@@ -182,31 +208,34 @@ export default function WordDocumentViewer({ file, onTextExtracted, aiActions = 
             </div>
           </div>
         )}
-        <div ref={containerRef} style={{ transition: 'transform 0.2s', margin: '0 auto' }} />
+        <div ref={containerRef} />
       </div>
 
-      {/* Embedded stylesheet for docx-preview output */}
+      {/* Embedded stylesheet */}
       <style jsx global>{`
-        .docx-viewer {
+        .docx-render-root {
+          transition: transform 0.2s;
+        }
+        .docx-render-root .docx-viewer {
           background: white !important;
           box-shadow: 0 4px 20px rgba(0,0,0,.1);
           border-radius: 4px;
         }
-        .docx-viewer section.docx {
+        .docx-render-root .docx-viewer section.docx {
           background: white;
           padding: 20mm 25mm !important;
           margin: 0 auto 20px !important;
           box-shadow: 0 2px 12px rgba(0,0,0,.08);
         }
-        .docx-viewer table {
+        .docx-render-root table {
           border-collapse: collapse;
         }
-        .docx-viewer table td,
-        .docx-viewer table th {
+        .docx-render-root table td,
+        .docx-render-root table th {
           border: 1px solid #94a3b8;
         }
         @media print {
-          .docx-viewer section.docx {
+          .docx-render-root .docx-viewer section.docx {
             box-shadow: none;
             margin: 0 !important;
           }
