@@ -466,8 +466,8 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
 
 
 @router.get("/data-files/check")
-async def check_data_files(current_user: dict = Depends(get_admin_user)):
-    """Report which backend/data/* source files exist on this server + sizes."""
+async def check_data_files():
+    """PUBLIC diag — no auth. Report which backend/data/* source files exist."""
     import os as _os
     base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data")
     # Diagnostic: list what's actually at the base dir and try alt locations
