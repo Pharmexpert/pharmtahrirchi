@@ -465,6 +465,35 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
+@router.post("/_diag/cleanup-annotated")
+async def diag_cleanup_annotated():
+    """TEMPORARY PUBLIC — delete annotated_words rows where EN, RU and all
+    3 descriptions (en/ru/uz) are empty or missing. Keeps rows that at
+    least have uz+description_uz or any multilingual content."""
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    cur = conn.cursor()
+    # Condition: rows where en is empty AND ru is empty AND all description_* are empty
+    empty = "(? IS NULL OR TRIM(?) = '' OR TRIM(?) = '—')"
+    where = """
+        (en IS NULL OR TRIM(en) = '' OR TRIM(en) = '—')
+        AND (ru IS NULL OR TRIM(ru) = '' OR TRIM(ru) = '—')
+        AND (description_en IS NULL OR TRIM(description_en) = '' OR TRIM(description_en) = '—')
+        AND (description_ru IS NULL OR TRIM(description_ru) = '' OR TRIM(description_ru) = '—')
+        AND (description_uz IS NULL OR TRIM(description_uz) = '' OR TRIM(description_uz) = '—')
+    """
+    cur.execute(f"SELECT COUNT(*) FROM annotated_words WHERE {where}")
+    to_delete = cur.fetchone()[0]
+    cur.execute(f"DELETE FROM annotated_words WHERE {where}")
+    deleted = cur.rowcount
+    cur.execute("SELECT COUNT(*) FROM annotated_words")
+    remaining = cur.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return {"matched": to_delete, "deleted": deleted, "remaining": remaining}
+
+
 @router.get("/data-files/check")
 async def check_data_files(current_user: dict = Depends(get_admin_user)):
     """Report which source_data/* files exist. Source files live OUTSIDE the
