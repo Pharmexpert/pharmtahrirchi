@@ -465,51 +465,6 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
-@router.post("/_diag/run-import/{name}")
-async def diag_run_import(name: str):
-    """TEMPORARY PUBLIC — run an importer by short name. Remove after testing."""
-    allowed = {
-        "pharma_db": "import_pharma_db",
-        "colors": "import_colors_table",
-        "izohli": "import_izohli_lugat",
-        "disputed": "import_disputed_board",
-        "si_units": "import_si_units_style",
-        "qoidalari": "import_uzbek_qoidalari",
-        "reports": "import_pharma_reports",
-        "pharmacopoeia": "import_pharmacopoeia",
-    }
-    if name not in allowed:
-        return {"error": "unknown", "allowed": list(allowed.keys())}
-    try:
-        return {"success": True, "importer": name, "result": _run_script(allowed[name])}
-    except Exception as e:
-        import traceback
-        return {"success": False, "importer": name, "error": str(e), "trace": traceback.format_exc()[-2000:]}
-
-
-@router.get("/_diag/table-counts")
-async def diag_table_counts():
-    """TEMPORARY PUBLIC — show row counts of key tables."""
-    import sqlite3 as _sql, os as _os
-    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
-    conn = _sql.connect(db_p)
-    cur = conn.cursor()
-    tables = [
-        "pharma_toc", "drug_registry", "colors_table",
-        "annotated_words", "disputed_words", "disputed_board", "abbreviations",
-        "sayqallash_rules", "style_rules", "si_units",
-    ]
-    out = {}
-    for t in tables:
-        try:
-            cur.execute(f"SELECT COUNT(*) FROM {t}")
-            out[t] = cur.fetchone()[0]
-        except Exception as e:
-            out[t] = f"error: {e}"
-    conn.close()
-    return out
-
-
 @router.get("/data-files/check")
 async def check_data_files(current_user: dict = Depends(get_admin_user)):
     """Report which source_data/* files exist. Source files live OUTSIDE the
