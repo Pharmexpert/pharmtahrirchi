@@ -465,6 +465,81 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
+@router.get("/_diag/annotated-inspect")
+async def diag_annotated_inspect():
+    """TEMPORARY PUBLIC — inspect real row state to decide cleanup strategy."""
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    conn.row_factory = _sql.Row
+    cur = conn.cursor()
+    out = {}
+    # Count: rows where en, ru, description_en, description_ru ALL empty (regardless of description_uz)
+    cur.execute("""
+        SELECT COUNT(*) FROM annotated_words
+        WHERE (en IS NULL OR TRIM(en)='')
+          AND (ru IS NULL OR TRIM(ru)='')
+          AND (description_en IS NULL OR TRIM(description_en)='')
+          AND (description_ru IS NULL OR TRIM(description_ru)='')
+    """)
+    out["ui_empty_en_ru_and_desc_en_ru"] = cur.fetchone()[0]
+    # Same + description_uz ALSO empty (truly empty)
+    cur.execute("""
+        SELECT COUNT(*) FROM annotated_words
+        WHERE (en IS NULL OR TRIM(en)='')
+          AND (ru IS NULL OR TRIM(ru)='')
+          AND (description_en IS NULL OR TRIM(description_en)='')
+          AND (description_ru IS NULL OR TRIM(description_ru)='')
+          AND (description_uz IS NULL OR TRIM(description_uz)='')
+    """)
+    out["truly_empty"] = cur.fetchone()[0]
+    # Rows starting with 'учун'
+    cur.execute("SELECT COUNT(*) FROM annotated_words WHERE uz LIKE 'учун%'")
+    out["uz_starts_with_uchun"] = cur.fetchone()[0]
+    # Sample 5 such rows
+    cur.execute("SELECT id, uz, description_uz, source FROM annotated_words WHERE uz LIKE 'учун%' ORDER BY id ASC LIMIT 5")
+    out["sample_uchun"] = [dict(r) for r in cur.fetchall()]
+    # Sample 5 rows where ALL description_* are empty
+    cur.execute("""
+        SELECT id, uz, description_uz, source FROM annotated_words
+        WHERE (description_en IS NULL OR TRIM(description_en)='')
+          AND (description_ru IS NULL OR TRIM(description_ru)='')
+          AND (description_uz IS NULL OR TRIM(description_uz)='')
+        ORDER BY id ASC LIMIT 5
+    """)
+    out["sample_no_desc_at_all"] = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return out
+
+
+@router.post("/_diag/delete-empty-annotated")
+async def diag_delete_empty():
+    """TEMPORARY PUBLIC — delete rows that UI shows as — in ALL 3 columns
+    (ENGLISH, РУССКИЙ, ТАЪРИФ). After frontend fix ТАЪРИФ falls back to
+    description_uz, so we ONLY delete rows where description_uz is also
+    empty — keeping pharmacopoeia Uzbek definitions intact."""
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    cur = conn.cursor()
+    where = """
+        (en IS NULL OR TRIM(en) = '' OR TRIM(en) = '—')
+        AND (ru IS NULL OR TRIM(ru) = '' OR TRIM(ru) = '—')
+        AND (description_en IS NULL OR TRIM(description_en) = '' OR TRIM(description_en) = '—')
+        AND (description_ru IS NULL OR TRIM(description_ru) = '' OR TRIM(description_ru) = '—')
+        AND (description_uz IS NULL OR TRIM(description_uz) = '' OR TRIM(description_uz) = '—')
+    """
+    cur.execute(f"SELECT COUNT(*) FROM annotated_words WHERE {where}")
+    n = cur.fetchone()[0]
+    cur.execute(f"DELETE FROM annotated_words WHERE {where}")
+    deleted = cur.rowcount
+    cur.execute("SELECT COUNT(*) FROM annotated_words")
+    remaining = cur.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return {"matched": n, "deleted": deleted, "remaining": remaining}
+
+
 @router.post("/annotated/translate-batch")
 async def translate_annotated_batch(
     limit: int = 100,
