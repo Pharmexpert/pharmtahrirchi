@@ -48,6 +48,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Per-request enforcement: blocked / unapproved users cannot use the platform
+    # even with a valid existing JWT — this fixes the bug where users blocked
+    # by admin could keep working until their token expired.
+    if user.get("is_blocked"):
+        raise HTTPException(status_code=403, detail="Ҳисобингиз администратор томонидан чекланган")
+
+    if user.get("email") != "texnopharm@gmail.com" and user.get("status") and user.get("status") != "approved":
+        if user.get("status") == "pending":
+            raise HTTPException(status_code=403, detail="Ҳисобингиз ҳали тасдиқланмаган")
+        raise HTTPException(status_code=403, detail="Ҳисобингиз рад этилган")
+
     return user
 
 

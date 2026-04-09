@@ -95,6 +95,14 @@ async def get_me(request: Request):
     payload = verify_token(token)
     if not payload: raise HTTPException(status_code=401)
     user = db.get_user_by_id(payload["userId"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if user.get("is_blocked"):
+        raise HTTPException(status_code=403, detail="Ҳисобингиз администратор томонидан чекланган")
+    if user.get("email") != "texnopharm@gmail.com" and user.get("status") and user.get("status") != "approved":
+        if user.get("status") == "pending":
+            raise HTTPException(status_code=403, detail="Ҳисобингиз ҳали тасдиқланмаган")
+        raise HTTPException(status_code=403, detail="Ҳисобингиз рад этилган")
     return {"user": user}
 
 
