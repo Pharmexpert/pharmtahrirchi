@@ -475,10 +475,14 @@ async def diag_sample_annotated():
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(annotated_words)")
     cols = [r[1] for r in cur.fetchall()]
-    cur.execute("SELECT * FROM annotated_words ORDER BY id ASC LIMIT 5")
-    rows = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM annotated_words ORDER BY id DESC LIMIT 5")
+    newest = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM annotated_words WHERE (en IS NULL OR en='') AND (ru IS NULL OR ru='') LIMIT 5")
+    empty_en_ru = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) FROM annotated_words WHERE (en IS NULL OR en='') AND (ru IS NULL OR ru='')")
+    empty_count = cur.fetchone()[0]
     conn.close()
-    return {"columns": cols, "sample": rows}
+    return {"columns": cols, "newest": newest, "empty_en_ru_count": empty_count, "empty_sample": empty_en_ru}
 
 
 @router.post("/_diag/cleanup-annotated")
