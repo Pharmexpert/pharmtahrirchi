@@ -74,10 +74,13 @@ def import_toc(data_dir: Path = None) -> dict:
     """Import 2 sheets (1-нашр, 2-нашр) from ДФ мундарижаси."""
     import pandas as pd
     d = data_dir or DATA_DIR
-    p = d / "ДФ мундарижаси жадвали.xlsx"
+    # Try ASCII first, then Cyrillic fallback
+    p = d / "toc.xlsx"
     if not p.exists():
-        log.warning(f"TOC file not found: {p}")
-        return {"error": "file not found", "path": str(p)}
+        p = d / "ДФ мундарижаси жадвали.xlsx"
+    if not p.exists():
+        log.warning(f"TOC file not found in {d}")
+        return {"error": "file not found", "path": str(d)}
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -127,10 +130,13 @@ def import_registry(data_dir: Path = None) -> dict:
     """Import Davlat reestri (8287 rows)."""
     import pandas as pd
     d = data_dir or DATA_DIR
-    p = d / "Давлат реестри.xls"
+    # Try ASCII first
+    p = d / "drug_registry.xls"
     if not p.exists():
-        log.warning(f"Registry file not found: {p}")
-        return {"error": "file not found", "path": str(p)}
+        p = d / "Давлат реестри.xls"
+    if not p.exists():
+        log.warning(f"Registry file not found in {d}")
+        return {"error": "file not found", "path": str(d)}
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
