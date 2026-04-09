@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { BarChart3, Users, Database, Activity, BookOpen, Pill, Sparkles, TrendingUp, Calendar, Loader2 } from 'lucide-react'
+import { BarChart3, Users, Database, Activity, Pill, Sparkles, TrendingUp, Calendar, BookOpen, Loader2 } from 'lucide-react'
 import api from '../../../services/api'
 import { useAuth } from '../../../components/LoginGuard'
 
@@ -12,7 +12,6 @@ export default function MonitoringPage() {
   const [period, setPeriod] = useState<Period>('daily')
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
-  const [seeding, setSeeding] = useState(false)
 
   const load = async () => {
     if (!token) return
@@ -25,25 +24,6 @@ export default function MonitoringPage() {
   }
 
   useEffect(() => { load() }, [token, period])
-
-  const handleSeedRules = async () => {
-    if (!confirm('"Ona tili" китоб (М.Hamroyev, 2007) дан ўзбек тили қоидаларини импорт қилишни тасдиқлайсизми?')) return
-    setSeeding(true)
-    try {
-      const r = await api.admin.seedUzbekRules()
-      if (r.success) {
-        alert(`✓ Импорт тугади:
-- Имло қоидалари: +${r.spelling_rules_inserted || 0}
-- Жами Sayqallash: ${r.sayqallash_total || 0}
-- Терминлар: +${r.definitions_added || 0}
-- Қўшимчалар: +${r.suffixes_added || 0}`)
-        await load()
-      } else {
-        alert('Хато')
-      }
-    } catch (e: any) { alert('Хатолик: ' + (e?.message || e)) }
-    finally { setSeeding(false) }
-  }
 
   const StatCard = ({ icon: Icon, label, value, color, sub }: any) => (
     <div style={{
@@ -217,9 +197,6 @@ export default function MonitoringPage() {
           <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 800 }}>Мониторинг</h1>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Платформа фаолияти, фойдаланувчилар, AI ишлатилиши</p>
         </div>
-        <button onClick={handleSeedRules} disabled={seeding} style={{ padding: '10px 18px', borderRadius: 10, border: '1.5px solid #7C3AED', background: '#EDE9FE', color: '#7C3AED', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-          {seeding ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />} "Ona tili" китоб қоидаларини импорт қил
-        </button>
       </div>
 
       {/* Period tabs */}
