@@ -465,6 +465,22 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
+@router.get("/_diag/sample-annotated")
+async def diag_sample_annotated():
+    """TEMPORARY PUBLIC — return a few first rows so we can see the actual column contents."""
+    import sqlite3 as _sql, os as _os
+    db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
+    conn = _sql.connect(db_p)
+    conn.row_factory = _sql.Row
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(annotated_words)")
+    cols = [r[1] for r in cur.fetchall()]
+    cur.execute("SELECT * FROM annotated_words ORDER BY id ASC LIMIT 5")
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return {"columns": cols, "sample": rows}
+
+
 @router.post("/_diag/cleanup-annotated")
 async def diag_cleanup_annotated():
     """TEMPORARY PUBLIC — delete annotated_words rows where EN, RU and all
@@ -474,15 +490,20 @@ async def diag_cleanup_annotated():
     db_p = _os.getenv("DB_PATH", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "pharma_editor.db"))
     conn = _sql.connect(db_p)
     cur = conn.cursor()
-    # Condition: rows where en is empty AND ru is empty AND all description_* are empty
-    empty = "(? IS NULL OR TRIM(?) = '' OR TRIM(?) = '—')"
-    where = """
-        (en IS NULL OR TRIM(en) = '' OR TRIM(en) = '—')
-        AND (ru IS NULL OR TRIM(ru) = '' OR TRIM(ru) = '—')
-        AND (description_en IS NULL OR TRIM(description_en) = '' OR TRIM(description_en) = '—')
-        AND (description_ru IS NULL OR TRIM(description_ru) = '' OR TRIM(description_ru) = '—')
-        AND (description_uz IS NULL OR TRIM(description_uz) = '' OR TRIM(description_uz) = '—')
-    """
+
+    def _norm(col):
+        # Empty/'—'/'-'/'None'/'nan' style placeholders
+        return (
+            f"({col} IS NULL OR TRIM(COALESCE({col},'')) IN ('', '—', '-', 'None', 'nan', 'NaN', '—', '–'))"
+        )
+
+    where = " AND ".join([
+        _norm("en"),
+        _norm("ru"),
+        _norm("description_en"),
+        _norm("description_ru"),
+        _norm("description_uz"),
+    ])
     cur.execute(f"SELECT COUNT(*) FROM annotated_words WHERE {where}")
     to_delete = cur.fetchone()[0]
     cur.execute(f"DELETE FROM annotated_words WHERE {where}")
