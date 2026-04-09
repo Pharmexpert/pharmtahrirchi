@@ -23,6 +23,7 @@
 import React, { useState } from 'react'
 import { Loader2, Layers, Feather, BookOpen, FileCheck2, Sparkles } from 'lucide-react'
 import api from '../services/api'
+import AnnotatedTextView from './AnnotatedTextView'
 
 export interface AnalysisResult {
   morph: any[]
@@ -147,7 +148,14 @@ export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = fal
 
       {/* Detailed results panel — shows errors + suggestions */}
       {result && result.total > 0 && (
-        <ResultsPanel result={result} text={text} />
+        <div style={{ flex: '1 0 100%', marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <AnnotatedTextView text={text} result={result as any} />
+        </div>
+      )}
+      {result && result.total === 0 && text && text.trim() && (
+        <div style={{ flex: '1 0 100%', marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#DCFCE7', color: '#15803D', fontSize: '.78rem', fontWeight: 600 }}>
+          ✅ Xato topilmadi — матн toza
+        </div>
       )}
     </div>
   )
