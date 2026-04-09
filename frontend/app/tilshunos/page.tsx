@@ -8,6 +8,7 @@ import WordDocumentViewer from '../../components/WordDocumentViewer'
 import SuperDocEditor from '../../components/SuperDocEditor'
 import LinguisticAnalysisBar from '../../components/LinguisticAnalysisBar'
 import { useInlineSynonymPopup } from '../../components/InlineSynonymPopup'
+import ErrorBoundary from '../../components/ErrorBoundary'
 
 type Mode = 'edit' | 'translate' | 'word'
 type Lang = 'en' | 'ru' | 'uz-cyr' | 'uz-lat'
@@ -1496,54 +1497,28 @@ function WordMode({
       )}
 
       {subMode === 'preview' ? (
-        <WordDocumentViewer
-          file={file}
-          onTextExtracted={setFullText}
-          aiActions={[
-            {
-              label: 'Сайқаллаш',
-              icon: <Sparkles size={12} />,
-              color: '#8B5E3C',
-              onClick: (sel, full) => onRunSayqallash(sel || full),
-            },
-            {
-              label: 'Синтаксис',
-              icon: <Wand2 size={12} />,
-              color: '#7C3AED',
-              onClick: (sel, full) => onRunSyntax(sel || full),
-            },
-            {
-              label: 'Таржима',
-              icon: <ArrowRightLeft size={12} />,
-              color: '#059669',
-              onClick: (sel, full) => onRunTranslate(sel || full),
-            },
-          ]}
-        />
+        <ErrorBoundary name="Word Preview" compact>
+          <WordDocumentViewer
+            file={file}
+            onTextExtracted={setFullText}
+            aiActions={[
+              { label: 'Сайқаллаш', icon: <Sparkles size={12} />, color: '#8B5E3C', onClick: (sel, full) => onRunSayqallash(sel || full) },
+              { label: 'Синтаксис', icon: <Wand2 size={12} />, color: '#7C3AED', onClick: (sel, full) => onRunSyntax(sel || full) },
+              { label: 'Таржима', icon: <ArrowRightLeft size={12} />, color: '#059669', onClick: (sel, full) => onRunTranslate(sel || full) },
+            ]}
+          />
+        </ErrorBoundary>
       ) : (
-        <SuperDocEditor
-          file={file}
-          aiActions={[
-            {
-              label: 'Сайқаллаш',
-              icon: <Sparkles size={12} />,
-              color: '#8B5E3C',
-              onClick: (sel, full) => onRunSayqallash(sel || full),
-            },
-            {
-              label: 'Синтаксис',
-              icon: <Wand2 size={12} />,
-              color: '#7C3AED',
-              onClick: (sel, full) => onRunSyntax(sel || full),
-            },
-            {
-              label: 'Таржима',
-              icon: <ArrowRightLeft size={12} />,
-              color: '#059669',
-              onClick: (sel, full) => onRunTranslate(sel || full),
-            },
-          ]}
-        />
+        <ErrorBoundary name="SuperDoc Editor" compact>
+          <SuperDocEditor
+            file={file}
+            aiActions={[
+              { label: 'Сайқаллаш', icon: <Sparkles size={12} />, color: '#8B5E3C', onClick: (sel, full) => onRunSayqallash(sel || full) },
+              { label: 'Синтаксис', icon: <Wand2 size={12} />, color: '#7C3AED', onClick: (sel, full) => onRunSyntax(sel || full) },
+              { label: 'Таржима', icon: <ArrowRightLeft size={12} />, color: '#059669', onClick: (sel, full) => onRunTranslate(sel || full) },
+            ]}
+          />
+        </ErrorBoundary>
       )}
     </div>
   )

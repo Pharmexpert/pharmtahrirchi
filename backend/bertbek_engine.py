@@ -176,3 +176,63 @@ def info() -> dict:
         "pos_model": POS_MODEL_ID,
         "base_model": BASE_MODEL_ID,
     }
+
+
+def prewarm():
+    """Pre-load models in background to avoid first-call latency.
+    Called from main.py startup as asyncio.create_task(...).
+
+    Strategy:
+      1. Load POS model (~500 MB download first time, then cached)
+      2. Tag a dummy sentence to compile the graph
+      3. Load base model if BERTBEK_BASE_ENABLED=1
+      4. Write "ready" marker to /tmp so health endpoint can report
+    """
+    if not is_available():
+        logger.info("[bertbek] prewarm: not enabled or transformers missing")
+        return {"prewarmed": False, "reason": "not available"}
+    try:
+        logger.info("[bertbek] prewarm: starting POS model load...")
+        model, tok = _load_pos()
+        if model is None:
+            return {"prewarmed": False, "reason": "pos load failed"}
+        # Warm compile
+        try:
+            import torch
+            dummy = tok("Салом дунё", return_tensors="pt", truncation=True, max_length=16)
+            with torch.no_grad():
+                model(**{k: v for k, v in dummy.items() if k != "offset_mapping"})
+            logger.info("[bertbek] prewarm: POS warmup done")
+        except Exception as e:
+            logger.warning(f"[bertbek] prewarm POS warmup: {e}")
+
+        base_loaded = False
+        if os.getenv("BERTBEK_BASE_ENABLED", "0") == "1":
+            try:
+                bm, bt = _load_base()
+                if bm is not None:
+                    import torch
+                    with torch.no_grad():
+                        bm(**bt("Салом", return_tensors="pt"))
+                    base_loaded = True
+                    logger.info("[bertbek] prewarm: base model warmup done")
+            except Exception as e:
+                logger.warning(f"[bertbek] prewarm base: {e}")
+
+        # Write ready marker for health check
+        try:
+            with open("/tmp/bertbek_ready", "w") as f:
+                f.write("1")
+        except Exception:
+            pass
+        return {"prewarmed": True, "pos_loaded": True, "base_loaded": base_loaded}
+    except Exception as e:
+        logger.error(f"[bertbek] prewarm failed: {e}")
+        return {"prewarmed": False, "error": str(e)}
+
+
+async def prewarm_async():
+    """Async wrapper — runs blocking prewarm in thread."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, prewarm)

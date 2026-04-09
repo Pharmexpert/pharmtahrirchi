@@ -263,9 +263,17 @@ app.include_router(unified_analyze_router)
 # ═══════════════════════════════════════════════════
 @app.on_event("startup")
 async def auto_seed_databases():
-    """Seed databases in background to avoid Railway startup timeout."""
+    """Seed databases + pre-warm BERTbek in background."""
     import asyncio
     asyncio.create_task(_auto_seed_background())
+    # BERTbek pre-warm in parallel (downloads + compiles model)
+    try:
+        import bertbek_engine
+        if bertbek_engine.is_available():
+            asyncio.create_task(bertbek_engine.prewarm_async())
+            logger.info("[startup] BERTbek prewarm scheduled")
+    except Exception as e:
+        logger.warning(f"[startup] BERTbek prewarm skip: {e}")
 
 
 async def _auto_seed_background():
@@ -510,26 +518,52 @@ async def _auto_seed_background():
             except Exception as ee:
                 logger.warning(f"[post-process] uzbek_qoidalari failed: {ee}")
 
+            # 12a. wordlar-uz frequency list (~100K words) from HuggingFace
+            try:
+                conn_w = _db.connect_db()
+                cur_w = conn_w.cursor()
+                try:
+                    cur_w.execute("SELECT COUNT(*) FROM word_frequency_corpus WHERE source='wordlar_uz'")
+                    wcount = cur_w.fetchone()[0]
+                except Exception:
+                    wcount = 0
+                conn_w.close()
+                if wcount < 1000:
+                    import import_wordlar_uz
+                    r = import_wordlar_uz.main()
+                    logger.info(f"[post-process] wordlar_uz: {r}")
+            except Exception as ee:
+                logger.warning(f"[post-process] wordlar_uz failed: {ee}")
+
             # 12. Cleanup: remove user-assigned role pollution from sayqallash_rules
             # (legacy: old saveRule calls wrote "word/role" pairs as spelling rules)
             try:
                 import sqlite3 as _sql
                 _c = _sql.connect(_db.DB_PATH)
                 _cur = _c.cursor()
+                # STRICT cleanup: only delete rules matching the exact pollution pattern
+                # "word/role" with context containing "user-assigned role" AND source is 'user_save'/'user_assigned'
+                # This avoids deleting legitimate rules that happen to contain "ega" substring.
                 _cur.execute("""
                     DELETE FROM sayqallash_rules
-                    WHERE correct_form LIKE '%/ega%'
-                       OR correct_form LIKE '%/kesim%'
-                       OR correct_form LIKE '%/toldiruvchi%'
-                       OR correct_form LIKE '%/aniqlovchi%'
-                       OR correct_form LIKE '%/hol%'
-                       OR (context LIKE '%user-assigned role%')
+                    WHERE (
+                        correct_form GLOB '*/ega'
+                        OR correct_form GLOB '*/kesim'
+                        OR correct_form GLOB '*/toldiruvchi'
+                        OR correct_form GLOB '*/aniqlovchi'
+                        OR correct_form GLOB '*/hol'
+                        OR correct_form GLOB '*/other'
+                    )
+                    AND (
+                        COALESCE(context, '') LIKE '%user-assigned role%'
+                        OR COALESCE(source, '') IN ('user_save', 'user_assigned', 'user_edit')
+                    )
                 """)
                 deleted = _cur.rowcount
                 _c.commit()
                 _c.close()
                 if deleted > 0:
-                    logger.info(f"[post-process] cleanup: removed {deleted} role-pollution rules")
+                    logger.info(f"[post-process] cleanup: removed {deleted} role-pollution rules (strict GLOB)")
             except Exception as ee:
                 logger.warning(f"[post-process] cleanup failed: {ee}")
         except Exception as e:
