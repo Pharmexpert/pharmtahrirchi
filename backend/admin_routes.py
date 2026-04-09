@@ -470,6 +470,22 @@ async def check_data_files(current_user: dict = Depends(get_admin_user)):
     """Report which backend/data/* source files exist on this server + sizes."""
     import os as _os
     base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data")
+    # Diagnostic: list what's actually at the base dir and try alt locations
+    diag = {
+        "cwd": _os.getcwd(),
+        "__file__": _os.path.abspath(__file__),
+        "base": base,
+        "base_exists": _os.path.isdir(base),
+        "base_listing": sorted(_os.listdir(base))[:50] if _os.path.isdir(base) else [],
+    }
+    # Try alt locations if base missing
+    if not diag["base_exists"]:
+        for alt in ("/app/backend/data", "/app/data", "./backend/data", "./data"):
+            if _os.path.isdir(alt):
+                base = _os.path.abspath(alt)
+                diag["base_resolved_to"] = base
+                diag["base_listing"] = sorted(_os.listdir(base))[:50]
+                break
     files = {
         "pharma_db/toc.xlsx": "ДФ мундарижаси",
         "pharma_db/drug_registry.xls": "Давлат реестри",
@@ -496,7 +512,7 @@ async def check_data_files(current_user: dict = Depends(get_admin_user)):
             "size_kb": round(size / 1024, 1) if size else 0,
         })
     present = sum(1 for r in result if r["exists"])
-    return {"files": result, "total": len(result), "present": present, "missing": len(result) - present}
+    return {"files": result, "total": len(result), "present": present, "missing": len(result) - present, "diag": diag}
 
 
 @router.post("/bertbek/info")
