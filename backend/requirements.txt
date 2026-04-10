@@ -43,6 +43,11 @@ reportlab>=4.0.0
 # Phase 6: Nightly cron scheduler
 APScheduler>=3.10.0
 
+# OCR (Phase 6)
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
 # Testing
 pytest>=8.0.0
 httpx>=0.27.0
+anyio>=4.0.0

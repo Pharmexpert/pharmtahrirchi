@@ -1,6 +1,6 @@
 # Nixpacks config for Railway — adds build tools needed by llama-cpp-python
 [phases.setup]
-nixPkgs = ["python311", "gcc", "cmake", "pkg-config", "openblas"]
+nixPkgs = ["python311", "gcc", "cmake", "pkg-config", "openblas", "tesseract", "tesseract.langs.eng", "tesseract.langs.rus"]
 
 [phases.install]
 cmds = [
