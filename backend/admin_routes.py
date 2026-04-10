@@ -1500,3 +1500,24 @@ async def send_test_email(payload: Dict[str, Any] = None, request: Request = Non
         return {"success": bool(sent), "to": to_email, "configured": True}
     except Exception as e:
         return {"success": False, "error": str(e), "configured": True}
+
+
+@router.post("/annotated/delete-by-source")
+async def delete_annotated_by_source(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Delete annotated_words by source field. Admin only."""
+    sources = payload.get("sources", [])
+    if not sources:
+        raise HTTPException(status_code=400, detail="sources list required")
+    conn = db.connect_db()
+    cur = conn.cursor()
+    total_deleted = 0
+    for src in sources:
+        cur.execute("SELECT COUNT(*) FROM annotated_words WHERE source = ?", (src,))
+        count = cur.fetchone()[0]
+        cur.execute("DELETE FROM annotated_words WHERE source = ?", (src,))
+        total_deleted += count
+    conn.commit()
+    cur.execute("SELECT COUNT(*) FROM annotated_words")
+    remaining = cur.fetchone()[0]
+    conn.close()
+    return {"success": True, "deleted": total_deleted, "sources": sources, "remaining": remaining}
