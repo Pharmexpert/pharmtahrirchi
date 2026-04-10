@@ -28,6 +28,10 @@ export default function SynonymsPage() {
   const [editValue, setEditValue] = useState('')
   const [editingWord, setEditingWord] = useState<string | null>(null)
   const [editWordValue, setEditWordValue] = useState('')
+  const [inlineAddWord, setInlineAddWord] = useState<string | null>(null)
+  const [inlineAddLang, setInlineAddLang] = useState('uz')
+  const [inlineAddValue, setInlineAddValue] = useState('')
+  const [inlineAddSaving, setInlineAddSaving] = useState(false)
   const [page, setPage] = useState(0)
   const [perPage, setPerPage] = useState(25)
 
@@ -56,6 +60,18 @@ export default function SynonymsPage() {
       setNewWord(''); setNewSynonym(''); setShowAdd(false)
       fetchSynonyms()
     } catch { showToast('Хатолик', 'error') }
+  }
+
+  const handleInlineAdd = async (word: string, lang: string) => {
+    if (!inlineAddValue.trim()) return
+    setInlineAddSaving(true)
+    try {
+      await api.synonyms.save(word, inlineAddValue.trim(), lang)
+      showToast('Синоним қўшилди ✓')
+      setInlineAddWord(null); setInlineAddValue('')
+      fetchSynonyms()
+    } catch { showToast('Хатолик', 'error') }
+    finally { setInlineAddSaving(false) }
   }
 
   const handleDelete = async (id: number) => {
@@ -265,10 +281,27 @@ export default function SynonymsPage() {
                       </span>
                     )
                   ))}
-                  <button onClick={() => { setNewWord(g.word); setNewLang(g.lang); setNewSynonym(''); setShowAdd(true) }}
-                    style={{ padding: '4px 8px', borderRadius: '8px', border: '1px dashed #BBF7D0', background: 'transparent', color: '#16A34A', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 700 }}
-                    title="Янги синоним қўшиш"
-                  >+ қўшиш</button>
+                  {inlineAddWord === g.word && inlineAddLang === g.lang ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <input value={inlineAddValue} onChange={e => setInlineAddValue(e.target.value)} autoFocus
+                        placeholder="Синоним..."
+                        style={{ padding: '3px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '0.78rem', width: '120px' }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleInlineAdd(g.word, g.lang); if (e.key === 'Escape') { setInlineAddWord(null); setInlineAddValue('') } }}
+                        disabled={inlineAddSaving}
+                      />
+                      <button onClick={() => handleInlineAdd(g.word, g.lang)} disabled={inlineAddSaving || !inlineAddValue.trim()}
+                        style={{ padding: '2px 8px', borderRadius: '6px', border: 'none', background: '#16A34A', color: 'white', fontSize: '0.7rem', cursor: 'pointer', fontWeight: 700 }}>
+                        {inlineAddSaving ? '...' : '✓'}
+                      </button>
+                      <button onClick={() => { setInlineAddWord(null); setInlineAddValue('') }}
+                        style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #ccc', background: 'white', fontSize: '0.7rem', cursor: 'pointer' }}>✕</button>
+                    </span>
+                  ) : (
+                    <button onClick={() => { setInlineAddWord(g.word); setInlineAddLang(g.lang); setInlineAddValue('') }}
+                      style={{ padding: '4px 8px', borderRadius: '8px', border: '1px dashed #BBF7D0', background: 'transparent', color: '#16A34A', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 700 }}
+                      title="Янги синоним қўшиш"
+                    >+ қўшиш</button>
+                  )}
                 </div>
                 <span style={{
                   fontSize: '0.72rem', fontWeight: 700, padding: '4px 8px', borderRadius: '6px',
