@@ -285,8 +285,14 @@ def merge_and_count(db_pairs, systematic_pairs):
     return all_pairs
 
 
+MAX_REP_RULES = 30000  # Limit to prevent slow spylls parsing on Railway
+
+
 def inject_rep_into_aff(aff_path, pairs):
-    """Replace REP section in .aff file with new rules."""
+    """Replace REP section in .aff file with new rules (capped at MAX_REP_RULES)."""
+    # Prioritize: shorter pairs first (more likely to match), then DB pairs
+    sorted_pairs = sorted(pairs, key=lambda p: len(p[0]))[:MAX_REP_RULES]
+    pairs = set(sorted_pairs)
     with open(aff_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
