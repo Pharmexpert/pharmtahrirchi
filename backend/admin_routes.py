@@ -465,6 +465,16 @@ async def import_uzbek_qoidalari_route(current_user: dict = Depends(get_admin_us
         return {"success": False, "error": str(e)}
 
 
+@router.post("/promt-resources/import")
+async def import_promt_resources_route(current_user: dict = Depends(get_admin_user)):
+    """Import PROMT Expert NMT v23.2 resources: TMX, Abbreviations, Correction Rules, Transliteration."""
+    try:
+        return {"success": True, **_run_script("import_promt_resources")}
+    except Exception as e:
+        import traceback
+        return {"success": False, "error": str(e), "trace": traceback.format_exc()[-1500:]}
+
+
 @router.get("/_diag/annotated-inspect")
 async def diag_annotated_inspect():
     """TEMPORARY PUBLIC — inspect real row state to decide cleanup strategy."""
