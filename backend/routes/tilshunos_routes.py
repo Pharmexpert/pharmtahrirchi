@@ -711,6 +711,18 @@ async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_c
     if not text:
         return {"improved": ""}
     try:
+        # ──── TM check: if we've seen this exact text improved before, reuse it ────
+        try:
+            import tm_search
+            # For editing, we search TM with src_lang=lang, tgt_lang=lang (same-lang improvement)
+            tm_match = tm_search.best_match(text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved")
+            if tm_match and tm_match["score"] >= 0.95:
+                logger.info(f"[ai-improve] TM exact hit ({tm_match['score']}) — skipping AI")
+                return {"improved": tm_match["tgt_text"], "engine": "tm_exact", "tm_score": tm_match["score"]}
+        except Exception as e:
+            logger.debug(f"[ai-improve] TM search skip: {e}")
+        # ──── End TM ────
+
         # Russian → use specialized Russian corrector
         if lang == "ru" or lang.startswith("ru"):
             try:
@@ -743,7 +755,15 @@ async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_c
             "тиниш белгилари бўйича тузат. Структурани сақла. Фақат тузатилган матнни қайтар.\n\n" + text
         )
         out = await generate_ai_content(prompt, prefer="auto")
-        return {"improved": out or text, "engine": "cloud"}
+        result_text = out or text
+        # ──── TM learn: save successful AI edit for future reuse ────
+        if result_text and result_text != text:
+            try:
+                import tm_search
+                tm_search.save_to_tm(text, result_text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved", source="ai_improve")
+            except Exception:
+                pass
+        return {"improved": result_text, "engine": "cloud"}
     except Exception as e:
         logger.exception("ai-improve failed")
         raise HTTPException(status_code=500, detail=str(e))
