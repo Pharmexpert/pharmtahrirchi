@@ -470,6 +470,31 @@ async def _auto_seed_background():
             except Exception as ee:
                 logger.warning(f"[post-process] pharmacopoeia failed: {ee}")
 
+            # 4b. Cleanup: remove rows without specialist from disputed/abbreviations/annotated
+            try:
+                conn_cl = _db.connect_db()
+                cur_cl = conn_cl.cursor()
+                for tbl in ['disputed_words', 'abbreviations', 'annotated_words']:
+                    try:
+                        cur_cl.execute(f"DELETE FROM {tbl} WHERE user_id IS NULL OR TRIM(COALESCE(user_id,'')) = ''")
+                        d = cur_cl.rowcount
+                        if d > 0:
+                            logger.info(f"[post-process] cleanup {tbl}: removed {d} rows without specialist")
+                    except Exception:
+                        pass
+                # Also clear disputed_board entirely (user requested)
+                try:
+                    cur_cl.execute("DELETE FROM disputed_board")
+                    d = cur_cl.rowcount
+                    if d > 0:
+                        logger.info(f"[post-process] cleanup disputed_board: removed {d} rows")
+                except Exception:
+                    pass
+                conn_cl.commit()
+                conn_cl.close()
+            except Exception as ee:
+                logger.warning(f"[post-process] specialist cleanup failed: {ee}")
+
             # 5. Editorial-approved disputed words — DISABLED (user requested removal)
             # disputed_board table cleared by admin, skip auto-seed
             # try:
