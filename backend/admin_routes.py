@@ -1553,3 +1553,33 @@ async def clear_disputed_board(current_user: dict = Depends(get_admin_user)):
         return {"success": False, "error": str(e)}
     conn.close()
     return {"success": True, "deleted": count, "table": "disputed_board"}
+
+
+@router.post("/abbreviations/delete-no-specialist")
+async def delete_abbr_no_specialist(current_user: dict = Depends(get_admin_user)):
+    """Delete abbreviations rows where user_id is NULL or empty. Admin only."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM abbreviations WHERE user_id IS NULL OR TRIM(COALESCE(user_id,'')) = ''")
+    count = cur.fetchone()[0]
+    cur.execute("DELETE FROM abbreviations WHERE user_id IS NULL OR TRIM(COALESCE(user_id,'')) = ''")
+    conn.commit()
+    cur.execute("SELECT COUNT(*) FROM abbreviations")
+    remaining = cur.fetchone()[0]
+    conn.close()
+    return {"success": True, "deleted": count, "remaining": remaining, "table": "abbreviations"}
+
+
+@router.post("/annotated/delete-no-specialist")
+async def delete_annotated_no_specialist(current_user: dict = Depends(get_admin_user)):
+    """Delete annotated_words rows where user_id is NULL or empty. Admin only."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM annotated_words WHERE user_id IS NULL OR TRIM(COALESCE(user_id,'')) = ''")
+    count = cur.fetchone()[0]
+    cur.execute("DELETE FROM annotated_words WHERE user_id IS NULL OR TRIM(COALESCE(user_id,'')) = ''")
+    conn.commit()
+    cur.execute("SELECT COUNT(*) FROM annotated_words")
+    remaining = cur.fetchone()[0]
+    conn.close()
+    return {"success": True, "deleted": count, "remaining": remaining, "table": "annotated_words"}
