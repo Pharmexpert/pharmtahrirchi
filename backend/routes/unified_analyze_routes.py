@@ -19,6 +19,31 @@ router = APIRouter(prefix="/api/analyze", tags=["analyze"])
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
 
 
+def _detect_script(text: str) -> str:
+    """Detect if text is primarily Cyrillic or Latin."""
+    cyr = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+    lat = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    return "cyr" if cyr >= lat else "lat"
+
+
+def _ensure_script(value: str, target_script: str) -> str:
+    """Convert value to match target script (cyr or lat).
+    Ensures suggestions always match input text's script."""
+    if not value or not value.strip():
+        return value
+    val_script = _detect_script(value)
+    if val_script == target_script:
+        return value
+    try:
+        import dual_script
+        if target_script == "cyr":
+            return dual_script.to_cyrillic(value) or value
+        else:
+            return dual_script.to_latin(value) or value
+    except Exception:
+        return value
+
+
 def _run_morph(text: str) -> list:
     """Morphology layer — basic word analysis via Hunspell."""
     try:
@@ -85,6 +110,12 @@ def _run_sayqallash(text: str, lang: str) -> list:
     results = [r for r in results if r.get("source") != "hunspell" or not any(
         max(r["from"], rs) < min(r["to"], re) for rs, re in rule_ranges
     )]
+
+    # Ensure all suggestions match input text's script
+    text_script = _detect_script(text)
+    for r in results:
+        if r.get("new"):
+            r["new"] = _ensure_script(r["new"], text_script)
 
     return results
 

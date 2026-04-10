@@ -19,6 +19,34 @@ import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
+
+def _detect_text_script(text: str) -> str:
+    """Detect if text is primarily Cyrillic or Latin."""
+    cyr = sum(1 for c in text[:200] if '\u0400' <= c <= '\u04FF')
+    lat = sum(1 for c in text[:200] if 'a' <= c.lower() <= 'z')
+    return "cyr" if cyr >= lat else "lat"
+
+
+def _to_text_script(value: str, target_script: str) -> str:
+    """Convert value to match target script."""
+    if not value or not value.strip():
+        return value
+    val_cyr = any('\u0400' <= c <= '\u04FF' for c in value)
+    val_lat = any('a' <= c.lower() <= 'z' for c in value)
+    if target_script == "cyr" and val_lat and not val_cyr:
+        try:
+            import dual_script
+            return dual_script.to_cyrillic(value) or value
+        except Exception:
+            pass
+    elif target_script == "lat" and val_cyr and not val_lat:
+        try:
+            import dual_script
+            return dual_script.to_latin(value) or value
+        except Exception:
+            pass
+    return value
+
 from auth import get_current_user
 import db
 
@@ -404,6 +432,15 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
                 })
         except Exception as e:
             logger.warning(f"[tilshunos] grammar check failed: {e}")
+
+    # Ensure all suggestions match input text's script (Cyr↔Lat)
+    text_script = _detect_text_script(text)
+    for issue in all_issues:
+        if issue.get("suggestion"):
+            parts = [_to_text_script(s.strip(), text_script) for s in issue["suggestion"].split(",")]
+            issue["suggestion"] = ", ".join(parts)
+        if issue.get("suggestions"):
+            issue["suggestions"] = [_to_text_script(s, text_script) for s in issue["suggestions"]]
 
     # Aggregate stats
     by_category = {}
