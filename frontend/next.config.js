@@ -25,4 +25,4 @@ const nextConfig = {
 }
 
 module.exports = nextConfig
-// force redeploy 1775845405
+// force redeploy 1775863679
