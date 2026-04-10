@@ -470,13 +470,14 @@ async def _auto_seed_background():
             except Exception as ee:
                 logger.warning(f"[post-process] pharmacopoeia failed: {ee}")
 
-            # 5. Editorial-approved disputed words (docx → disputed_board)
-            try:
-                import import_disputed_board
-                r = import_disputed_board.main()
-                logger.info(f"[post-process] disputed_board: {r}")
-            except Exception as ee:
-                logger.warning(f"[post-process] disputed_board failed: {ee}")
+            # 5. Editorial-approved disputed words — DISABLED (user requested removal)
+            # disputed_board table cleared by admin, skip auto-seed
+            # try:
+            #     import import_disputed_board
+            #     r = import_disputed_board.main()
+            #     logger.info(f"[post-process] disputed_board: {r}")
+            # except Exception as ee:
+            #     logger.warning(f"[post-process] disputed_board failed: {ee}")
 
             # 6. Pharma DB (TOC + Drug Registry)
             try:
