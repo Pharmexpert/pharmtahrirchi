@@ -32,23 +32,27 @@ if not os.path.isdir(QONUN):
 
 
 def _ensure_schemas(cur):
-    """Create tables if not exist."""
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS translation_memory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            src_lang TEXT NOT NULL,
-            src_text TEXT NOT NULL,
-            tgt_lang TEXT NOT NULL,
-            tgt_text TEXT NOT NULL,
-            domain TEXT DEFAULT 'general',
-            quality_score REAL DEFAULT 1.0,
-            source TEXT DEFAULT 'promt_v23',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(src_lang, tgt_lang, src_text)
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_tm_src ON translation_memory(src_lang, src_text)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_tm_tgt ON translation_memory(tgt_lang)")
+    """Create tables if not exist. Uses production column names (source_lang/target_lang)."""
+    # Check if TM table already exists with production schema
+    cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='translation_memory'")
+    tm_exists = cur.fetchone()
+    if not tm_exists:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS translation_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_lang TEXT,
+                target_lang TEXT,
+                source_text TEXT,
+                target_text TEXT,
+                source_db TEXT,
+                quality_score REAL DEFAULT 1.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tm_langs ON translation_memory(source_lang, target_lang)")
+    except Exception:
+        pass
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS abbreviations (
@@ -114,8 +118,8 @@ def import_tmx(cur) -> dict:
                 try:
                     cur.execute(
                         """INSERT OR IGNORE INTO translation_memory
-                           (src_lang, src_text, tgt_lang, tgt_text, domain, source)
-                           VALUES ('uz', ?, ?, ?, 'general', 'promt_v23_tmx')""",
+                           (source_lang, source_text, target_lang, target_text, source_db)
+                           VALUES ('uz', ?, ?, ?, 'promt_v23_tmx')""",
                         (segs["uz"], tgt_lang, segs[tgt_lang]),
                     )
                     added += cur.rowcount
@@ -126,15 +130,15 @@ def import_tmx(cur) -> dict:
             try:
                 cur.execute(
                     """INSERT OR IGNORE INTO translation_memory
-                       (src_lang, src_text, tgt_lang, tgt_text, domain, source)
-                       VALUES ('en', ?, 'ru', ?, 'general', 'promt_v23_tmx')""",
+                       (source_lang, source_text, target_lang, target_text, source_db)
+                       VALUES ('en', ?, 'ru', ?, 'promt_v23_tmx')""",
                     (segs["en"], segs["ru"]),
                 )
                 added += cur.rowcount
                 cur.execute(
                     """INSERT OR IGNORE INTO translation_memory
-                       (src_lang, src_text, tgt_lang, tgt_text, domain, source)
-                       VALUES ('ru', ?, 'en', ?, 'general', 'promt_v23_tmx')""",
+                       (source_lang, source_text, target_lang, target_text, source_db)
+                       VALUES ('ru', ?, 'en', ?, 'promt_v23_tmx')""",
                     (segs["ru"], segs["en"]),
                 )
                 added += cur.rowcount
