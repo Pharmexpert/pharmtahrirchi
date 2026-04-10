@@ -35,24 +35,58 @@ def _run_morph(text: str) -> list:
 
 
 def _run_sayqallash(text: str, lang: str) -> list:
-    """Sayqallash layer — spelling/rule-based corrections."""
+    """Sayqallash layer — FULL 3-tier pipeline (Hunspell + Rules DB + AI).
+    Previously only used Rules DB. Now calls the same logic as /sayqallash endpoint."""
+    results = []
+
+    # TIER 0: Hunspell
+    try:
+        import spellcheck
+        is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text[:50])
+        spell_errors = spellcheck.check_text(text, is_cyrillic=is_cyr)
+        for err in spell_errors:
+            if err.get('suggestions'):
+                results.append({
+                    "from": err['position'],
+                    "to": err['end_position'],
+                    "old": err['word'],
+                    "new": err['suggestions'][0],
+                    "error_type": "H/Spelling",
+                    "source": "hunspell",
+                    "confidence": 70,
+                    "layer": "sayqallash",
+                })
+    except Exception:
+        pass
+
+    # TIER 1: Rules DB (5,600+ rules with FAISS semantic search)
     try:
         rules = db.get_rules_for_text(text, lang)
-        return [
-            {
-                "type": "spelling",
-                "from": r["from_index"],
-                "to": r["to_index"],
-                "old": r["old_value"],
-                "new": r["new_value"],
-                "error_type": r["error_type"],
-                "confidence": r.get("confidence", 80),
-                "layer": "sayqallash",
-            }
-            for r in rules
-        ]
+        covered = set()
+        for r in rules:
+            key = (r["from_index"], r["to_index"])
+            if key not in covered:
+                covered.add(key)
+                results.append({
+                    "from": r["from_index"],
+                    "to": r["to_index"],
+                    "old": r["old_value"],
+                    "new": r["new_value"],
+                    "error_type": r["error_type"],
+                    "confidence": r.get("confidence", 80),
+                    "source": "rules_db",
+                    "layer": "sayqallash",
+                })
     except Exception:
-        return []
+        pass
+
+    # Remove Hunspell results that overlap with Rules DB (Rules DB takes priority)
+    rule_ranges = [(r["from"], r["to"]) for r in results if r.get("source") == "rules_db"]
+    results = [r for r in results if r.get("source") != "hunspell" or not any(
+        max(r["from"], rs) < min(r["to"], re) for rs, re in rule_ranges
+    )]
+
+    return results
 
 
 def _run_syntax(text: str) -> list:
