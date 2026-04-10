@@ -325,12 +325,16 @@ async def learn_batch(payload: Dict[str, Any]):
                         (modified_by, old, new))
                     conn.commit()
                     conn.close()
-                except: pass
+                except Exception as e:
+                    logger.warning(f"[learn-batch] modified_by update failed: {e}")
             count += 1
 
+    # Reload rules cache so new rules take effect immediately
     try:
-        db.index_missing_rules()
-    except: pass
+        db.rules_cache.load()
+        logger.info(f"[learn-batch] Rules cache reloaded after {count} corrections")
+    except Exception as e:
+        logger.warning(f"[learn-batch] Cache reload failed: {e}")
 
     return {"success": True, "count": count}
 

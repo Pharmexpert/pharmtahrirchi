@@ -308,9 +308,7 @@ async def comprehensive_check(payload: Dict[str, Any], current_user: Dict = Depe
     # ───── 2. Sayqallash rules (DB-based exact + semantic) ─────
     if lang == "uz" and (not requested_categories or "orthography" in requested_categories or "spelling" in requested_categories):
         try:
-            from db import find_corrections
-            sayqallash_results = []
-            find_corrections(text, lang, sayqallash_results)
+            sayqallash_results = db.get_rules_for_text(text, lang) or []
             for r in sayqallash_results:
                 span = (r.get("from_index", 0), r.get("to_index", 0))
                 if span in seen_spans:
