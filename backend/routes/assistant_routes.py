@@ -398,7 +398,24 @@ async def edit(payload: Dict[str, Any], current_user: Dict = Depends(get_current
     lang = payload.get("lang", "uz")
     if not text:
         return {"text": ""}
-    return await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, lang=lang, task="edit")
+    # TM check
+    try:
+        import tm_search
+        tm = tm_search.best_match(text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved")
+        if tm and tm["score"] >= 0.95:
+            return {"text": tm["tgt_text"], "engine": "tm_exact"}
+    except Exception:
+        pass
+    result = await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, lang=lang, task="edit")
+    # TM learn
+    out_text = result.get("text", "")
+    if out_text and out_text != text:
+        try:
+            import tm_search
+            tm_search.save_to_tm(text, out_text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved", source="assistant_edit")
+        except Exception:
+            pass
+    return result
 
 
 @router.post("/translate")
@@ -413,7 +430,26 @@ async def translate(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
     tgt = payload.get("target_lang", "uz")
     if not text:
         return {"text": ""}
-    return await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, source_lang=src, target_lang=tgt, task="translate")
+    base_src = "ru" if src == "ru" else ("uz" if src.startswith("uz") else "en")
+    base_tgt = "ru" if tgt == "ru" else ("uz" if tgt.startswith("uz") else "en")
+    # TM check
+    try:
+        import tm_search
+        tm = tm_search.best_match(text, src_lang=base_src, tgt_lang=base_tgt)
+        if tm and tm["score"] >= 0.95:
+            return {"text": tm["tgt_text"], "engine": "tm_exact"}
+    except Exception:
+        pass
+    result = await _call_engine(engine, text, system=PHARMA_EXPERT_PROMPT, source_lang=src, target_lang=tgt, task="translate")
+    # TM learn
+    out_text = result.get("text", "")
+    if out_text and out_text != text:
+        try:
+            import tm_search
+            tm_search.save_to_tm(text, out_text, src_lang=base_src, tgt_lang=base_tgt, source="assistant_translate")
+        except Exception:
+            pass
+    return result
 
 
 @router.post("/upload")

@@ -507,6 +507,21 @@ async def improve_row(payload: Dict[str, Any]):
     if not text:
         return {f"{target_lang}_v2": "", "annotations": [], "rationale": "Empty input"}
 
+    # ──── TM check: reuse previous improvement if exact match ────
+    try:
+        import tm_search
+        tm_match = tm_search.best_match(text, src_lang=f"{target_lang}_raw", tgt_lang=f"{target_lang}_improved")
+        if tm_match and tm_match["score"] >= 0.95:
+            return {
+                f"{target_lang}_v2": tm_match["tgt_text"],
+                "annotations": [],
+                "rationale": f"TM exact match ({tm_match['score']})",
+                "engine": "tm_exact",
+            }
+    except Exception:
+        pass
+    # ──── End TM ────
+
     ai_text = text
     engine_used = "sayqallash_only"
 
@@ -548,6 +563,14 @@ async def improve_row(payload: Dict[str, Any]):
     except Exception:
         final_text = ai_text or text
         annotations = []
+
+    # ──── TM learn: save successful improvement for future reuse ────
+    if final_text and final_text != text:
+        try:
+            import tm_search
+            tm_search.save_to_tm(text, final_text, src_lang=f"{target_lang}_raw", tgt_lang=f"{target_lang}_improved", source="improve_row")
+        except Exception:
+            pass
 
     return {
         f"{target_lang}_v2": final_text,
