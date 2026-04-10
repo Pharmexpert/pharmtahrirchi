@@ -43,8 +43,8 @@ reportlab>=4.0.0
 # Phase 6: Nightly cron scheduler
 APScheduler>=3.10.0
 
-# OCR (Phase 6)
-pytesseract>=0.3.10
+# OCR (Phase 6) — install manually when Tesseract binary is available
+# pytesseract>=0.3.10
 Pillow>=10.0.0
 
 # Testing
