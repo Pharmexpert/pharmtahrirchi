@@ -263,6 +263,14 @@ export default function TilshunosPage() {
     } catch (_) {}
   }
 
+  const transliterateField = async (fieldText: string, setter: (v: string) => void, target: 'cyrillic' | 'latin') => {
+    if (!fieldText.trim()) return
+    try {
+      const data: any = await api.linguistic.transliterate(fieldText, target)
+      setter(data.text)
+    } catch (_) {}
+  }
+
   const addWordToDictionary = async () => {
     const sel = window.getSelection()?.toString().trim()
     if (!sel) {
@@ -994,6 +1002,17 @@ export default function TilshunosPage() {
               {translating ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Таржима қилиш
             </button>
 
+            <button onClick={() => transliterateField(sourceText, setSourceText, 'cyrillic')}
+              disabled={!sourceText.trim()}
+              style={{ ...toolbarBtn, background: '#FFF7ED', color: '#EA580C', borderColor: '#FB923C', opacity: sourceText.trim() ? 1 : 0.5 }}>
+              🔄 Кирил
+            </button>
+            <button onClick={() => transliterateField(sourceText, setSourceText, 'latin')}
+              disabled={!sourceText.trim()}
+              style={{ ...toolbarBtn, background: '#F0FDF4', color: '#16A34A', borderColor: '#22C55E', opacity: sourceText.trim() ? 1 : 0.5 }}>
+              🔄 Лотин
+            </button>
+
             <button
               onClick={async () => {
                 const sel = window.getSelection()?.toString().trim()
@@ -1062,7 +1081,17 @@ export default function TilshunosPage() {
               )}
             </div>
             <div style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12, padding: 14 }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>{LANG_LABELS[targetLang]}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>{LANG_LABELS[targetLang]}</div>
+                {targetText.trim() && (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => transliterateField(targetText, setTargetText, 'cyrillic')}
+                      style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #FB923C', background: '#FFF7ED', color: '#EA580C', fontSize: '0.6rem', fontWeight: 800, cursor: 'pointer' }}>🔄 Кирил</button>
+                    <button onClick={() => transliterateField(targetText, setTargetText, 'latin')}
+                      style={{ padding: '2px 8px', borderRadius: 4, border: '1.5px solid #22C55E', background: '#F0FDF4', color: '#16A34A', fontSize: '0.6rem', fontWeight: 800, cursor: 'pointer' }}>🔄 Лотин</button>
+                  </div>
+                )}
+              </div>
               {richTgtHtml ? (
                 <div
                   ref={richTgtRef}

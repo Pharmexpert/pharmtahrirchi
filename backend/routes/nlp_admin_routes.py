@@ -161,6 +161,106 @@ async def nlp_health(current_user: Dict = Depends(get_current_user)):
     return {"overall": overall, "components": health}
 
 
+@router.post("/discover-terms")
+async def discover_terms(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Phase 4: BERTbek POS → discover new NOUN/ADJ terms not yet in DB.
+    Input: { text: string, lang?: string }
+    Returns: { new_terms: [{term, pos, confidence}], known_count, new_count }
+    """
+    text = (payload.get("text") or "").strip()
+    lang = payload.get("lang", "uz")
+    if not text:
+        return {"new_terms": [], "known_count": 0, "new_count": 0}
+
+    # 1. POS-tag with BERTbek (or fallback to basic regex)
+    tagged = []
+    try:
+        import bertbek_engine
+        if bertbek_engine.is_available():
+            tagged = bertbek_engine.tag_pos(text)
+        else:
+            # Fallback: extract words as NOUN candidates
+            import re
+            words = re.findall(r"[А-ЯЁЎҒҚҲа-яёўғқҳA-Za-z\u2018\u2019']+", text)
+            tagged = [(w, "NOUN") for w in words if len(w) > 3]
+    except Exception as e:
+        logger.warning(f"[discover-terms] POS failed: {e}")
+        import re
+        words = re.findall(r"[А-ЯЁЎҒҚҲа-яёўғқҳA-Za-z\u2018\u2019']+", text)
+        tagged = [(w, "NOUN") for w in words if len(w) > 3]
+
+    # 2. Filter: only NOUN and ADJ
+    candidates = [(token, pos) for token, pos in tagged if pos in ("NOUN", "ADJ", "PROPN") and len(token) > 2]
+
+    # 3. Check against existing DB
+    import sqlite3, os
+    DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
+    known = set()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        for q in [
+            "SELECT LOWER(term_uz) FROM annotated_words WHERE term_uz IS NOT NULL",
+            "SELECT LOWER(trade_name) FROM drug_registry WHERE trade_name IS NOT NULL",
+            "SELECT LOWER(inn) FROM drug_registry WHERE inn IS NOT NULL",
+            "SELECT LOWER(wrong_form) FROM sayqallash_rules",
+            "SELECT LOWER(correct_form) FROM sayqallash_rules",
+        ]:
+            try:
+                cur.execute(q)
+                for row in cur.fetchall():
+                    if row[0]:
+                        known.add(row[0].strip())
+            except Exception:
+                pass
+        conn.close()
+    except Exception:
+        pass
+
+    # 4. Separate new vs known
+    new_terms = []
+    known_count = 0
+    seen = set()
+    for token, pos in candidates:
+        key = token.lower().strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in known:
+            known_count += 1
+        else:
+            new_terms.append({"term": token, "pos": pos, "confidence": 0.8})
+
+    return {"new_terms": new_terms[:50], "known_count": known_count, "new_count": len(new_terms)}
+
+
+@router.post("/approve-term")
+async def approve_term(payload: Dict[str, Any], current_user: Dict = Depends(get_admin_user)):
+    """Phase 4: Admin approves a new term → insert into annotated_words.
+    Input: { term: string, pos?: string, category?: string, lang?: string }
+    """
+    term = (payload.get("term") or "").strip()
+    if not term:
+        raise HTTPException(status_code=400, detail="Term is required")
+
+    category = payload.get("category", "auto-discovered")
+    lang = payload.get("lang", "uz")
+
+    import sqlite3, os
+    DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR IGNORE INTO annotated_words (term_uz, category, source, status) VALUES (?, ?, ?, ?)",
+            (term, category, "bertbek_auto", "new")
+        )
+        conn.commit()
+        conn.close()
+        return {"success": True, "term": term, "category": category}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/dashboard-summary")
 async def dashboard_summary(current_user: Dict = Depends(get_current_user)):
     """

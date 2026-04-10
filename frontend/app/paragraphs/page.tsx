@@ -7,6 +7,7 @@ import { useLang } from '../../components/LanguageProvider'
 import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
+import AnnotatedTextView, { type AnalysisResult } from '../../components/AnnotatedTextView'
 
 interface ParagraphEntry {
   id: number
@@ -49,6 +50,26 @@ export default function ParagraphsPage() {
   const [editEntry, setEditEntry] = useState<Partial<ParagraphEntry> | null>(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const [analysisRow, setAnalysisRow] = useState<number | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+
+  const analyzeEntry = async (entryId: number, text: string) => {
+    if (!text.trim()) return
+    if (analysisRow === entryId && analysisResult) { setAnalysisRow(null); setAnalysisResult(null); return }
+    setAnalysisRow(entryId)
+    setIsAnalyzing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/analyze/full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text, layers: ['morph', 'sayqallash', 'syntax', 'style'], lang: 'uz' })
+      })
+      if (!res.ok) throw new Error()
+      setAnalysisResult(await res.json())
+    } catch (_e) { setAnalysisResult(null); setAnalysisRow(null) }
+    finally { setIsAnalyzing(false) }
+  }
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -327,7 +348,18 @@ export default function ParagraphsPage() {
                   <td style={{ padding: '12px 16px', fontSize: '0.82rem', lineHeight: '1.6', verticalAlign: 'top' }}>
                     <div>
                       {entry.uz_text || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</span>}
+                      {entry.uz_text && (
+                        <button onClick={() => analyzeEntry(entry.id, entry.uz_text)}
+                          style={{ marginLeft: 6, fontSize: '0.55rem', fontWeight: 700, padding: '1px 5px', borderRadius: 3, border: '1px solid #C4B5FD', background: analysisRow === entry.id ? '#7C3AED' : '#F5F3FF', color: analysisRow === entry.id ? 'white' : '#7C3AED', cursor: 'pointer', verticalAlign: 'middle' }}>
+                          {isAnalyzing && analysisRow === entry.id ? '...' : '📊'}
+                        </button>
+                      )}
                     </div>
+                    {analysisRow === entry.id && analysisResult && (
+                      <div style={{ marginTop: 6, padding: '6px 8px', background: '#FAFBFF', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: '0.78rem' }}>
+                        <AnnotatedTextView text={entry.uz_text} result={analysisResult} lang="uz" />
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ padding: '12px 16px' }}>

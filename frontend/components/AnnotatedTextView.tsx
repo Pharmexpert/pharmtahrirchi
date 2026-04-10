@@ -304,12 +304,23 @@ export default function AnnotatedTextView({ text, result }: Props) {
                         {iss.confidence !== undefined && ` · Ишoнч: ${iss.confidence}%`}
                       </div>
                     )}
+                    {(iss as any).rule_id && (
+                      <div style={{ fontSize: '.64rem', color: '#7C3AED', marginTop: 2 }}>
+                        {(iss as any).rule_id}
+                        {(iss as any).category && <> · {(iss as any).category}</>}
+                      </div>
+                    )}
                     {iss.source_ref && (
                       <div style={{ fontSize: '.64rem', color: '#64748B', marginTop: 2 }}>
                         Манба: {iss.source_ref}
                         {iss.source_url && (
                           <> · <a href={iss.source_url} target="_blank" rel="noreferrer" style={{ color: '#2563EB' }}>🔗</a></>
                         )}
+                      </div>
+                    )}
+                    {(iss as any).source && !(iss as any).source_ref && (
+                      <div style={{ fontSize: '.64rem', color: '#64748B', marginTop: 2 }}>
+                        Манба: {(iss as any).source}
                       </div>
                     )}
                   </div>

@@ -32,6 +32,11 @@ from routes.assistant_routes import router as assistant_router
 from routes.billing_routes import router as billing_router
 from routes.syntax_routes import router as syntax_router
 from routes.unified_analyze_routes import router as unified_analyze_router
+try:
+    from routes.ocr_routes import router as ocr_router
+except ImportError:
+    ocr_router = None
+from routes.qa_routes import router as qa_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -256,6 +261,9 @@ app.include_router(assistant_router)
 app.include_router(billing_router)
 app.include_router(syntax_router)
 app.include_router(unified_analyze_router)
+if ocr_router:
+    app.include_router(ocr_router)
+app.include_router(qa_router)
 
 
 # ═══════════════════════════════════════════════════

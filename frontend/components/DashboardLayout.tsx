@@ -40,6 +40,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('nav.affixFlags'), icon: Layers, path: '/affix-flags' },
     { name: t('nav.morphology'), icon: Layers, path: '/morphology' },
     { name: t('nav.syntax'), icon: Layers, path: '/syntax' },
+    { name: 'Workbench', icon: Layers, path: '/workbench' },
+    { name: 'QA Lab', icon: ShieldCheck, path: '/qa' },
   ]
 
   if (isAdmin) {

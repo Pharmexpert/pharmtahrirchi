@@ -922,6 +922,44 @@ def is_word_wrong(word: str, lang: str = 'uz') -> bool:
         rules_cache.load()
     return key in rules_cache.rules
 
+_pharma_whitelist_cache = None
+_pharma_whitelist_time = 0
+
+def _get_pharma_whitelist() -> set:
+    """Load pharmacopoeia whitelist from annotated_words + drug_registry.
+    Cached for 10 minutes. Terms in this set are NEVER flagged as spelling errors."""
+    global _pharma_whitelist_cache, _pharma_whitelist_time
+    import time as _time
+    now = _time.time()
+    if _pharma_whitelist_cache is not None and (now - _pharma_whitelist_time) < 600:
+        return _pharma_whitelist_cache
+    wl = set()
+    try:
+        conn = connect_db()
+        cur = conn.cursor()
+        for q in [
+            "SELECT term_uz FROM annotated_words WHERE term_uz IS NOT NULL AND term_uz != ''",
+            "SELECT term_en FROM annotated_words WHERE term_en IS NOT NULL AND term_en != ''",
+            "SELECT term_ru FROM annotated_words WHERE term_ru IS NOT NULL AND term_ru != ''",
+            "SELECT trade_name FROM drug_registry WHERE trade_name IS NOT NULL AND trade_name != ''",
+            "SELECT inn FROM drug_registry WHERE inn IS NOT NULL AND inn != ''",
+        ]:
+            try:
+                cur.execute(q)
+                for row in cur.fetchall():
+                    val = row[0]
+                    if val and len(val) > 1:
+                        wl.add(val.strip().lower())
+            except Exception:
+                pass
+        conn.close()
+    except Exception:
+        pass
+    _pharma_whitelist_cache = wl
+    _pharma_whitelist_time = now
+    return wl
+
+
 def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
     """Find known correction rules that apply to the given text.
 
@@ -950,6 +988,13 @@ def get_rules_for_text(text: str, lang: str = 'uz') -> List[Dict]:
         cf = rule['correct_form']
         if cf:
             correct_forms_set.add(cf.strip().lower())
+
+    # Pharmacopoeia whitelist: annotated_words terms are ALWAYS correct (Phase 10)
+    try:
+        pharma_whitelist = _get_pharma_whitelist()
+        correct_forms_set.update(pharma_whitelist)
+    except Exception:
+        pass
 
     found = []
     text_lower = text.lower()

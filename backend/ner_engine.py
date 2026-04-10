@@ -118,24 +118,29 @@ def _load_drug_set():
         import db
         conn = db.connect_db()
         cur = conn.cursor()
-        # Try common drug-like tables
+        # Gather from drugs, drug_registry, annotated_words tables
         for q in [
             "SELECT DISTINCT inn FROM drugs WHERE inn IS NOT NULL",
-            "SELECT DISTINCT name FROM drugs WHERE name IS NOT NULL",
-            "SELECT DISTINCT word FROM dictionary WHERE word IS NOT NULL LIMIT 50000",
+            "SELECT DISTINCT brand_name FROM drugs WHERE brand_name IS NOT NULL",
+            "SELECT DISTINCT trade_name FROM drug_registry WHERE trade_name IS NOT NULL",
+            "SELECT DISTINCT inn FROM drug_registry WHERE inn IS NOT NULL",
+            "SELECT DISTINCT term_uz FROM annotated_words WHERE term_uz IS NOT NULL",
+            "SELECT DISTINCT term_en FROM annotated_words WHERE term_en IS NOT NULL",
+            "SELECT DISTINCT term_ru FROM annotated_words WHERE term_ru IS NOT NULL",
         ]:
             try:
                 cur.execute(q)
                 for row in cur.fetchall():
                     val = row[0] if row else None
                     if val and isinstance(val, str) and len(val) > 2:
-                        drugs.add(val.lower())
+                        drugs.add(val.lower().strip())
             except Exception:
                 pass
         conn.close()
     except Exception as e:
         logger.warning(f"[NER] drug set load failed: {e}")
     _drug_set_cache = drugs
+    logger.info(f"[NER] whitelist loaded: {len(drugs)} terms")
     return drugs
 
 
@@ -209,3 +214,42 @@ def stats(text: str) -> Dict[str, int]:
         t = e.get("type", "MISC")
         out[t] = out.get(t, 0) + 1
     return out
+
+
+# ─────────────────────────────────────────────
+# Placeholder mechanism for translation protection
+# ─────────────────────────────────────────────
+def protect_entities(text: str) -> tuple:
+    """Replace named entities with placeholders before translation.
+    Returns: (protected_text, placeholder_map)
+    """
+    entities = extract_entities(text)
+    if not entities:
+        return text, {}
+    # Deduplicate and sort by position descending (replace from end to preserve indices)
+    seen = set()
+    unique = []
+    for e in entities:
+        key = (e.get("from", 0), e.get("to", 0))
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+    unique.sort(key=lambda e: e.get("from", 0), reverse=True)
+    placeholder_map = {}
+    protected = text
+    for i, e in enumerate(unique):
+        placeholder = f"__NE_{i}__"
+        start, end = e.get("from", 0), e.get("to", 0)
+        if start >= 0 and end > start:
+            original = protected[start:end]
+            protected = protected[:start] + placeholder + protected[end:]
+            placeholder_map[placeholder] = original
+    return protected, placeholder_map
+
+
+def restore_entities(text: str, placeholder_map: dict) -> str:
+    """Replace placeholders back with original entity text."""
+    result = text
+    for placeholder, original in placeholder_map.items():
+        result = result.replace(placeholder, original)
+    return result

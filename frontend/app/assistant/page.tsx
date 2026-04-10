@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Brain, Send, Paperclip, Image as ImageIcon, Mic, Wand2, Languages, MessageSquare, Loader2, X, Bot, User as UserIcon, FileText, Sparkles, Pill, BarChart3, CheckCircle2, Plus, Trash2, History } from 'lucide-react'
 import api from '../../services/api'
 import { useAuth } from '../../components/LoginGuard'
+import AnnotatedTextView, { type AnalysisResult } from '../../components/AnnotatedTextView'
 
 type Mode = 'chat' | 'edit' | 'translate'
 type Lang = 'en' | 'ru' | 'uz-lat' | 'uz-cyr'
@@ -14,6 +15,8 @@ interface Message {
   attachments?: Array<{ name: string; kind: string; url?: string; size_mb?: number }>
   engine?: string
   ts?: number
+  analysis?: AnalysisResult | null
+  showAnalysis?: boolean
 }
 
 const LANG_LABELS: Record<Lang, string> = {
@@ -97,6 +100,27 @@ export default function AssistantPage() {
     }, 2000)
     return () => clearTimeout(t)
   }, [messages])
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+  const analyzeMessage = async (msgIndex: number) => {
+    const msg = messages[msgIndex]
+    if (!msg || msg.role !== 'assistant' || !msg.content.trim()) return
+    try {
+      const res = await fetch(`${API_BASE}/api/analyze/full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text: msg.content, layers: ['morph', 'sayqallash', 'syntax', 'style'], lang: lang.startsWith('uz') ? 'uz' : lang })
+      })
+      if (!res.ok) throw new Error()
+      const r = await res.json()
+      setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, analysis: r, showAnalysis: true } : m))
+    } catch (_e) {}
+  }
+
+  const toggleAnalysis = (msgIndex: number) => {
+    setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, showAnalysis: !m.showAnalysis } : m))
+  }
 
   const handleNewChat = () => {
     setMessages([])
@@ -475,9 +499,20 @@ export default function AssistantPage() {
                   ))}
                 </div>
               )}
-              {m.engine && m.role === 'assistant' && (
-                <div style={{ marginTop: 6, fontSize: '0.65rem', color: '#9CA3AF', fontWeight: 600 }}>
-                  ⚙ {m.engine}
+              {m.role === 'assistant' && m.content.trim() && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {m.engine && (
+                    <span style={{ fontSize: '0.65rem', color: '#9CA3AF', fontWeight: 600 }}>⚙ {m.engine}</span>
+                  )}
+                  <button onClick={() => m.analysis ? toggleAnalysis(i) : analyzeMessage(i)}
+                    style={{ fontSize: '0.6rem', fontWeight: 700, padding: '2px 8px', borderRadius: 4, border: '1px solid #C4B5FD', background: m.showAnalysis ? '#7C3AED' : '#F5F3FF', color: m.showAnalysis ? 'white' : '#7C3AED', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <BarChart3 size={10} /> {m.analysis ? (m.showAnalysis ? 'Ёпиш' : 'Таҳлил') : '📊 Таҳлил'}
+                  </button>
+                </div>
+              )}
+              {m.showAnalysis && m.analysis && (
+                <div style={{ marginTop: 8, padding: '8px 10px', background: 'white', borderRadius: 8, border: '1px solid #E5E7EB' }}>
+                  <AnnotatedTextView text={m.content} result={m.analysis} lang={lang.startsWith('uz') ? 'uz' : lang} />
                 </div>
               )}
             </div>

@@ -68,7 +68,8 @@ def _run_syntax(text: str) -> list:
 
 
 def _run_style(text: str) -> list:
-    """Style Guide layer — format/pharma standard enforcement."""
+    """Style Guide layer — format/pharma standard enforcement.
+    Supports dual-script: if text is Cyrillic, also tries Latin-converted patterns."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -79,32 +80,101 @@ def _run_style(text: str) -> list:
     except Exception:
         return []
 
+    # Detect script for dual-script matching
+    try:
+        import dual_script
+        text_script = dual_script.detect_script(text)
+    except Exception:
+        text_script = "unknown"
+
     issues = []
     for rule in rules:
         pattern = rule.get("pattern", "")
         if not pattern:
             continue
-        try:
-            for m in re.finditer(pattern, text):
-                issues.append({
-                    "rule_id": rule["rule_id"],
-                    "category": rule["category"],
-                    "description": rule["description"],
-                    "from": m.start(),
-                    "to": m.end(),
-                    "old": m.group(0),
-                    "suggestion": rule.get("suggestion", ""),
-                    "severity": rule.get("severity", "should"),
-                    "examples": rule.get("examples", ""),
-                    "source": rule.get("source", ""),
-                    "source_ref": rule.get("source_ref", ""),
-                    "source_url": rule.get("source_url", ""),
-                    "layer": "style",
-                })
-        except re.error:
-            continue
+        patterns_to_try = [pattern]
+        # If text is in different script than pattern, convert pattern
+        if text_script in ("cyr", "lat"):
+            try:
+                import dual_script
+                pat_has_cyr = any("\u0400" <= ch <= "\u04FF" for ch in pattern if ch.isalpha())
+                pat_has_lat = any("a" <= ch.lower() <= "z" for ch in pattern if ch.isalpha())
+                if text_script == "cyr" and pat_has_lat and not pat_has_cyr:
+                    converted = dual_script.to_cyrillic(pattern)
+                    if converted and converted != pattern:
+                        patterns_to_try.append(converted)
+                elif text_script == "lat" and pat_has_cyr and not pat_has_lat:
+                    converted = dual_script.to_latin(pattern)
+                    if converted and converted != pattern:
+                        patterns_to_try.append(converted)
+            except Exception:
+                pass
+
+        for pat in patterns_to_try:
+            try:
+                for m in re.finditer(pat, text):
+                    issues.append({
+                        "rule_id": rule["rule_id"],
+                        "category": rule["category"],
+                        "description": rule["description"],
+                        "from": m.start(),
+                        "to": m.end(),
+                        "old": m.group(0),
+                        "suggestion": rule.get("suggestion", ""),
+                        "severity": rule.get("severity", "should"),
+                        "examples": rule.get("examples", ""),
+                        "source": rule.get("source", ""),
+                        "source_ref": rule.get("source_ref", ""),
+                        "source_url": rule.get("source_url", ""),
+                        "layer": "style",
+                    })
+            except re.error:
+                continue
 
     return issues[:200]
+
+
+@router.post("/ner")
+async def analyze_ner(payload: Dict[str, Any]):
+    """Extract named entities from text (drugs, doses, persons, organizations)."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"entities": [], "total": 0}
+    try:
+        import ner_engine
+        entities = ner_engine.extract_entities(text)
+        return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        return {"entities": [], "total": 0, "error": str(e)}
+
+
+@router.post("/protect-entities")
+async def protect_entities(payload: Dict[str, Any]):
+    """Replace named entities with placeholders for safe translation."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"protected_text": text, "placeholder_map": {}}
+    try:
+        import ner_engine
+        protected, pmap = ner_engine.protect_entities(text)
+        return {"protected_text": protected, "placeholder_map": pmap, "entities_count": len(pmap)}
+    except Exception as e:
+        return {"protected_text": text, "placeholder_map": {}, "error": str(e)}
+
+
+@router.post("/restore-entities")
+async def restore_entities(payload: Dict[str, Any]):
+    """Restore placeholders back to original entity text after translation."""
+    text = (payload.get("text") or "").strip()
+    pmap = payload.get("placeholder_map") or {}
+    if not text or not pmap:
+        return {"text": text}
+    try:
+        import ner_engine
+        restored = ner_engine.restore_entities(text, pmap)
+        return {"text": restored}
+    except Exception:
+        return {"text": text}
 
 
 @router.post("/full")

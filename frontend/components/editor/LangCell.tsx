@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { Sparkles, Loader2 } from 'lucide-react'
+import { Sparkles, Loader2, BarChart3 } from 'lucide-react'
 import api from '../../services/api'
 import TermHighlighter, { type Term } from './TermHighlighter'
+import AnnotatedTextView, { type AnalysisResult } from '../AnnotatedTextView'
 
 export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImproving, onV1Change, onProposedChange, onImprove, onWordClick, onBlockDrop, token, contextEn, contextRu, contextUz, terms }: {
   v1: string; proposed: string; rowIdx: number; lang: 'ru' | 'uz'; isMarker: boolean
@@ -21,6 +22,9 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
   const [isSayqallash, setIsSayqallash] = useState(false)
   const [showAnnotations, setShowAnnotations] = useState(false)
   const [rulesCount, setRulesCount] = useState(0)
+  const [fullAnalysis, setFullAnalysis] = useState<AnalysisResult | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false)
 
   const handleBlockDragStart = (e: React.DragEvent, field: string) => {
     e.dataTransfer.setData('text/plain', JSON.stringify({ rowIdx, lang, field }))
@@ -115,6 +119,24 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
 
     setAnnotations([])
     setShowAnnotations(false)
+  }
+
+  const runFullAnalysis = async () => {
+    const text = proposed || v1 || ''
+    if (!text.trim()) return
+    setIsAnalyzing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/analyze/full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text, layers: ['morph', 'sayqallash', 'syntax', 'style'], lang })
+      })
+      if (!res.ok) throw new Error()
+      const r = await res.json()
+      setFullAnalysis(r)
+      setShowFullAnalysis(true)
+    } catch (_e) { setFullAnalysis(null) }
+    finally { setIsAnalyzing(false) }
   }
 
   const dragHandleStyle: React.CSSProperties = {
@@ -245,6 +267,12 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
                       ? <><Loader2 size={10} style={{ animation: 'spin .8s linear infinite' }} /> Tekshirilmoqda...</>
                       : <>✦ Sayqallash</>}
                   </button>
+                  <button onClick={runFullAnalysis} disabled={isAnalyzing}
+                    style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'linear-gradient(135deg,#7C3AED,#6D28D9)', color: 'white', border: 'none', borderRadius: 4, padding: '2px 7px', fontSize: '0.65rem', fontWeight: 700, cursor: isAnalyzing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                    {isAnalyzing
+                      ? <><Loader2 size={10} style={{ animation: 'spin .8s linear infinite' }} /> Таҳлил...</>
+                      : <><BarChart3 size={10} /> 4-қатлам</>}
+                  </button>
                   {(proposed || v1) && (
                     <div style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
                       <button onClick={async () => {
@@ -291,6 +319,24 @@ export default function LangCell({ v1, proposed, rowIdx, lang, isMarker, isImpro
                 padding: '6px 8px', lineHeight: 1.8, wordBreak: 'break-word'
               }}>
                 {renderAnnotatedText()}
+              </div>
+            </div>
+          )}
+
+          {/* Full 4-layer analysis via AnnotatedTextView */}
+          {showFullAnalysis && fullAnalysis && (
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase' }}>
+                  4-қатлам таҳлил: {(fullAnalysis.sayqallash?.length || 0) + (fullAnalysis.syntax?.length || 0) + (fullAnalysis.style?.length || 0)} та хато
+                </span>
+                <button onClick={() => { setShowFullAnalysis(false); setFullAnalysis(null) }}
+                  style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', borderRadius: 4, padding: '1px 6px', fontSize: '0.6rem', fontWeight: 700, cursor: 'pointer' }}>
+                  ✕ Ёпиш
+                </button>
+              </div>
+              <div style={{ background: '#fafbff', border: '1px solid #e5e7eb', borderRadius: 5, padding: '6px 8px' }}>
+                <AnnotatedTextView text={proposed || v1 || ''} result={fullAnalysis} lang={lang} />
               </div>
             </div>
           )}
