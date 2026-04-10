@@ -628,6 +628,17 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
     needs_russian = "ru" in (base_src, base_tgt)
 
     try:
+        # ──── TM (Translation Memory) check ────
+        try:
+            import tm_search
+            tm_match = tm_search.best_match(text, src_lang=base_src, tgt_lang=base_tgt)
+            if tm_match and tm_match["score"] >= 0.95:
+                logger.info(f"[translate] TM exact hit ({tm_match['score']}) — skipping AI")
+                return {"translated": tm_match["tgt_text"], "engine": "tm_exact", "tm_score": tm_match["score"]}
+        except Exception as e:
+            logger.debug(f"[translate] TM search skip: {e}")
+        # ──── End TM ────
+
         # 0. Tahrirchi dilmash — native Uzbek model (best for uz/en/ru/kaa pairs)
         try:
             import tahrirchi_engine
@@ -674,7 +685,15 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
         label = {"en": "English", "ru": "Russian", "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)"}
         prompt = f"Translate the following {label.get(src, src)} text to {label.get(tgt, tgt)}. Return ONLY the translation, no explanations.\n\n{text}"
         translated = await generate_ai_content(prompt, prefer="cloud")
-        return {"translated": (translated or "").strip(), "engine": "cloud"}
+        result_text = (translated or "").strip()
+        # ──── TM learn: save successful AI translation for future reuse ────
+        if result_text and len(result_text) > 2:
+            try:
+                import tm_search
+                tm_search.save_to_tm(text, result_text, src_lang=base_src, tgt_lang=base_tgt, source="ai_cloud")
+            except Exception:
+                pass
+        return {"translated": result_text, "engine": "cloud"}
     except Exception as e:
         logger.exception("translate failed")
         raise HTTPException(status_code=500, detail=str(e))
