@@ -1521,3 +1521,35 @@ async def delete_annotated_by_source(payload: Dict[str, Any], current_user: dict
     remaining = cur.fetchone()[0]
     conn.close()
     return {"success": True, "deleted": total_deleted, "sources": sources, "remaining": remaining}
+
+
+@router.post("/disputed/delete-no-specialist")
+async def delete_disputed_no_specialist(current_user: dict = Depends(get_admin_user)):
+    """Delete disputed_words rows where user_id is NULL or empty. Admin only."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM disputed_words WHERE user_id IS NULL OR TRIM(user_id) = ''")
+    count = cur.fetchone()[0]
+    cur.execute("DELETE FROM disputed_words WHERE user_id IS NULL OR TRIM(user_id) = ''")
+    conn.commit()
+    cur.execute("SELECT COUNT(*) FROM disputed_words")
+    remaining = cur.fetchone()[0]
+    conn.close()
+    return {"success": True, "deleted": count, "remaining": remaining}
+
+
+@router.post("/disputed-board/clear")
+async def clear_disputed_board(current_user: dict = Depends(get_admin_user)):
+    """Delete ALL rows from disputed_board table. Admin only."""
+    conn = db.connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(*) FROM disputed_board")
+        count = cur.fetchone()[0]
+        cur.execute("DELETE FROM disputed_board")
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return {"success": False, "error": str(e)}
+    conn.close()
+    return {"success": True, "deleted": count, "table": "disputed_board"}
