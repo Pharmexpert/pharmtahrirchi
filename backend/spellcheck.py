@@ -84,12 +84,30 @@ def is_correct(word: str, is_cyrillic: bool = True) -> bool:
 
 
 def suggest(word: str, is_cyrillic: bool = True, max_suggestions: int = 5) -> list:
-    """Get spelling suggestions for a word."""
+    """Get spelling suggestions for a word.
+    Priority: sayqallash_rules DB > Hunspell suggest."""
     _load()
     w = word.strip()
     if not w:
         return []
 
+    # PRIORITY 1: Check sayqallash_rules DB for exact correction
+    try:
+        import db as _db
+        conn = _db.connect_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT correct_form FROM sayqallash_rules WHERE LOWER(wrong_form)=LOWER(?) AND lang='uz' ORDER BY frequency DESC LIMIT 1",
+            (w,)
+        )
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0]:
+            return [row[0]]  # DB answer is most reliable
+    except Exception:
+        pass
+
+    # PRIORITY 2: Hunspell suggest
     dictionary = _cyrl_dict if is_cyrillic else _lat_dict
     if dictionary:
         try:

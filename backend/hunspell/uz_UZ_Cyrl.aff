@@ -6,48 +6,134 @@ SET UTF-8
 TRY - ҒғҲҳҚқЎўйцукенгшщзхъфывапролджэячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 KEY ғҳ|ўйцукенгшщзхъ|қфывапролджэ|ячсмитьбю
 WORDCHARS -.'
-MAXNGRAMSUGS 6
-MAXDIFF 10
+MAXNGRAMSUGS 8
+MAXDIFF 5
 NOSUGGEST я
 NOSPLITSUGS =
-REP 43
-REP у и
-REP и у
+# MAP: equivalent characters (improves suggestion quality)
+MAP 5
+MAP уў
+MAP кқ
+MAP гғ
+MAP хҳ
+MAP ьъ
+# REP: common misspelling → correct replacement pairs
+# Higher priority pairs first = better suggestions
+REP 120
+# === КРИТИК: ў/у алмашиниши (энг кўп учрайди) ===
+REP бул бўл
+REP тул тўл
+REP кул кўл
+REP йул йўл
+REP бур бўр
+REP кур кўр
+REP тур тўр
+REP юл йўл
+REP ул ўл
+REP ур ўр
+REP уз ўз
+REP ук ўк
+REP уч ўч
+REP уқ ўқ
+REP уғ ўғ
+REP у ў
+REP ў у
+# === қ/к алмашиниши ===
+REP кил қил
+REP кол қол
+REP кош қош
+REP кур қур
+REP кат қат
+REP кар қар
+REP кай қай
+REP ков қов
+REP к қ
+REP қ к
+# === ғ/г алмашиниши ===
+REP гал ғал
+REP гов ғов
+REP гам ғам
+REP гоя ғоя
+REP гир ғир
+REP г ғ
+REP ғ г
+# === ҳ/х алмашиниши ===
+REP хол ҳол
+REP хам ҳам
+REP хат ҳат
+REP хар ҳар
+REP хил ҳил
+REP хук ҳуқ
+REP хак ҳақ
+REP х ҳ
+REP ҳ х
+# === ъ/ь алмашиниши ===
+REP тасир таъсир
+REP маъно маъно
+REP таълим таълим
+REP ь ъ
+REP ъ ь
+# === Унли ҳарфлар ===
+REP а е
+REP е э
+REP е ё
+REP ё е
+REP э е
+REP а о
+REP о а
+REP и е
+REP е и
+# === Ундош алмашиниши ===
 REP с ц
 REP с з
 REP з с
 REP ц с
 REP к г
 REP г к
-REP уг ўғ
-REP г ғ
-REP к қ
-REP қ к
-REP ғ г
-REP х ҳ
-REP ҳ х
-REP у ў
-REP ў у
-REP ь ъ
-REP ъ ь
-REP а е
-REP е э
-REP е ё
-REP ё е
-REP э е
+REP ди ни
+REP ни ди
+REP ис из
+REP из ис
+REP тт тд
+REP дд тд
+# === Йотланган ===
 REP йу ю
 REP ю йу
 REP йо ё
 REP ё йо
 REP йа я
 REP я йа
+# === Қўшимчалар хатоси ===
 REP -ку ку
 REP -у у
 REP ки -ки
 REP -чи чи
+REP ин инг
+REP из ингиз
+# === Ўзбекча хос хатолар ===
+REP нг нг
+REP нк нг
+REP шч ш
+REP тс ц
+REP кс кз
+REP оғ ўғ
+REP уг ўғ
+REP ўг ўғ
 REP о ў
-REP ди ни
-REP ис из
+# === Тиниш белгилари ===
+REP ' ъ
+REP ъ '
+# === Кенг тарқалган хатолар ===
+REP аник аниқ
+REP хукук ҳуқуқ
+REP мутахассис мутахассис
+REP ишчи ишчи
+REP курсатиш кўрсатиш
+REP тугри тўғри
+REP булиш бўлиш
+REP куриш кўриш
+REP буйича бўйича
+REP кушимча қўшимча
 REP ин инг
 REP из ингиз
 REP ог ўғ
