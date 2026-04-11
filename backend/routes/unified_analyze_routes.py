@@ -64,44 +64,9 @@ def _run_sayqallash(text: str, lang: str) -> list:
     Previously only used Rules DB. Now calls the same logic as /sayqallash endpoint."""
     results = []
 
-    # TIER 0: Hunspell — CHECK ONLY (no suggest — spylls suggest is O(n²) with 10K REP)
-    # Mark misspelled words, get correction from Rules DB (Tier 1) instead
-    try:
-        import spellcheck
-        import re as _re2
-        is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text[:50])
-        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if is_cyr else r"[a-zA-Z'ʻʼ]+"
-        for match in _re2.finditer(pattern, text):
-            word = match.group()
-            if len(word) < 2 or (word.isupper() and len(word) < 5):
-                continue
-            if not spellcheck.is_correct(word, is_cyrillic=is_cyr):
-                # Get correction from Rules DB only (instant — cached in memory)
-                suggestion = ""
-                try:
-                    conn = db.connect_db()
-                    cur = conn.cursor()
-                    cur.execute("SELECT correct_form FROM sayqallash_rules WHERE LOWER(wrong_form)=LOWER(?) AND lang='uz' ORDER BY frequency DESC LIMIT 1", (word,))
-                    row = cur.fetchone()
-                    conn.close()
-                    if row and row[0]:
-                        suggestion = row[0]
-                except Exception:
-                    pass
-                # Only report if we have a correction (no guessing)
-                if suggestion:
-                    results.append({
-                        "from": match.start(),
-                        "to": match.end(),
-                        "old": word,
-                        "new": suggestion,
-                        "error_type": "H/Spelling",
-                        "source": "hunspell",
-                        "confidence": 70,
-                        "layer": "sayqallash",
-                    })
-    except Exception:
-        pass
+    # TIER 0: DISABLED for real-time — spylls is_correct() too slow (0.3s/word × 122 words = 33s)
+    # All spelling detection handled by TIER 1 Rules DB exact match (instant, 8,000+ rules)
+    # Full Hunspell check available via /sayqallash endpoint (dedicated, non-real-time)
 
     # TIER 1: Rules DB — FAST exact match only (no BERT, no FAISS)
     # BERT semantic search is too slow for real-time analysis (18s+ per call)
