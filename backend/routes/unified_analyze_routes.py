@@ -118,21 +118,41 @@ def _run_morph(text: str) -> list:
             number = mods.get("number", "")
             person = mods.get("person", "")
 
-            # Affix breakdown (B-4: prefix support)
+            # Affix breakdown (B-4: prefix + possessive + case)
             suffixes = mods.get("suffixes", [])
             prefix = mods.get("prefix", "")
+            poss = mods.get("possessive", "")
             affix_desc = ""
             if prefix and root and root != word:
-                # e.g. "бе + тартиб" for "бетартиб", or "бе + тартиб + сиз" for "бетартибсиз"
                 suffix_part = word[len(prefix) + len(root):] if len(word) > len(prefix) + len(root) else ""
                 if suffix_part:
                     affix_desc = f"{prefix} + {root} + {suffix_part}"
                 else:
                     affix_desc = f"{prefix} + {root}"
             elif root and root != word and root != word.lower():
-                suffix_part = word[len(root):] if word.lower().startswith(root.lower()) else ""
-                if suffix_part:
-                    affix_desc = f"{root} + {suffix_part}"
+                # Build suffix description from actual word
+                if word.lower().startswith(root.lower()):
+                    suffix_part = word[len(root):]
+                    if suffix_part:
+                        # Break down compound suffixes for readability
+                        parts_list = [root]
+                        remaining = suffix_part
+                        # Known suffix segments
+                        known = [("лари","кўплик+эгалик"),("ларим","кўплик+P1"),("ларинг","кўплик+P2"),
+                                 ("лар","кўплик"),("нинг","қаратқич"),("га","жўналиш"),("ни","тушум"),
+                                 ("да","ўрин-пайт"),("дан","чиқиш"),("и","эгалик"),("им","P1"),("инг","P2")]
+                        while remaining:
+                            matched_seg = False
+                            for seg, label in sorted(known, key=lambda x: len(x[0]), reverse=True):
+                                if remaining.startswith(seg):
+                                    parts_list.append(seg)
+                                    remaining = remaining[len(seg):]
+                                    matched_seg = True
+                                    break
+                            if not matched_seg:
+                                parts_list.append(remaining)
+                                break
+                        affix_desc = " + ".join(parts_list)
 
             entry = {
                 "word": word,
@@ -175,6 +195,11 @@ def _run_morph(text: str) -> list:
                 parts.append(f"Келишик: {case_labels.get(case, case)}")
             if number and number != "?":
                 parts.append(f"Сон: {'кўплик' if number == 'plural' else 'бирлик'}")
+            if poss:
+                poss_labels = {("first","singular"):"менинг",("second","singular"):"сенинг",("third","singular"):"унинг",
+                               ("first","plural"):"бизнинг",("second","plural"):"сизнинг",("third","plural"):"уларнинг"}
+                poss_label = poss_labels.get(poss, str(poss)) if isinstance(poss, tuple) else str(poss)
+                parts.append(f"Эгалик: {poss_label}")
             if affix_desc:
                 parts.append(f"Таркиб: {affix_desc}")
             entry["description"] = " | ".join(parts)

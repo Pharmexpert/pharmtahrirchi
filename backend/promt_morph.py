@@ -635,7 +635,14 @@ class PromtMorph:
         return any('\u0400' <= c <= '\u04FF' or c in 'ўЎғҒқҚҳҲ' for c in word)
 
     def _in_dict(self, word: str) -> bool:
-        return word in self._roots_cyr or word in self._roots_lat
+        """Check if word is known — FDI roots (174K) + pos_map (184K Hunspell+FDI merged)."""
+        if word in self._roots_cyr or word in self._roots_lat:
+            return True
+        wl = word.lower()
+        if wl in self._roots_cyr or wl in self._roots_lat:
+            return True
+        pm = self._pos_map if hasattr(self, '_pos_map') and self._pos_map else {}
+        return pm.get(wl, "") not in ("", "unknown")
 
     def _strip_prefixes(self, word: str) -> tuple:
         """B-4: Префикс ажратиш — бе-тартиб, но-тўғри, сер-ҳосил.
@@ -678,6 +685,41 @@ class PromtMorph:
                         "number": Number.PL,
                         "suffix": suf1,
                     }
+
+        # Эгалик + келишик (таъминот+и+га → таъминот)
+        poss_case = [
+            ("ига",   {"case": Case.DAT, "poss": (Person.P3, Number.SG)}),
+            ("ини",   {"case": Case.ACC, "poss": (Person.P3, Number.SG)}),
+            ("ида",   {"case": Case.LOC, "poss": (Person.P3, Number.SG)}),
+            ("идан",  {"case": Case.ABL, "poss": (Person.P3, Number.SG)}),
+            ("инга",  {"case": Case.DAT, "poss": (Person.P2, Number.SG)}),
+            ("ининг", {"case": Case.GEN, "poss": (Person.P3, Number.SG)}),
+            ("имга",  {"case": Case.DAT, "poss": (Person.P1, Number.SG)}),
+            ("имда",  {"case": Case.LOC, "poss": (Person.P1, Number.SG)}),
+            ("имдан", {"case": Case.ABL, "poss": (Person.P1, Number.SG)}),
+            ("имни",  {"case": Case.ACC, "poss": (Person.P1, Number.SG)}),
+            ("имизга",  {"case": Case.DAT, "poss": (Person.P1, Number.PL)}),
+            ("имизда",  {"case": Case.LOC, "poss": (Person.P1, Number.PL)}),
+            ("имиздан", {"case": Case.ABL, "poss": (Person.P1, Number.PL)}),
+            ("ингизга",  {"case": Case.DAT, "poss": (Person.P2, Number.PL)}),
+            ("ингизда",  {"case": Case.LOC, "poss": (Person.P2, Number.PL)}),
+            ("ларига",   {"case": Case.DAT, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
+            ("ларини",   {"case": Case.ACC, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
+            ("ларида",   {"case": Case.LOC, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
+            ("ларидан",  {"case": Case.ABL, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
+            # Оддий эгалик (келишиксиз)
+            ("си",    {"poss": (Person.P3, Number.SG)}),
+            ("сини",  {"case": Case.ACC, "poss": (Person.P3, Number.SG)}),
+            ("сида",  {"case": Case.LOC, "poss": (Person.P3, Number.SG)}),
+            ("сидан", {"case": Case.ABL, "poss": (Person.P3, Number.SG)}),
+            ("сига",  {"case": Case.DAT, "poss": (Person.P3, Number.SG)}),
+            ("сининг", {"case": Case.GEN, "poss": (Person.P3, Number.SG)}),
+        ]
+        for suf, attrs_pc in sorted(poss_case, key=lambda x: len(x[0]), reverse=True):
+            if word.endswith(suf) and len(word) - len(suf) >= 2:
+                root = word[:-len(suf)]
+                if self._in_dict(root):
+                    return root, [suf], {"pos": POS.NOUN, **attrs_pc}
 
         # Феъл суффикслари
         for suf in ["япман","япсан","япти","япмиз","япсиз","яптилар",
