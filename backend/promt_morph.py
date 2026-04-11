@@ -318,17 +318,9 @@ class PromtMorph:
         self._word_id   = raw.get("word_ids", {})
         self._pos_map   = raw.get("pos_map", {})  # Hunspell+FDI merged POS tags
 
-        # B-4: Load prefixes from FDI data (32K entries)
-        fdi_prefixes = raw.get("prefixes", [])
-        if isinstance(fdi_prefixes, list):
-            self._prefixes = set(p.lower() for p in fdi_prefixes if isinstance(p, str) and len(p) >= 2)
-        elif isinstance(fdi_prefixes, dict):
-            self._prefixes = set(p.lower() for p in fdi_prefixes.keys() if isinstance(p, str) and len(p) >= 2)
-        else:
-            self._prefixes = set()
-        # Always include common Uzbek prefixes
-        for cp in self.COMMON_PREFIXES:
-            self._prefixes.add(cp.lower())
+        # B-4: Only use GRAMMATICAL prefixes (NOT the 32K FDI index entries)
+        # FDI "prefixes" are word-beginning n-grams for indexing, not linguistic prefixes
+        self._prefixes = set(p.lower() for p in self.COMMON_PREFIXES)
 
         self._bases     = ["Uzbek"]
         self._data_path = str(json_file.parent)
@@ -646,9 +638,10 @@ class PromtMorph:
         return word in self._roots_cyr or word in self._roots_lat
 
     def _strip_prefixes(self, word: str) -> tuple:
-        """B-4: Префикс ажратиш — бе-тартиб, но-тўғри, сер-ҳосил"""
+        """B-4: Префикс ажратиш — бе-тартиб, но-тўғри, сер-ҳосил.
+        Only strips GRAMMATICAL prefixes (бе-, но-, ба-, сер-, кам-, etc.)"""
         wl = word.lower()
-        # Try prefixes longest-first for greedy match
+        # Only grammatical prefixes, longest-first
         sorted_prefixes = sorted(self._prefixes, key=len, reverse=True)
         for pfx in sorted_prefixes:
             if wl.startswith(pfx) and len(wl) - len(pfx) >= 2:
