@@ -44,19 +44,81 @@ def _ensure_script(value: str, target_script: str) -> str:
         return value
 
 
-def _run_morph(text: str) -> list:
-    """Morphology layer — basic word analysis via Hunspell."""
+_promt_morph = None
+
+def _get_promt_morph():
+    """Lazy-load PROMT morph engine (250K roots)."""
+    global _promt_morph
+    if _promt_morph is not None:
+        return _promt_morph
     try:
-        import hunspell_data
+        import sys
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+        from promt_morph import PromtMorph
+        m = PromtMorph()
+        if m.initialize(backend_dir):
+            _promt_morph = m
+            return m
+    except Exception:
+        pass
+    return None
+
+
+def _run_morph(text: str) -> list:
+    """Morphology layer — PROMT 250K roots + POS/Case/Number analysis.
+    Also detects unknown words (potential spelling errors)."""
+    results = []
+    morph = _get_promt_morph()
+    if not morph:
+        # Fallback: basic word list
         words = re.findall(r"\w+", text)
-        results = []
         for w in words[:200]:
             if len(w) < 3:
                 continue
-            results.append({"word": w, "pos": "NOUN", "length": len(w)})
+            results.append({"word": w, "pos": "unknown", "root": w, "layer": "morph"})
         return results[:100]
-    except Exception:
-        return []
+
+    # PROMT morph analysis
+    text_script = _detect_script(text)
+    pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z\'ʻʼ]+"
+    for match in re.finditer(pattern, text):
+        word = match.group()
+        if len(word) < 2:
+            continue
+        try:
+            morph.put_key(word)
+            root = morph.get_key()
+            mods = morph.modifs
+            pos = mods.get("pos", "unknown")
+            case = mods.get("case", "")
+            number = mods.get("number", "")
+            person = mods.get("person", "")
+
+            entry = {
+                "word": word,
+                "root": root,
+                "pos": pos.upper() if pos != "unknown" else "UNKNOWN",
+                "from": match.start(),
+                "to": match.end(),
+                "layer": "morph",
+            }
+            if case and case != "?":
+                entry["case"] = case
+            if number and number != "?":
+                entry["number"] = number
+            if person and person != "?":
+                entry["person"] = person
+            # Flag unknown words
+            if pos == "unknown":
+                entry["is_unknown"] = True
+                entry["message"] = f"'{word}' — морфологик таҳлил қилинмади (луғатда топилмади)"
+            results.append(entry)
+        except Exception:
+            results.append({"word": word, "pos": "ERROR", "root": word, "layer": "morph"})
+
+    return results[:200]
 
 
 def _run_sayqallash(text: str, lang: str) -> list:
@@ -201,15 +263,55 @@ def _run_sayqallash(text: str, lang: str) -> list:
 
 
 def _run_syntax(text: str) -> list:
-    """Syntax layer — sentence-level check."""
+    """Syntax layer — PROMT SyntData + existing syntax_engine.
+    Combines SOV word order, NER, and sentence structure checks."""
+    results = []
+
+    # SOURCE 1: Existing syntax_engine (basic checks)
     try:
         import syntax_engine
         errors = syntax_engine.check_text(text)
         for e in errors:
             e["layer"] = "syntax"
-        return errors
+        results.extend(errors)
     except Exception:
-        return []
+        pass
+
+    # SOURCE 2: PROMT SyntData (SOV + NER + EventFrame)
+    try:
+        import sys
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+        from promt_syntdata import SyntData
+        sd = SyntData()
+        parse = sd.parse(text)
+
+        # NER entities
+        if hasattr(parse, 'entities') and parse.entities:
+            for ent in parse.entities[:20]:
+                results.append({
+                    "type": "ner",
+                    "entity_type": ent.get("type", "MISC") if isinstance(ent, dict) else getattr(ent, "type", "MISC"),
+                    "text": ent.get("text", "") if isinstance(ent, dict) else getattr(ent, "text", ""),
+                    "from": ent.get("from", 0) if isinstance(ent, dict) else getattr(ent, "start", 0),
+                    "to": ent.get("to", 0) if isinstance(ent, dict) else getattr(ent, "end", 0),
+                    "layer": "syntax",
+                })
+
+        # Syntax issues (SOV violations etc)
+        if hasattr(parse, 'issues') and parse.issues:
+            for issue in parse.issues[:10]:
+                results.append({
+                    "type": "syntax_violation",
+                    "message": issue.get("message", "") if isinstance(issue, dict) else str(issue),
+                    "severity": "warning",
+                    "layer": "syntax",
+                })
+    except Exception:
+        pass
+
+    return results
 
 
 def _run_style(text: str) -> list:
