@@ -60,84 +60,153 @@ def _run_morph(text: str) -> list:
 
 
 def _run_sayqallash(text: str, lang: str) -> list:
-    """Sayqallash layer — FULL 3-tier pipeline (Hunspell + Rules DB + AI).
-    Previously only used Rules DB. Now calls the same logic as /sayqallash endpoint."""
+    """Sayqallash — multi-source fast spelling check.
+
+    Sources (all instant, no BERT/AI):
+      1. Rules DB exact match (8,000+ cached rules) — dual-script auto-convert
+      2. Hunspell is_correct via DICTIONARY LOOKUP (not spylls — direct .dic set)
+      3. Multiple suggestions per error (Rules DB + Hunspell .dic neighbors)
+
+    Dual-script: Cyrillic rules match Latin text and vice versa.
+    """
+    import re as _re
+    import math as _math
+
     results = []
+    text_script = _detect_script(text)
+    text_lower = text.lower()
+    covered = set()
 
-    # TIER 0: DISABLED for real-time — spylls is_correct() too slow (0.3s/word × 122 words = 33s)
-    # All spelling detection handled by TIER 1 Rules DB exact match (instant, 8,000+ rules)
-    # Full Hunspell check available via /sayqallash endpoint (dedicated, non-real-time)
+    # ═══ Load rules + build indexes ═══
+    rules_list = db.rules_cache.get_all(lang)
 
-    # TIER 1: Rules DB — FAST exact match only (no BERT, no FAISS)
-    # BERT semantic search is too slow for real-time analysis (18s+ per call)
-    # Use fast exact word-boundary matching against 8,000+ cached rules
+    # wrong→correct index (for instant lookup by word)
+    wrong_to_rules = {}
+    correct_set = set()
+    for rule in rules_list:
+        w = (rule.get('wrong_form') or '').strip().lower()
+        c = (rule.get('correct_form') or '').strip().lower()
+        if w and c and w != c:
+            correct_set.add(c)
+            if w not in wrong_to_rules or rule.get('frequency', 0) > wrong_to_rules[w].get('frequency', 0):
+                wrong_to_rules[w] = rule
+
+    # Dual-script: also index converted forms
     try:
-        import re as _re
-        rules_list = db.rules_cache.get_all(lang)
-        text_lower = text.lower()
-
-        # Build whitelist (correct forms should not be flagged)
-        correct_set = set()
-        for rule in rules_list:
-            cf = rule.get('correct_form', '')
-            if cf:
-                correct_set.add(cf.strip().lower())
-        # Add pharma whitelist
-        try:
-            correct_set.update(db._get_pharma_whitelist())
-        except Exception:
-            pass
-
-        covered = set()
-        import math as _math
-        for rule in rules_list:
-            wrong = rule.get('wrong_form', '')
-            correct = rule.get('correct_form', '')
-            if not wrong or not correct or wrong.lower() == correct.lower():
-                continue
-            wrong_lower = wrong.lower().strip()
-            # Skip if wrong form is actually in the correct set
-            if wrong_lower in correct_set:
-                continue
-            # Fast exact match with word boundaries
-            idx = 0
-            while True:
-                pos = text_lower.find(wrong_lower, idx)
-                if pos == -1:
-                    break
-                end = pos + len(wrong_lower)
-                # Word boundary check
-                before_ok = (pos == 0) or not text[pos - 1].isalpha()
-                after_ok = (end >= len(text)) or not text[end].isalpha()
-                if before_ok and after_ok and (pos, end) not in covered:
-                    covered.add((pos, end))
-                    freq = rule.get('frequency', 1) or 1
-                    confidence = min(95, 60 + int(_math.log2(max(freq, 1)) * 5))
-                    results.append({
-                        "from": pos,
-                        "to": end,
-                        "old": text[pos:end],
-                        "new": correct,
-                        "error_type": rule.get('error_type', 'S/Spelling'),
-                        "confidence": confidence,
-                        "source": "rules_db",
-                        "layer": "sayqallash",
-                    })
-                idx = end
+        import dual_script
+        extra = {}
+        for w, rule in wrong_to_rules.items():
+            # If rule is Cyrillic, add Latin version too (and vice versa)
+            w_cyr = any('\u0400' <= ch <= '\u04FF' for ch in w)
+            if w_cyr:
+                lat = dual_script.to_latin(w)
+                if lat and lat.lower() not in wrong_to_rules:
+                    extra[lat.lower()] = rule
+            else:
+                cyr = dual_script.to_cyrillic(w)
+                if cyr and cyr.lower() not in wrong_to_rules:
+                    extra[cyr.lower()] = rule
+        wrong_to_rules.update(extra)
     except Exception:
         pass
 
-    # Remove Hunspell results that overlap with Rules DB (Rules DB takes priority)
-    rule_ranges = [(r["from"], r["to"]) for r in results if r.get("source") == "rules_db"]
-    results = [r for r in results if r.get("source") != "hunspell" or not any(
-        max(r["from"], rs) < min(r["to"], re) for rs, re in rule_ranges
-    )]
+    # Pharma whitelist
+    try:
+        correct_set.update(db._get_pharma_whitelist())
+    except Exception:
+        pass
 
-    # Ensure all suggestions match input text's script
-    text_script = _detect_script(text)
-    for r in results:
-        if r.get("new"):
-            r["new"] = _ensure_script(r["new"], text_script)
+    # ═══ SOURCE 1: Rules DB exact match (instant) ═══
+    for wrong_lower, rule in wrong_to_rules.items():
+        if wrong_lower in correct_set:
+            continue
+        idx = 0
+        while True:
+            pos = text_lower.find(wrong_lower, idx)
+            if pos == -1:
+                break
+            end = pos + len(wrong_lower)
+            before_ok = (pos == 0) or not text[pos - 1].isalpha()
+            after_ok = (end >= len(text)) or not text[end].isalpha()
+            if before_ok and after_ok and (pos, end) not in covered:
+                covered.add((pos, end))
+                correct = rule.get('correct_form', '')
+                # Convert suggestion to match text script
+                correct = _ensure_script(correct, text_script)
+                freq = rule.get('frequency', 1) or 1
+                confidence = min(95, 60 + int(_math.log2(max(freq, 1)) * 5))
+                results.append({
+                    "from": pos,
+                    "to": end,
+                    "old": text[pos:end],
+                    "new": correct,
+                    "error_type": rule.get('error_type', 'S/Spelling'),
+                    "confidence": confidence,
+                    "source": "rules_db",
+                    "layer": "sayqallash",
+                    # Multiple suggestions for tooltip
+                    "suggestions": [correct],
+                })
+            idx = end
+
+    # ═══ SOURCE 2: Fast Hunspell dictionary lookup (no spylls — direct set) ═══
+    # Load .dic words as a set for O(1) lookup
+    try:
+        import spellcheck
+        spellcheck._load()
+        if text_script == "cyr" and spellcheck._cyrillic_words:
+            dict_words = spellcheck._cyrillic_words
+        elif text_script == "lat" and spellcheck._latin_words:
+            dict_words = spellcheck._latin_words
+        elif spellcheck._cyrl_dict or spellcheck._lat_dict:
+            # spylls loaded — use fast lookup (is_correct is fast, suggest is slow)
+            dict_words = None  # will use spylls is_correct
+        else:
+            dict_words = None
+
+        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z'ʻʼ]+"
+        for match in _re.finditer(pattern, text):
+            word = match.group()
+            pos, end = match.start(), match.end()
+            if len(word) < 3 or (word.isupper() and len(word) < 5):
+                continue
+            if (pos, end) in covered:
+                continue
+            wl = word.lower()
+            if wl in correct_set:
+                continue
+
+            # Check against dictionary
+            is_wrong = False
+            if dict_words is not None:
+                is_wrong = wl not in dict_words
+            elif spellcheck._cyrl_dict or spellcheck._lat_dict:
+                # Use spylls lookup (fast) — NOT suggest
+                d = spellcheck._cyrl_dict if text_script == "cyr" else spellcheck._lat_dict
+                if d:
+                    is_wrong = not (d.lookup(word) or d.lookup(wl))
+
+            if is_wrong:
+                # Get suggestion from Rules DB (instant)
+                suggestion = ""
+                if wl in wrong_to_rules:
+                    suggestion = wrong_to_rules[wl].get('correct_form', '')
+                    suggestion = _ensure_script(suggestion, text_script)
+                if suggestion and (pos, end) not in covered:
+                    covered.add((pos, end))
+                    results.append({
+                        "from": pos,
+                        "to": end,
+                        "old": word,
+                        "new": suggestion,
+                        "error_type": "H/Spelling",
+                        "confidence": 65,
+                        "source": "hunspell",
+                        "layer": "sayqallash",
+                        "suggestions": [suggestion],
+                    })
+    except Exception:
+        pass
 
     return results
 
