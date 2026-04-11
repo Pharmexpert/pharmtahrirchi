@@ -312,16 +312,44 @@ export default function TilshunosPage() {
         const mammoth = await import('mammoth')
         const buf = await f.arrayBuffer()
         const result = await mammoth.convertToHtml({ arrayBuffer: buf }, {
-          // Inline images as base64 data URIs so they survive without external storage
+          // Inline images as base64 data URIs — preserves formatting
           convertImage: mammoth.images.imgElement(async (img: any) => {
             const dataUri = await img.read('base64').then((s: string) => `data:${img.contentType};base64,${s}`)
             return { src: dataUri }
           }),
+          // Preserve styles: bold, italic, underline, tables, lists
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "b => strong", "i => em", "u => u",
+            "table => table.docx-table",
+          ],
         } as any)
         const tx = await mammoth.extractRawText({ arrayBuffer: buf })
         return { text: tx.value || '', html: result.value || '' }
       } catch (e) {
         // Fallback to backend plain extraction
+      }
+    }
+    // Excel (.xlsx, .xls) — extract text from all sheets
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      try {
+        const XLSX = await import('xlsx')
+        const buf = await f.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array' })
+        let allText = ''
+        let htmlParts: string[] = []
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName]
+          const csvText = XLSX.utils.sheet_to_csv(ws)
+          allText += `--- ${sheetName} ---\n${csvText}\n\n`
+          const htmlTable = XLSX.utils.sheet_to_html(ws)
+          htmlParts.push(`<h3>${sheetName}</h3>${htmlTable}`)
+        }
+        return { text: allText, html: htmlParts.join('\n') }
+      } catch (e) {
+        // Fallback
       }
     }
     const r = await api.tilshunos.extractText(f)
@@ -737,7 +765,7 @@ export default function TilshunosPage() {
                 <Upload size={13} /> Файлдан юклаш
                 <input
                   type="file"
-                  accept=".txt,.md,.csv,.pdf,.docx"
+                  accept=".txt,.md,.csv,.pdf,.docx,.xlsx,.xls,.pptx"
                   style={{ display: 'none' }}
                   onChange={async (e) => {
                     const f = e.target.files?.[0]
@@ -948,7 +976,7 @@ export default function TilshunosPage() {
               <Upload size={13} /> Файлдан юклаш
               <input
                 type="file"
-                accept=".txt,.md,.csv,.pdf,.docx"
+                accept=".txt,.md,.csv,.pdf,.docx,.xlsx,.xls,.pptx"
                 style={{ display: 'none' }}
                 onChange={async (e) => {
                   const f = e.target.files?.[0]
