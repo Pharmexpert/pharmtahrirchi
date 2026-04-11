@@ -178,6 +178,25 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
+    # Syntax DB dictionary (88K words) — these are CORRECT words
+    try:
+        _conn = sqlite3.connect(DB_PATH)
+        _cur = _conn.cursor()
+        for tbl_q in [
+            "SELECT DISTINCT word FROM dictionary WHERE word IS NOT NULL",
+            "SELECT DISTINCT lemma FROM dictionary WHERE lemma IS NOT NULL",
+        ]:
+            try:
+                _cur.execute(tbl_q)
+                for row in _cur.fetchall():
+                    if row[0] and len(row[0]) > 1:
+                        correct_set.add(row[0].strip().lower())
+            except Exception:
+                pass
+        _conn.close()
+    except Exception:
+        pass
+
     # ═══ SOURCE 1: Rules DB exact match (instant) ═══
     for wrong_lower, rule in wrong_to_rules.items():
         if wrong_lower in correct_set:
@@ -256,8 +275,27 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
-    # Grammar checker disabled — too many false positives (61/61 were wrong)
-    # Grammar issues available via /api/tilshunos/check endpoint
+    # ═══ SORT suggestions by word frequency (most common = first) ═══
+    try:
+        _conn_f = sqlite3.connect(DB_PATH)
+        _cur_f = _conn_f.cursor()
+        for r in results:
+            sugs = r.get("suggestions", [])
+            if len(sugs) > 1:
+                freq_map = {}
+                for s in sugs:
+                    try:
+                        _cur_f.execute("SELECT frequency FROM word_frequency_corpus WHERE word=? LIMIT 1", (s.lower(),))
+                        row = _cur_f.fetchone()
+                        freq_map[s] = row[0] if row else 0
+                    except Exception:
+                        freq_map[s] = 0
+                r["suggestions"] = sorted(sugs, key=lambda s: freq_map.get(s, 0), reverse=True)
+                if r["suggestions"]:
+                    r["new"] = r["suggestions"][0]  # Best suggestion = most frequent
+        _conn_f.close()
+    except Exception:
+        pass
 
     return results
 

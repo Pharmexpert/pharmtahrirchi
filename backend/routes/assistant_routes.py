@@ -402,7 +402,7 @@ async def edit(payload: Dict[str, Any], current_user: Dict = Depends(get_current
     try:
         import tm_search
         tm = tm_search.best_match(text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved")
-        if tm and tm["score"] >= 0.95:
+        if tm and tm["score"] >= 0.80:
             return {"text": tm["tgt_text"], "engine": "tm_exact"}
     except Exception:
         pass
@@ -436,7 +436,7 @@ async def translate(payload: Dict[str, Any], current_user: Dict = Depends(get_cu
     try:
         import tm_search
         tm = tm_search.best_match(text, src_lang=base_src, tgt_lang=base_tgt)
-        if tm and tm["score"] >= 0.95:
+        if tm and tm["score"] >= 0.80:
             return {"text": tm["tgt_text"], "engine": "tm_exact"}
     except Exception:
         pass

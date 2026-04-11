@@ -511,7 +511,7 @@ async def improve_row(payload: Dict[str, Any]):
     try:
         import tm_search
         tm_match = tm_search.best_match(text, src_lang=f"{target_lang}_raw", tgt_lang=f"{target_lang}_improved")
-        if tm_match and tm_match["score"] >= 0.95:
+        if tm_match and tm_match["score"] >= 0.80:
             return {
                 f"{target_lang}_v2": tm_match["tgt_text"],
                 "annotations": [],

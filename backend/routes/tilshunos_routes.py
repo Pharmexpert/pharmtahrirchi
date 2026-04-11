@@ -667,7 +667,7 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
         try:
             import tm_search
             tm_match = tm_search.best_match(text, src_lang=base_src, tgt_lang=base_tgt)
-            if tm_match and tm_match["score"] >= 0.95:
+            if tm_match and tm_match["score"] >= 0.80:
                 logger.info(f"[translate] TM exact hit ({tm_match['score']}) — skipping AI")
                 return {"translated": tm_match["tgt_text"], "engine": "tm_exact", "tm_score": tm_match["score"]}
         except Exception as e:
@@ -751,7 +751,7 @@ async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_c
             import tm_search
             # For editing, we search TM with src_lang=lang, tgt_lang=lang (same-lang improvement)
             tm_match = tm_search.best_match(text, src_lang=f"{lang}_raw", tgt_lang=f"{lang}_improved")
-            if tm_match and tm_match["score"] >= 0.95:
+            if tm_match and tm_match["score"] >= 0.80:
                 logger.info(f"[ai-improve] TM exact hit ({tm_match['score']}) — skipping AI")
                 return {"improved": tm_match["tgt_text"], "engine": "tm_exact", "tm_score": tm_match["score"]}
         except Exception as e:
