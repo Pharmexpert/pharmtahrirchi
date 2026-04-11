@@ -84,24 +84,62 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
-    # TIER 1: Rules DB (5,600+ rules with FAISS semantic search)
+    # TIER 1: Rules DB — FAST exact match only (no BERT, no FAISS)
+    # BERT semantic search is too slow for real-time analysis (18s+ per call)
+    # Use fast exact word-boundary matching against 8,000+ cached rules
     try:
-        rules = db.get_rules_for_text(text, lang)
+        import re as _re
+        rules_list = db.rules_cache.get_all(lang)
+        text_lower = text.lower()
+
+        # Build whitelist (correct forms should not be flagged)
+        correct_set = set()
+        for rule in rules_list:
+            cf = rule.get('correct_form', '')
+            if cf:
+                correct_set.add(cf.strip().lower())
+        # Add pharma whitelist
+        try:
+            correct_set.update(db._get_pharma_whitelist())
+        except Exception:
+            pass
+
         covered = set()
-        for r in rules:
-            key = (r["from_index"], r["to_index"])
-            if key not in covered:
-                covered.add(key)
-                results.append({
-                    "from": r["from_index"],
-                    "to": r["to_index"],
-                    "old": r["old_value"],
-                    "new": r["new_value"],
-                    "error_type": r["error_type"],
-                    "confidence": r.get("confidence", 80),
-                    "source": "rules_db",
-                    "layer": "sayqallash",
-                })
+        import math as _math
+        for rule in rules_list:
+            wrong = rule.get('wrong_form', '')
+            correct = rule.get('correct_form', '')
+            if not wrong or not correct or wrong.lower() == correct.lower():
+                continue
+            wrong_lower = wrong.lower().strip()
+            # Skip if wrong form is actually in the correct set
+            if wrong_lower in correct_set:
+                continue
+            # Fast exact match with word boundaries
+            idx = 0
+            while True:
+                pos = text_lower.find(wrong_lower, idx)
+                if pos == -1:
+                    break
+                end = pos + len(wrong_lower)
+                # Word boundary check
+                before_ok = (pos == 0) or not text[pos - 1].isalpha()
+                after_ok = (end >= len(text)) or not text[end].isalpha()
+                if before_ok and after_ok and (pos, end) not in covered:
+                    covered.add((pos, end))
+                    freq = rule.get('frequency', 1) or 1
+                    confidence = min(95, 60 + int(_math.log2(max(freq, 1)) * 5))
+                    results.append({
+                        "from": pos,
+                        "to": end,
+                        "old": text[pos:end],
+                        "new": correct,
+                        "error_type": rule.get('error_type', 'S/Spelling'),
+                        "confidence": confidence,
+                        "source": "rules_db",
+                        "layer": "sayqallash",
+                    })
+                idx = end
     except Exception:
         pass
 
