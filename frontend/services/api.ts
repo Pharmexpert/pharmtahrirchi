@@ -32,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`
   // Long timeout for AI inference (CPU Llama/Mistral can take 60-120 sec)
   const isAiEndpoint = path.includes('/assistant/') || path.includes('/ai-improve') || path.includes('/translate') || path.includes('/check') || path.includes('/sayqallash') || path.includes('/analyze/') || path.includes('/improve-row')
-  const timeoutMs = isAiEndpoint ? 180000 : 30000  // 3 min for AI/analysis, 30s for others
+  const timeoutMs = isAiEndpoint ? 300000 : 60000  // 5 min for AI/analysis, 60s for others
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
