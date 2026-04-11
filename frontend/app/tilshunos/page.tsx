@@ -832,7 +832,7 @@ export default function TilshunosPage() {
 
             {/* 4-layer Linguistic Analysis Bar */}
             <div style={{ padding: '10px 18px 0' }}>
-              <LinguisticAnalysisBar text={text} lang="uz" compact />
+              <LinguisticAnalysisBar text={text} lang="uz" compact onTextChange={(t) => setText(t)} />
             </div>
 
             {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
@@ -1049,7 +1049,7 @@ export default function TilshunosPage() {
 
           {/* 4-layer Linguistic Analysis Bar for source text */}
           <div style={{ marginBottom: 10 }}>
-            <LinguisticAnalysisBar text={sourceText} lang={sourceLang === 'ru' ? 'ru' : 'uz'} compact />
+            <LinguisticAnalysisBar text={sourceText} lang={sourceLang === 'ru' ? 'ru' : 'uz'} compact onTextChange={(t) => setSourceText(t)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, minHeight: 360 }}>
@@ -1521,7 +1521,7 @@ function WordMode({
       {/* 4-layer Linguistic Analysis Bar — runs against extracted text */}
       {file && fullText && (
         <div style={{ marginBottom: 10 }}>
-          <LinguisticAnalysisBar text={fullText} lang="uz" compact />
+          <LinguisticAnalysisBar text={fullText} lang="uz" compact onTextChange={(t) => setFullText(t)} />
         </div>
       )}
 

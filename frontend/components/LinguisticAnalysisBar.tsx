@@ -39,10 +39,11 @@ interface Props {
   lang?: string
   compact?: boolean
   onResult?: (result: AnalysisResult) => void
+  onTextChange?: (newText: string) => void
   extraButtons?: Array<{ label: string; icon?: React.ReactNode; color?: string; onClick: () => void }>
 }
 
-export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = false, onResult, extraButtons = [] }: Props) {
+export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = false, onResult, onTextChange, extraButtons = [] }: Props) {
   const [loading, setLoading] = useState<string | null>(null)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -163,15 +164,15 @@ export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = fal
         <span style={{ fontSize: '.7rem', color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>⚠ {error}</span>
       )}
 
-      {/* Detailed results panel — shows errors + suggestions */}
+      {/* Annotated text with clickable suggestions */}
       {result && result.total > 0 && (
-        <div style={{ flex: '1 0 100%', marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <AnnotatedTextView text={text} result={result as any} />
+        <div style={{ flex: '1 0 100%', marginTop: 10 }}>
+          <AnnotatedTextView text={text} result={result as any} onTextChange={onTextChange} />
         </div>
       )}
       {result && result.total === 0 && text && text.trim() && (
         <div style={{ flex: '1 0 100%', marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#DCFCE7', color: '#15803D', fontSize: '.78rem', fontWeight: 600 }}>
-          ✅ Xato topilmadi — матн toza
+          ✅ Хато топилмади
         </div>
       )}
     </div>
