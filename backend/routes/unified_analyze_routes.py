@@ -149,90 +149,53 @@ def _run_sayqallash(text: str, lang: str) -> list:
                 })
             idx = end
 
-    # ═══ SOURCE 2: Fast Hunspell dictionary lookup (no spylls — direct set) ═══
-    # Load .dic words as a set for O(1) lookup
+    # ═══ SOURCE 2: Hunspell spylls lookup (affix-aware, no suggest) ═══
+    # Only check words NOT already found by Rules DB
+    # spylls lookup() supports affixes (2-3M word forms) — fast (~5ms/word)
+    # spylls suggest() is slow (500ms/word) — NOT used here
     try:
         import spellcheck
         spellcheck._load()
-        if text_script == "cyr" and spellcheck._cyrillic_words:
-            dict_words = spellcheck._cyrillic_words
-        elif text_script == "lat" and spellcheck._latin_words:
-            dict_words = spellcheck._latin_words
-        elif spellcheck._cyrl_dict or spellcheck._lat_dict:
-            # spylls loaded — use fast lookup (is_correct is fast, suggest is slow)
-            dict_words = None  # will use spylls is_correct
-        else:
-            dict_words = None
-
-        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z'ʻʼ]+"
-        for match in _re.finditer(pattern, text):
-            word = match.group()
-            pos, end = match.start(), match.end()
-            if len(word) < 3 or (word.isupper() and len(word) < 5):
-                continue
-            if (pos, end) in covered:
-                continue
-            wl = word.lower()
-            if wl in correct_set:
-                continue
-
-            # Check against dictionary
-            is_wrong = False
-            if dict_words is not None:
-                is_wrong = wl not in dict_words
-            elif spellcheck._cyrl_dict or spellcheck._lat_dict:
-                # Use spylls lookup (fast) — NOT suggest
-                d = spellcheck._cyrl_dict if text_script == "cyr" else spellcheck._lat_dict
-                if d:
-                    is_wrong = not (d.lookup(word) or d.lookup(wl))
-
-            if is_wrong and (pos, end) not in covered:
-                covered.add((pos, end))
-                # Get suggestion from Rules DB (instant)
-                suggestion = ""
-                if wl in wrong_to_rules:
-                    suggestion = wrong_to_rules[wl].get('correct_form', '')
-                    suggestion = _ensure_script(suggestion, text_script)
-                results.append({
-                    "from": pos,
-                    "to": end,
-                    "old": word,
-                    "new": suggestion if suggestion else f"[{word} — луғатда топилмади]",
-                    "error_type": "H/Spelling",
-                    "confidence": 65 if suggestion else 50,
-                    "source": "hunspell",
-                    "layer": "sayqallash",
-                    "suggestions": [suggestion] if suggestion else [],
-                })
+        has_spylls = spellcheck._cyrl_dict or spellcheck._lat_dict
+        if has_spylls:
+            spylls_dict = spellcheck._cyrl_dict if text_script == "cyr" else spellcheck._lat_dict
+            if spylls_dict:
+                pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z\'ʻʼ]+"
+                for match in _re.finditer(pattern, text):
+                    word = match.group()
+                    pos, end = match.start(), match.end()
+                    if len(word) < 3 or (word.isupper() and len(word) < 5):
+                        continue
+                    if (pos, end) in covered:
+                        continue
+                    wl = word.lower()
+                    if wl in correct_set:
+                        continue
+                    # spylls lookup — supports affixes (96K stems × 22K rules = ~3M forms)
+                    if not (spylls_dict.lookup(word) or spylls_dict.lookup(wl)):
+                        # Word not in dictionary — get suggestion from Rules DB
+                        suggestion = ""
+                        if wl in wrong_to_rules:
+                            suggestion = wrong_to_rules[wl].get('correct_form', '')
+                            suggestion = _ensure_script(suggestion, text_script)
+                        if suggestion:
+                            covered.add((pos, end))
+                            results.append({
+                                "from": pos,
+                                "to": end,
+                                "old": word,
+                                "new": suggestion,
+                                "error_type": "H/Spelling",
+                                "confidence": 65,
+                                "source": "hunspell",
+                                "layer": "sayqallash",
+                                "suggestions": [suggestion],
+                            })
     except Exception:
         pass
 
-    # ═══ SOURCE 3: Grammar checker (fast rule-based) ═══
-    try:
-        import grammar_checker
-        checker = grammar_checker.get_checker()
-        grammar_issues = checker.check(text, lang=lang)
-        text_script_g = _detect_script(text)
-        for gi in grammar_issues:
-            key = (gi.from_index, gi.to_index)
-            if key not in covered:
-                covered.add(key)
-                suggestion = ", ".join(gi.suggestions[:3]) if gi.suggestions else ""
-                suggestion = _ensure_script(suggestion, text_script_g)
-                results.append({
-                    "from": gi.from_index,
-                    "to": gi.to_index,
-                    "old": gi.word,
-                    "new": suggestion,
-                    "error_type": gi.issue_type,
-                    "confidence": int(gi.confidence * 100) if gi.confidence else 60,
-                    "source": "grammar",
-                    "layer": "sayqallash",
-                    "message": gi.message,
-                    "suggestions": [_ensure_script(s, text_script_g) for s in (gi.suggestions or [])[:5]],
-                })
-    except Exception:
-        pass
+    # Grammar checker disabled — too many false positives (61/61 were wrong)
+    # Grammar issues available via /api/tilshunos/check endpoint
 
     return results
 
