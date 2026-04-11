@@ -74,7 +74,7 @@ const LAYER_COLORS: Record<string, { under: string; bg: string; label: string }>
 
 export default function AnnotatedTextView({ text, result, onTextChange }: Props) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; spans: Span[] } | null>(null)
-  const [synonymPopup, setSynonymPopup] = useState<{ x: number; y: number; word: string; loading: boolean; synonyms: any[]; error: string | null } | null>(null)
+  const [synonymPopup, setSynonymPopup] = useState<{ x: number; y: number; word: string; wordStart: number; wordEnd: number; loading: boolean; synonyms: any[]; error: string | null } | null>(null)
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
   const isDragging = useRef(false)
   const dragStart = useRef<{ mx: number; my: number; dx: number; dy: number }>({ mx: 0, my: 0, dx: 0, dy: 0 })
@@ -201,14 +201,40 @@ export default function AnnotatedTextView({ text, result, onTextChange }: Props)
     }
     if (!word || word.length < 2) return
 
+    // Find word position in text for replacement
+    const wordIdx = text.indexOf(word)
+    const wordStart = wordIdx >= 0 ? wordIdx : 0
+    const wordEnd = wordIdx >= 0 ? wordIdx + word.length : 0
+
     setTooltip(null)
-    setSynonymPopup({ x: e.clientX, y: e.clientY, word, loading: true, synonyms: [], error: null })
+    setSynonymPopup({ x: e.clientX, y: e.clientY, word, wordStart, wordEnd, loading: true, synonyms: [], error: null })
     try {
       const r: any = await api.synonyms.list(word)
-      const syns = (r?.synonyms || []).map((s: any) => ({
-        word: s.synonym || s.word || s,
-        frequency: s.frequency,
-      })).filter((s: any) => s.word && s.word !== word)
+      // Detect if text is Cyrillic
+      const isCyr = /[а-яёўқғҳ]/i.test(text)
+      const syns = (r?.synonyms || []).map((s: any) => {
+        let w = s.synonym || s.word || s
+        // Convert synonym to match text script
+        if (isCyr && /[a-z]/i.test(w) && !/[а-яёўқғҳ]/i.test(w)) {
+          // Latin → Cyrillic basic conversion
+          const map: Record<string,string> = {a:'а',b:'б',d:'д',e:'е',f:'ф',g:'г',h:'ҳ',i:'и',j:'ж',k:'к',l:'л',m:'м',n:'н',o:'о',p:'п',q:'қ',r:'р',s:'с',t:'т',u:'у',v:'в',x:'х',y:'й',z:'з',
+            "o'":'ў',"g'":'ғ',"sh":'ш',"ch":'ч',"ng":'нг',"yo":'ё',"ya":'я',"yu":'ю'}
+          let cyr = ''
+          let ci = 0
+          const wl = w.toLowerCase()
+          while (ci < wl.length) {
+            let found = false
+            for (const [lat, cy] of Object.entries(map).sort((a,b) => b[0].length - a[0].length)) {
+              if (wl.substring(ci, ci + lat.length) === lat) {
+                cyr += cy; ci += lat.length; found = true; break
+              }
+            }
+            if (!found) { cyr += wl[ci]; ci++ }
+          }
+          w = cyr
+        }
+        return { word: w, frequency: s.frequency }
+      }).filter((s: any) => s.word && s.word !== word && s.word !== word.toLowerCase())
       setSynonymPopup(p => p ? { ...p, synonyms: syns, loading: false } : null)
     } catch (err: any) {
       setSynonymPopup(p => p ? { ...p, error: err?.message || 'Xatolik', loading: false } : null)
@@ -400,7 +426,15 @@ export default function AnnotatedTextView({ text, result, onTextChange }: Props)
                   {synonymPopup.synonyms.slice(0, 15).map((s, i) => (
                     <div
                       key={i}
-                      onClick={() => { navigator.clipboard?.writeText(s.word).catch(() => {}); setSynonymPopup(null) }}
+                      onClick={() => {
+                        if (onTextChange && synonymPopup.wordStart >= 0 && synonymPopup.wordEnd > synonymPopup.wordStart) {
+                          const newText = text.substring(0, synonymPopup.wordStart) + s.word + text.substring(synonymPopup.wordEnd)
+                          onTextChange(newText)
+                        } else {
+                          navigator.clipboard?.writeText(s.word).catch(() => {})
+                        }
+                        setSynonymPopup(null)
+                      }}
                       style={{
                         padding: '7px 10px', borderRadius: 6, background: '#F5F3FF',
                         fontSize: '.82rem', fontWeight: 600, color: '#4338CA',

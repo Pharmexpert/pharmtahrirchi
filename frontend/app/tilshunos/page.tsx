@@ -378,51 +378,50 @@ export default function TilshunosPage() {
   }
 
   const applyFix = async (issue: LinguisticIssue, suggestion: string) => {
-    // Locate matched_text robustly (indices may be stale after contentEditable edits)
-    const matched = issue.matched_text
+    // Locate the error text robustly
+    const matched = issue.matched_text || (issue as any).old_value || text.substring(issue.from_index, issue.to_index)
+    if (!matched) {
+      setPopup(null)
+      return
+    }
     let from = issue.from_index
     let to = issue.to_index
-    if (text.substring(from, to) !== matched) {
-      // Search near old position first, then full text
-      const near = text.indexOf(matched, Math.max(0, from - 50))
+
+    // Verify position — if text at position doesn't match, search for it
+    if (!from && !to && matched) {
+      const idx = text.indexOf(matched)
+      if (idx >= 0) { from = idx; to = idx + matched.length }
+    } else if (text.substring(from, to) !== matched) {
+      const near = text.indexOf(matched, Math.max(0, from - 80))
       const idx = near >= 0 ? near : text.indexOf(matched)
-      if (idx >= 0) {
-        from = idx
-        to = idx + matched.length
-      } else {
-        alert('Сўз топилмади — янгидан "Синов олиб бориш"ни босинг')
-        setPopup(null)
-        return
+      if (idx >= 0) { from = idx; to = idx + matched.length }
+      else {
+        // Last resort: try case-insensitive
+        const lowerIdx = text.toLowerCase().indexOf(matched.toLowerCase())
+        if (lowerIdx >= 0) { from = lowerIdx; to = lowerIdx + matched.length }
+        else {
+          setPopup(null)
+          return // silently fail, don't show alert
+        }
       }
     }
-    // Preserve surrounding spaces — ensure suggestion does not stick to neighbors
-    const before = text.substring(0, from)
-    const after = text.substring(to)
-    let safeSugg = suggestion
-    if (before && !/\s$/.test(before) && !/^\s/.test(safeSugg) && !/^[.,;:!?)\]}»"']/.test(safeSugg)) {
-      // No space between previous char and suggestion — add one if previous is a word char
-      if (/\w/.test(before.slice(-1))) safeSugg = ' ' + safeSugg
-    }
-    if (after && !/^\s/.test(after) && !/\s$/.test(safeSugg) && !/[.,;:!?(\[{«"']$/.test(safeSugg)) {
-      if (/\w/.test(after.charAt(0))) safeSugg = safeSugg + ' '
-    }
-    const newText = before + safeSugg + after
+
+    const newText = text.substring(0, from) + suggestion + text.substring(to)
     setText(newText)
     setPopup(null)
-    // NOTE: do NOT clear result/classified — keep colored view stable while re-check runs
 
     const backendLang = lang.startsWith('uz') ? 'uz' : lang
 
-    // Self-learning (fire-and-forget, doesn't block UI)
+    // Self-learning (fire-and-forget)
     api.tilshunos.confirm({
-      wrong: issue.matched_text,
+      wrong: matched,
       correct: suggestion,
-      context: text.substring(Math.max(0, issue.from_index - 50), Math.min(text.length, issue.to_index + 50)),
+      context: text.substring(Math.max(0, from - 50), Math.min(text.length, to + 50)),
       category: issue.error_type,
       lang: backendLang,
     }).catch(() => {})
 
-    // Re-run check + classify in parallel, atomically swap when both done — no flicker
+    // Re-run tilshunos check (keeps result in correct format for renderAnnotated)
     try {
       const [checkRes, classifyRes] = await Promise.all([
         api.tilshunos.check(newText, backendLang),
@@ -432,7 +431,10 @@ export default function TilshunosPage() {
       ])
       setResult(checkRes)
       setClassified(classifyRes.spans || [])
-    } catch (_) {}
+    } catch (_) {
+      // If re-check fails, just clear the result to avoid stale state
+      setResult(null)
+    }
   }
 
   // Render annotated text as HTML — words colored by classification + errors underlined
@@ -440,7 +442,7 @@ export default function TilshunosPage() {
     if (!text) return <span style={{ color: '#9CA3AF' }}>Матн киритинг ва «Синов олиб бориш» тугмасини босинг...</span>
     if (!result) return <div style={{ whiteSpace: 'pre-wrap' }}>{text}</div>
 
-    // Merge errors + classification + entities into non-overlapping spans
+    // Merge errors + morph + classification + entities into non-overlapping spans
     type Span = {
       from: number
       to: number
@@ -448,6 +450,7 @@ export default function TilshunosPage() {
       issueIdx?: number
       wordCategory?: string
       entityType?: string
+      morphInfo?: any // morph layer data (pos, root, affix, prefix)
     }
     const spans: Span[] = []
 
@@ -461,6 +464,19 @@ export default function TilshunosPage() {
         errorSet.add(key)
       }
     })
+
+    // Morph layer coloring (from 4-layer analysis) — show POS-based colors
+    const morphItems = (result as any).morphology || []
+    for (const mi of morphItems) {
+      const mFrom = mi.from ?? 0
+      const mTo = mi.to ?? 0
+      if (mFrom >= 0 && mTo > mFrom && mTo <= text.length) {
+        const key = `${mFrom}-${mTo}`
+        if (!errorSet.has(key)) {
+          spans.push({ from: mFrom, to: mTo, morphInfo: mi })
+        }
+      }
+    }
 
     // Classifications for words not already covered by errors
     if (classified) {
@@ -542,6 +558,50 @@ export default function TilshunosPage() {
               borderRadius: 3,
             }}
             title={s.wordCategory}
+          >{content}</span>
+        )
+      } else if (s.morphInfo) {
+        // Morph layer — color by POS, click to see morph details + synonyms
+        const POS_COLORS: Record<string, string> = {
+          NOUN: '#0891B2', VERB: '#7C3AED', ADJECTIVE: '#DB2777', ADJ: '#DB2777',
+          ADVERB: '#D97706', ADV: '#D97706', PRONOUN: '#059669', PRON: '#059669',
+          NUMERAL: '#6366F1', NUM: '#6366F1', UNKNOWN: '#DC2626',
+          CONJUNCTION: '#94A3B8', CONJ: '#94A3B8', PARTICLE: '#94A3B8', PART: '#94A3B8',
+        }
+        const pos = (s.morphInfo.pos || 'UNKNOWN').toUpperCase()
+        const mColor = POS_COLORS[pos] || '#6B7280'
+        const isUnknown = pos === 'UNKNOWN' || s.morphInfo.is_unknown
+        parts.push(
+          <span key={`m${i}`}
+            onClick={async (e) => {
+              e.stopPropagation()
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              // Show morph info + synonyms in popup
+              const morphDesc = s.morphInfo.description || s.morphInfo.message || ''
+              const synRes = await api.synonyms.list(content).catch(() => ({ synonyms: [] })) as any
+              const syns = (synRes?.synonyms || []).map((ss: any) => ss.synonym || ss.word || ss).filter((ss: string) => ss && ss !== content)
+              setPopup({
+                issue: {
+                  from_index: s.from, to_index: s.to,
+                  matched_text: content,
+                  old_value: content, new_value: '',
+                  message: morphDesc,
+                  error_type: `Morph/${pos}`,
+                  category: 'morphology',
+                  severity: isUnknown ? 'error' : 'info',
+                  suggestions: syns.slice(0, 5),
+                } as any,
+                x: rect.left, y: rect.bottom + 6,
+              })
+            }}
+            style={{
+              borderBottom: isUnknown ? `2px wavy ${mColor}` : `1px dotted ${mColor}88`,
+              color: isUnknown ? mColor : 'inherit',
+              cursor: 'pointer',
+              padding: '0 1px',
+              background: isUnknown ? `${mColor}15` : 'transparent',
+            }}
+            title={s.morphInfo.description || `${pos}: ${s.morphInfo.root || content}`}
           >{content}</span>
         )
       } else if (s.entityType) {
