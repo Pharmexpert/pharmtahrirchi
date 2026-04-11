@@ -192,6 +192,25 @@ async def startup_event():
 
     asyncio.create_task(preload_morph())
 
+    # B-9: Ensure syntax tables exist
+    try:
+        import sqlite3
+        _db = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
+        _c = sqlite3.connect(_db)
+        _c.execute('''CREATE TABLE IF NOT EXISTS syntax_sentence_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, template TEXT NOT NULL,
+            sentence_type TEXT DEFAULT 'declarative', semantic_type TEXT DEFAULT 'general',
+            formula TEXT, example TEXT, frequency INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        _c.execute('''CREATE TABLE IF NOT EXISTS syntax_word_order_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, wrong_order TEXT, correct_order TEXT,
+            pos_pattern_wrong TEXT, pos_pattern_correct TEXT, explanation_uz TEXT,
+            severity TEXT DEFAULT 'warning', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        _c.commit()
+        _c.close()
+    except Exception:
+        pass
+
     # B-6: Build FAISS lexicon index in background
     async def preload_faiss():
         try:
