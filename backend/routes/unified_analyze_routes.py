@@ -263,53 +263,109 @@ def _run_sayqallash(text: str, lang: str) -> list:
 
 
 def _run_syntax(text: str) -> list:
-    """Syntax layer — PROMT SyntData + existing syntax_engine.
-    Combines SOV word order, NER, and sentence structure checks."""
+    """Syntax layer — sentence structure analysis using PROMT morph POS.
+    Analyzes: SOV word order, sentence members (Эга/Кесим/Тўлдирувчи/Аниқловчи/Ҳол).
+    Each word gets a syntactic role label shown in purple."""
     results = []
+    morph = _get_promt_morph()
 
-    # SOURCE 1: Existing syntax_engine (basic checks)
-    try:
-        import syntax_engine
-        errors = syntax_engine.check_text(text)
-        for e in errors:
-            e["layer"] = "syntax"
-        results.extend(errors)
-    except Exception:
-        pass
+    # Split into sentences
+    sentences = re.split(r'[.!?;]\s*', text)
+    offset = 0
 
-    # SOURCE 2: PROMT SyntData (SOV + NER + EventFrame)
-    try:
-        import sys
-        backend_dir = os.path.dirname(os.path.dirname(__file__))
-        if backend_dir not in sys.path:
-            sys.path.insert(0, backend_dir)
-        from promt_syntdata import SyntData
-        sd = SyntData()
-        parse = sd.parse(text)
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence or len(sentence) < 3:
+            offset += len(sentence) + 2
+            continue
 
-        # NER entities
-        if hasattr(parse, 'entities') and parse.entities:
-            for ent in parse.entities[:20]:
+        # Analyze each word with PROMT morph
+        words_info = []
+        text_script = _detect_script(sentence)
+        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z\'ʻʼ]+"
+        for match in re.finditer(pattern, sentence):
+            word = match.group()
+            if len(word) < 2:
+                continue
+            pos = "unknown"
+            case_val = ""
+            root = word
+            if morph:
+                try:
+                    morph.put_key(word)
+                    root = morph.get_key()
+                    mods = morph.modifs
+                    pos = mods.get("pos", "unknown")
+                    case_val = mods.get("case", "")
+                except Exception:
+                    pass
+
+            # Determine syntactic role
+            role = ""
+            if pos == "verb":
+                role = "КЕСИМ (феъл)"
+            elif pos == "noun" and case_val == "nominative":
+                role = "ЭГА (от, бош келишик)"
+            elif pos == "noun" and case_val == "accusative":
+                role = "ТЎЛДИРУВЧИ (тушум к.)"
+            elif pos == "noun" and case_val == "dative":
+                role = "ТЎЛДИРУВЧИ (жўналиш к.)"
+            elif pos == "noun" and case_val == "locative":
+                role = "ҲОЛ (ўрин-пайт к.)"
+            elif pos == "noun" and case_val == "ablative":
+                role = "ҲОЛ (чиқиш к.)"
+            elif pos == "noun" and case_val == "genitive":
+                role = "АНИҚЛОВЧИ (қаратқич к.)"
+            elif pos == "noun":
+                role = "ОТ"
+            elif pos == "adjective" or pos == "adj":
+                role = "АНИҚЛОВЧИ (сифат)"
+            elif pos == "adverb":
+                role = "ҲОЛ (равиш)"
+            elif pos == "pronoun":
+                role = "ОЛМОШ"
+            elif pos == "postposition":
+                role = "КЎМАКЧИ"
+            elif pos == "conjunction":
+                role = "БОҒЛОВЧИ"
+            elif pos == "numeral":
+                role = "СОН"
+            elif pos == "particle":
+                role = "ЮКЛАМА"
+            elif pos != "unknown":
+                role = pos.upper()
+
+            if role:
+                abs_from = offset + match.start()
+                abs_to = offset + match.end()
                 results.append({
-                    "type": "ner",
-                    "entity_type": ent.get("type", "MISC") if isinstance(ent, dict) else getattr(ent, "type", "MISC"),
-                    "text": ent.get("text", "") if isinstance(ent, dict) else getattr(ent, "text", ""),
-                    "from": ent.get("from", 0) if isinstance(ent, dict) else getattr(ent, "start", 0),
-                    "to": ent.get("to", 0) if isinstance(ent, dict) else getattr(ent, "end", 0),
+                    "word": word,
+                    "root": root,
+                    "pos": pos,
+                    "role": role,
+                    "case": case_val,
+                    "from": abs_from,
+                    "to": abs_to,
+                    "message": f"{word} — {role}",
+                    "description": f"Ўзак: {root} | Сўз туркуми: {pos} | Келишик: {case_val or '—'}",
                     "layer": "syntax",
+                    "severity": "info",
                 })
 
-        # Syntax issues (SOV violations etc)
-        if hasattr(parse, 'issues') and parse.issues:
-            for issue in parse.issues[:10]:
-                results.append({
-                    "type": "syntax_violation",
-                    "message": issue.get("message", "") if isinstance(issue, dict) else str(issue),
-                    "severity": "warning",
-                    "layer": "syntax",
-                })
-    except Exception:
-        pass
+            words_info.append({"word": word, "pos": pos, "role": role, "case": case_val})
+
+        # Check: does sentence have a predicate (verb)?
+        has_verb = any(w["pos"] == "verb" for w in words_info)
+        if not has_verb and len(words_info) > 2:
+            results.append({
+                "type": "missing_predicate",
+                "message": "Гапда кесим (феъл) йўқ",
+                "sentence": sentence,
+                "severity": "warning",
+                "layer": "syntax",
+            })
+
+        offset += len(sentence) + 2  # +2 for ". " separator
 
     return results
 
