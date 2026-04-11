@@ -1,0 +1,10 @@
+backend/
+Qonun/
+.planning/
+.claude/
+*.db
+*.sqlite3
+*.jsonl
+backend/uzbek_fdi_data.json
+backend/hunspell/db_rep_rules.txt
+backend/data/
