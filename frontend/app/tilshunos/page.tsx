@@ -864,41 +864,62 @@ export default function TilshunosPage() {
                 // Convert analyze/full format to TilshunosCheckResult format
                 const issues: any[] = []
                 for (const item of (r.sayqallash || [])) {
+                  const from = item.from ?? item.from_index ?? 0
+                  const to = item.to ?? item.to_index ?? 0
+                  const oldVal = item.old ?? item.old_value ?? ''
+                  const newVal = item.new ?? item.new_value ?? ''
                   issues.push({
-                    from_index: item.from ?? item.from_index ?? 0,
-                    to_index: item.to ?? item.to_index ?? 0,
-                    old_value: item.old ?? item.old_value ?? '',
-                    new_value: item.new ?? item.new_value ?? '',
+                    from_index: from,
+                    to_index: to,
+                    matched_text: oldVal || text.substring(from, to),
+                    old_value: oldVal,
+                    new_value: newVal,
+                    message: item.message || `${oldVal} → ${newVal}`,
                     error_type: item.error_type || 'S/Spelling',
+                    category: (item.error_type || 'S/Spelling').split('/')[0]?.toLowerCase() === 's' ? 'orthography' : 'grammar',
                     severity: item.severity || 'error',
                     source: item.source || 'analyze',
                     confidence: item.confidence || 80,
-                    suggestions: item.suggestions || [],
+                    suggestions: item.suggestions || (newVal ? [newVal] : []),
                     layer: 'sayqallash',
                   })
                 }
                 for (const item of (r.style || [])) {
+                  const from = item.from ?? 0
+                  const to = item.to ?? 0
+                  const oldVal = item.old ?? ''
                   issues.push({
-                    from_index: item.from ?? 0,
-                    to_index: item.to ?? 0,
-                    old_value: item.old ?? '',
+                    from_index: from,
+                    to_index: to,
+                    matched_text: oldVal || text.substring(from, to),
+                    old_value: oldVal,
                     new_value: item.suggestion ?? '',
+                    message: item.description || `${oldVal} → ${item.suggestion || ''}`,
                     error_type: item.rule_id || 'Style',
+                    category: 'style',
                     severity: item.severity || 'should',
                     source: item.source || 'style_rules',
                     description: item.description,
+                    suggestions: item.suggestion ? [item.suggestion] : [],
                     layer: 'style',
                   })
+                }
+                // Build category/severity counts
+                const byCat: Record<string, number> = {}
+                const bySev: Record<string, number> = {}
+                for (const iss of issues) {
+                  byCat[iss.category] = (byCat[iss.category] || 0) + 1
+                  bySev[iss.severity] = (bySev[iss.severity] || 0) + 1
                 }
                 setResult({
                   text,
                   lang: 'uz',
                   issues,
-                  by_category: {},
-                  by_severity: {},
-                  total: r.total || issues.length,
+                  by_category: byCat,
+                  by_severity: bySev,
+                  total: issues.length,
                   morphology: r.morph || [],
-                  score: Math.max(0, 100 - issues.length * 3),
+                  score: issues.length === 0 ? 1.0 : Math.max(0.1, 1.0 - issues.length * 0.03),
                   word_count: text.split(/\s+/).length,
                 } as any)
               }} />
