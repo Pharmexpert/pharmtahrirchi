@@ -186,25 +186,51 @@ def _run_sayqallash(text: str, lang: str) -> list:
                 if d:
                     is_wrong = not (d.lookup(word) or d.lookup(wl))
 
-            if is_wrong:
+            if is_wrong and (pos, end) not in covered:
+                covered.add((pos, end))
                 # Get suggestion from Rules DB (instant)
                 suggestion = ""
                 if wl in wrong_to_rules:
                     suggestion = wrong_to_rules[wl].get('correct_form', '')
                     suggestion = _ensure_script(suggestion, text_script)
-                if suggestion and (pos, end) not in covered:
-                    covered.add((pos, end))
-                    results.append({
-                        "from": pos,
-                        "to": end,
-                        "old": word,
-                        "new": suggestion,
-                        "error_type": "H/Spelling",
-                        "confidence": 65,
-                        "source": "hunspell",
-                        "layer": "sayqallash",
-                        "suggestions": [suggestion],
-                    })
+                results.append({
+                    "from": pos,
+                    "to": end,
+                    "old": word,
+                    "new": suggestion if suggestion else f"[{word} — луғатда топилмади]",
+                    "error_type": "H/Spelling",
+                    "confidence": 65 if suggestion else 50,
+                    "source": "hunspell",
+                    "layer": "sayqallash",
+                    "suggestions": [suggestion] if suggestion else [],
+                })
+    except Exception:
+        pass
+
+    # ═══ SOURCE 3: Grammar checker (fast rule-based) ═══
+    try:
+        import grammar_checker
+        checker = grammar_checker.get_checker()
+        grammar_issues = checker.check(text, lang=lang)
+        text_script_g = _detect_script(text)
+        for gi in grammar_issues:
+            key = (gi.from_index, gi.to_index)
+            if key not in covered:
+                covered.add(key)
+                suggestion = ", ".join(gi.suggestions[:3]) if gi.suggestions else ""
+                suggestion = _ensure_script(suggestion, text_script_g)
+                results.append({
+                    "from": gi.from_index,
+                    "to": gi.to_index,
+                    "old": gi.word,
+                    "new": suggestion,
+                    "error_type": gi.issue_type,
+                    "confidence": int(gi.confidence * 100) if gi.confidence else 60,
+                    "source": "grammar",
+                    "layer": "sayqallash",
+                    "message": gi.message,
+                    "suggestions": [_ensure_script(s, text_script_g) for s in (gi.suggestions or [])[:5]],
+                })
     except Exception:
         pass
 
