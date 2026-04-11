@@ -164,12 +164,7 @@ export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = fal
         <span style={{ fontSize: '.7rem', color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>⚠ {error}</span>
       )}
 
-      {/* Annotated text with clickable suggestions */}
-      {result && result.total > 0 && (
-        <div style={{ flex: '1 0 100%', marginTop: 10 }}>
-          <AnnotatedTextView text={text} result={result as any} onTextChange={onTextChange} />
-        </div>
-      )}
+      {/* Result summary — no AnnotatedTextView here (parent page renders it) */}
       {result && result.total === 0 && text && text.trim() && (
         <div style={{ flex: '1 0 100%', marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#DCFCE7', color: '#15803D', fontSize: '.78rem', fontWeight: 600 }}>
           ✅ Хато топилмади

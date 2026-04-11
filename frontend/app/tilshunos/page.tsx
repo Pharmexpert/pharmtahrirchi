@@ -860,7 +860,7 @@ export default function TilshunosPage() {
 
             {/* 4-layer Linguistic Analysis Bar */}
             <div style={{ padding: '10px 18px 0' }}>
-              <LinguisticAnalysisBar text={text} lang="uz" compact onTextChange={(t) => setText(t)} />
+              <LinguisticAnalysisBar text={text} lang="uz" compact onTextChange={(t) => setText(t)} onResult={(r) => setResult(r as any)} />
             </div>
 
             {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
