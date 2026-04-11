@@ -96,6 +96,14 @@ def _run_morph(text: str) -> list:
             number = mods.get("number", "")
             person = mods.get("person", "")
 
+            # Affix breakdown
+            suffixes = mods.get("suffixes", [])
+            affix_desc = ""
+            if root and root != word and root != word.lower():
+                suffix_part = word[len(root):] if word.lower().startswith(root.lower()) else ""
+                if suffix_part:
+                    affix_desc = f"{root} + {suffix_part}"
+
             entry = {
                 "word": word,
                 "root": root,
@@ -110,10 +118,31 @@ def _run_morph(text: str) -> list:
                 entry["number"] = number
             if person and person != "?":
                 entry["person"] = person
+            if affix_desc:
+                entry["affix"] = affix_desc
+            if suffixes:
+                entry["suffixes"] = suffixes
+
+            # Description for tooltip
+            parts = []
+            if root and root != word:
+                parts.append(f"Ўзак: {root}")
+            parts.append(f"Туркум: {pos}")
+            if case and case != "?":
+                case_labels = {"nominative": "бош", "genitive": "қаратқич", "dative": "жўналиш", "accusative": "тушум", "locative": "ўрин-пайт", "ablative": "чиқиш"}
+                parts.append(f"Келишик: {case_labels.get(case, case)}")
+            if number and number != "?":
+                parts.append(f"Сон: {'кўплик' if number == 'plural' else 'бирлик'}")
+            if affix_desc:
+                parts.append(f"Таркиб: {affix_desc}")
+            entry["description"] = " | ".join(parts)
+            entry["message"] = entry["description"]
+
             # Flag unknown words
             if pos == "unknown":
                 entry["is_unknown"] = True
-                entry["message"] = f"'{word}' — морфологик таҳлил қилинмади (луғатда топилмади)"
+                entry["message"] = f"'{word}' — луғатда топилмади"
+                entry["description"] = entry["message"]
             results.append(entry)
         except Exception:
             results.append({"word": word, "pos": "ERROR", "root": word, "layer": "morph"})
