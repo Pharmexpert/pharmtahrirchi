@@ -307,6 +307,7 @@ class PromtMorph:
         self._roots_cyr = frozenset(raw["roots_cyrillic"])
         self._roots_lat = frozenset(raw["roots_latin"])
         self._word_id   = raw.get("word_ids", {})
+        self._pos_map   = raw.get("pos_map", {})  # Hunspell+FDI merged POS tags
         self._bases     = ["Uzbek"]
         self._data_path = str(json_file.parent)
         self._initialized = True
@@ -659,10 +660,55 @@ class PromtMorph:
         return word, [], {"pos": POS.UNKNOWN}
 
     def _determine_pos(self, word: str, attrs: dict) -> str:
-        """Сўз туркумини аниқлаш"""
-        if "pos" in attrs:
+        """Сўз туркумини аниқлаш — Hunspell+FDI merged pos_map + suffix analysis."""
+        if "pos" in attrs and attrs["pos"] != POS.UNKNOWN:
             return attrs["pos"]
-        # Луғатдаги сўз — стандарт от деб қабул қилинади
+        wl = word.lower()
+        pm = self._pos_map if hasattr(self, '_pos_map') and self._pos_map else {}
+
+        # PRIORITY 1: exact match in pos_map
+        if pm.get(wl, "") not in ("", "unknown"):
+            return pm[wl]
+
+        # PRIORITY 2: try stripping common verb suffixes to find root in pos_map
+        verb_sfx = [
+            "ди", "дим", "динг", "дик", "дилар",  # past
+            "ади", "аман", "асан", "амиз", "адилар",  # present
+            "ган", "ган", "яптим", "япти", "япман",  # participle
+            "моқда", "моқчи", "аётир", "аётган",
+            "илди", "илган", "илади",
+            "инди", "инган",
+        ]
+        for sfx in sorted(verb_sfx, key=len, reverse=True):
+            if wl.endswith(sfx) and len(wl) > len(sfx) + 1:
+                stem = wl[:-len(sfx)]
+                if pm.get(stem, "") == "verb" or stem in self._roots_cyr or stem in self._roots_lat:
+                    return POS.VERB
+
+        # PRIORITY 3: try stripping noun suffixes
+        noun_sfx = [
+            "си", "сини", "сида", "сидан", "сига", "синда",  # possessive
+            "лари", "ларни", "ларда", "лардан", "ларга", "ларнинг",
+            "ни", "нинг", "да", "дан", "га", "лар",
+        ]
+        for sfx in sorted(noun_sfx, key=len, reverse=True):
+            if wl.endswith(sfx) and len(wl) > len(sfx) + 1:
+                stem = wl[:-len(sfx)]
+                sp = pm.get(stem, "")
+                if sp not in ("", "unknown"):
+                    return sp
+                if stem in self._roots_cyr or stem in self._roots_lat:
+                    return POS.NOUN
+
+        # PRIORITY 4: suffix-based heuristic
+        if wl.endswith(("моқ", "лаш", "иш")) and len(wl) > 4:
+            return POS.VERB
+        if wl.endswith(("лик", "чи", "чилик", "гар", "кор")):
+            return POS.NOUN
+        if wl.endswith(("ли", "сиз", "ий", "ик")):
+            return POS.ADJ
+
+        # PRIORITY 5: dictionary check
         if self._in_dict(word):
             return POS.NOUN
         return POS.UNKNOWN
