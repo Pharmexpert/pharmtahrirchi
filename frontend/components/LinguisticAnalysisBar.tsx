@@ -56,11 +56,28 @@ export default function LinguisticAnalysisBar({ text, lang = 'uz', compact = fal
     setLoading(label)
     setError(null)
     try {
-      const r = await api.analyze.full(text, lang, layers)
+      // Direct fetch with 5-minute timeout (bypasses api.ts timeout)
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 300000) // 5 min
+      const res = await fetch(`${API_BASE}/api/analyze/full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ text, lang, layers }),
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const r = await res.json()
       setResult(r)
       onResult?.(r)
     } catch (e: any) {
-      setError(e?.message || 'Xato')
+      if (e?.name === 'AbortError') {
+        setError('Сўров вақти тугади (5 дақиқа). Серверда юклама бор — қайта уриниб кўринг.')
+      } else {
+        setError(e?.message || 'Xato')
+      }
     } finally {
       setLoading(null)
     }
