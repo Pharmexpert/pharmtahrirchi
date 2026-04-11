@@ -64,23 +64,42 @@ def _run_sayqallash(text: str, lang: str) -> list:
     Previously only used Rules DB. Now calls the same logic as /sayqallash endpoint."""
     results = []
 
-    # TIER 0: Hunspell
+    # TIER 0: Hunspell — CHECK ONLY (no suggest — spylls suggest is O(n²) with 10K REP)
+    # Mark misspelled words, get correction from Rules DB (Tier 1) instead
     try:
         import spellcheck
+        import re as _re2
         is_cyr = any("\u0400" <= ch <= "\u04FF" for ch in text[:50])
-        spell_errors = spellcheck.check_text(text, is_cyrillic=is_cyr)
-        for err in spell_errors:
-            if err.get('suggestions'):
-                results.append({
-                    "from": err['position'],
-                    "to": err['end_position'],
-                    "old": err['word'],
-                    "new": err['suggestions'][0],
-                    "error_type": "H/Spelling",
-                    "source": "hunspell",
-                    "confidence": 70,
-                    "layer": "sayqallash",
-                })
+        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if is_cyr else r"[a-zA-Z'ʻʼ]+"
+        for match in _re2.finditer(pattern, text):
+            word = match.group()
+            if len(word) < 2 or (word.isupper() and len(word) < 5):
+                continue
+            if not spellcheck.is_correct(word, is_cyrillic=is_cyr):
+                # Get correction from Rules DB only (instant — cached in memory)
+                suggestion = ""
+                try:
+                    conn = db.connect_db()
+                    cur = conn.cursor()
+                    cur.execute("SELECT correct_form FROM sayqallash_rules WHERE LOWER(wrong_form)=LOWER(?) AND lang='uz' ORDER BY frequency DESC LIMIT 1", (word,))
+                    row = cur.fetchone()
+                    conn.close()
+                    if row and row[0]:
+                        suggestion = row[0]
+                except Exception:
+                    pass
+                # Only report if we have a correction (no guessing)
+                if suggestion:
+                    results.append({
+                        "from": match.start(),
+                        "to": match.end(),
+                        "old": word,
+                        "new": suggestion,
+                        "error_type": "H/Spelling",
+                        "source": "hunspell",
+                        "confidence": 70,
+                        "layer": "sayqallash",
+                    })
     except Exception:
         pass
 
