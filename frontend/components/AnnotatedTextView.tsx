@@ -55,6 +55,7 @@ interface Props {
   text: string
   result: AnalysisResult | null
   lang?: string
+  onTextChange?: (newText: string) => void
 }
 
 interface Span {
@@ -71,7 +72,7 @@ const LAYER_COLORS: Record<string, { under: string; bg: string; label: string }>
   morph:      { under: '#1E40AF', bg: '#DBEAFE', label: 'Морфология' },
 }
 
-export default function AnnotatedTextView({ text, result }: Props) {
+export default function AnnotatedTextView({ text, result, onTextChange }: Props) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; spans: Span[] } | null>(null)
   const [synonymPopup, setSynonymPopup] = useState<{ x: number; y: number; word: string; loading: boolean; synonyms: any[]; error: string | null } | null>(null)
 
@@ -79,36 +80,26 @@ export default function AnnotatedTextView({ text, result }: Props) {
   const spans = useMemo<Span[]>(() => {
     if (!result) return []
     const out: Span[] = []
-    const layers = ['sayqallash', 'style', 'morph'] as const
-    for (const layer of layers) {
+    // Priority order: sayqallash (red) > style (pink) > morph (blue) > syntax (purple)
+    const covered = new Set<string>()
+    for (const layer of ['sayqallash', 'style', 'morph', 'syntax'] as const) {
       const items = (result as any)[layer] as AnalysisIssue[] | undefined
       if (!items) continue
       for (const issue of items) {
-        // For morph: only show UNKNOWN words (errors)
+        // Morph: only UNKNOWN words
         if (layer === 'morph' && !(issue as any).is_unknown) continue
         const start = typeof issue.from === 'number' ? issue.from
                     : typeof issue.from_index === 'number' ? issue.from_index : -1
         const end = typeof issue.to === 'number' ? issue.to
                   : typeof issue.to_index === 'number' ? issue.to_index : -1
-        if (start >= 0 && end > start && end <= text.length) {
-          out.push({ start, end, layer, issue })
-        }
+        if (start < 0 || end <= start || end > text.length) continue
+        // Skip if this range already covered by higher-priority layer
+        const key = `${start}-${end}`
+        if (covered.has(key)) continue
+        covered.add(key)
+        out.push({ start, end, layer, issue })
       }
     }
-    // Syntax positional errors
-    const syntaxItems = (result as any).syntax as AnalysisIssue[] | undefined
-    if (syntaxItems) {
-      for (const issue of syntaxItems) {
-        const start = typeof issue.from === 'number' ? issue.from
-                    : typeof issue.from_index === 'number' ? issue.from_index : -1
-        const end = typeof issue.to === 'number' ? issue.to
-                  : typeof issue.to_index === 'number' ? issue.to_index : -1
-        if (start >= 0 && end > start && end <= text.length) {
-          out.push({ start, end, layer: 'syntax', issue })
-        }
-      }
-    }
-    // Sentence-level syntax errors (no position) — shown as banner
     return out.sort((a, b) => a.start - b.start)
   }, [result, text])
 
@@ -205,21 +196,7 @@ export default function AnnotatedTextView({ text, result }: Props) {
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Sentence-level errors (banner) */}
-      {sentenceErrors.length > 0 && (
-        <div style={{
-          marginBottom: 10, padding: '8px 12px', borderRadius: 8,
-          background: '#EDE9FE', border: '1px solid #C4B5FD', fontSize: '.78rem', color: '#5B21B6',
-        }}>
-          ⚠ <strong>Синтаксис огоҳлантиришлари ({sentenceErrors.length})</strong>
-          <div style={{ marginTop: 4, fontSize: '.74rem' }}>
-            {sentenceErrors.slice(0, 3).map((e, i) => (
-              <div key={i}>• {e.message || e.suggestion}</div>
-            ))}
-            {sentenceErrors.length > 3 && <div>+ yana {sentenceErrors.length - 3} та…</div>}
-          </div>
-        </div>
-      )}
+      {/* Sentence-level syntax banner removed — was duplicating info */}
 
       {/* Annotated text */}
       <div
@@ -283,60 +260,67 @@ export default function AnnotatedTextView({ text, result }: Props) {
                 <X size={14} />
               </button>
             </div>
-            <div style={{ padding: 10, maxHeight: 260, overflowY: 'auto' }}>
+            <div style={{ padding: 10, maxHeight: 320, overflowY: 'auto' }}>
               {tooltip.spans.map((span, i) => {
-                const color = LAYER_COLORS[span.layer]
+                const color = LAYER_COLORS[span.layer] || LAYER_COLORS.sayqallash
                 const iss = span.issue
                 const oldVal = iss.old || iss.old_value || ''
                 const newVal = iss.new || iss.new_value || iss.suggestion || ''
+                // Collect all suggestions for tilmoch.ai-style list
+                const allSuggestions: string[] = []
+                if (newVal && !newVal.startsWith('[')) allSuggestions.push(newVal)
+                if ((iss as any).suggestions) {
+                  for (const s of (iss as any).suggestions) {
+                    if (s && !allSuggestions.includes(s) && !s.startsWith('[')) allSuggestions.push(s)
+                  }
+                }
+                // Apply suggestion — replace in text
+                const applySuggestion = (suggestion: string) => {
+                  if (!onTextChange) return
+                  const from = span.start
+                  const to = span.end
+                  const newText = text.substring(0, from) + suggestion + text.substring(to)
+                  onTextChange(newText)
+                  setTooltip(null)
+                }
                 return (
                   <div key={i} style={{
                     padding: '8px 10px', marginBottom: 6, borderLeft: `3px solid ${color.under}`,
                     background: '#FAFBFC', borderRadius: 4,
                   }}>
-                    <div style={{ fontSize: '.64rem', fontWeight: 800, color: color.under, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                      {color.label}
-                      {iss.severity && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 8, background: color.bg }}>{iss.severity.toUpperCase()}</span>}
+                    {/* Error type label */}
+                    <div style={{ fontSize: '.6rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', marginBottom: 4 }}>
+                      {iss.error_type || color.label}
+                      {iss.confidence !== undefined && ` · ${iss.confidence}%`}
+                      {(iss as any).source && <span style={{ marginLeft: 4 }}>({(iss as any).source})</span>}
                     </div>
-                    {iss.description && (
-                      <div style={{ fontSize: '.78rem', color: '#1E293B', marginTop: 3, fontWeight: 600 }}>
-                        {iss.description}
+                    {/* Suggestion list — tilmoch.ai style */}
+                    {allSuggestions.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {allSuggestions.map((sug, si) => (
+                          <div key={si}
+                            onClick={() => applySuggestion(sug)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              padding: '5px 8px', borderRadius: 6,
+                              cursor: onTextChange ? 'pointer' : 'default',
+                              background: si === 0 ? '#F0FDF4' : 'white',
+                              border: `1px solid ${si === 0 ? '#86EFAC' : '#E5E7EB'}`,
+                              transition: 'background .1s',
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#DCFCE7')}
+                            onMouseLeave={e => (e.currentTarget.style.background = si === 0 ? '#F0FDF4' : 'white')}
+                          >
+                            <span style={{ color: '#16A34A', fontSize: '.72rem' }}>→</span>
+                            <span style={{ fontWeight: si === 0 ? 700 : 500, fontSize: '.82rem', color: '#1E293B' }}>{sug}</span>
+                            {si === 0 && <span style={{ fontSize: '.58rem', color: '#16A34A', marginLeft: 'auto' }}>тавсия</span>}
+                          </div>
+                        ))}
                       </div>
-                    )}
-                    {oldVal && (
-                      <div style={{ marginTop: 4, fontFamily: 'monospace', fontSize: '.76rem' }}>
-                        <span style={{ color: '#991B1B', textDecoration: 'line-through' }}>{oldVal}</span>
-                        {newVal && (
-                          <>
-                            <span style={{ margin: '0 6px' }}>→</span>
-                            <span style={{ color: '#15803D', fontWeight: 700 }}>{newVal}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                    {iss.error_type && (
-                      <div style={{ fontSize: '.64rem', color: '#94A3B8', marginTop: 3 }}>
-                        Тур: {iss.error_type}
-                        {iss.confidence !== undefined && ` · Ишoнч: ${iss.confidence}%`}
-                      </div>
-                    )}
-                    {(iss as any).rule_id && (
-                      <div style={{ fontSize: '.64rem', color: '#7C3AED', marginTop: 2 }}>
-                        {(iss as any).rule_id}
-                        {(iss as any).category && <> · {(iss as any).category}</>}
-                      </div>
-                    )}
-                    {iss.source_ref && (
-                      <div style={{ fontSize: '.64rem', color: '#64748B', marginTop: 2 }}>
-                        Манба: {iss.source_ref}
-                        {iss.source_url && (
-                          <> · <a href={iss.source_url} target="_blank" rel="noreferrer" style={{ color: '#2563EB' }}>🔗</a></>
-                        )}
-                      </div>
-                    )}
-                    {(iss as any).source && !(iss as any).source_ref && (
-                      <div style={{ fontSize: '.64rem', color: '#64748B', marginTop: 2 }}>
-                        Манба: {(iss as any).source}
+                    ) : (
+                      /* No suggestion — show error info */
+                      <div style={{ fontSize: '.76rem', color: '#DC2626' }}>
+                        {(iss as any).message || `"${oldVal}" — тузатиш таклифи йўқ`}
                       </div>
                     )}
                   </div>
