@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2, FileText, Sparkles } from 'lucide-react'
+import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2, FileText, Sparkles, Download, FileUp, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 import WordDocumentViewer from '../../components/WordDocumentViewer'
@@ -1155,6 +1155,9 @@ export default function TilshunosPage() {
             .docx-rich p { margin: 6px 0; }
             .docx-rich ul, .docx-rich ol { padding-left: 24px; }
           `}</style>
+
+          {/* ───────── DOCUMENT TRANSLATION (format-preserving) ───────── */}
+          <DocumentTranslateSection sourceLang={sourceLang} targetLang={targetLang} />
         </div>
       ) : (
         /* ───────── WORD MODE (docx-preview) ───────── */
@@ -1448,6 +1451,269 @@ function StatPill({ label, value, color }: { label: string; value: number; color
     }}>
       <span style={{ color: '#6B7280' }}>{label}:</span>
       <span style={{ color, fontWeight: 800 }}>{value.toLocaleString()}</span>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════
+// Document Translation Section (format-preserving DOCX/XLSX/PPTX)
+// ═══════════════════════════════════════════════════
+
+const DOC_EXTENSIONS: Record<string, { label: string; accept: string; color: string }> = {
+  docx: { label: 'DOCX', accept: '.docx', color: '#2563EB' },
+  xlsx: { label: 'XLSX', accept: '.xlsx', color: '#16A34A' },
+  pptx: { label: 'PPTX', accept: '.pptx', color: '#DC2626' },
+}
+
+function DocumentTranslateSection({ sourceLang, targetLang }: { sourceLang: string; targetLang: string }) {
+  const [docFile, setDocFile] = useState<File | null>(null)
+  const [docProgress, setDocProgress] = useState(0)
+  const [docTranslating, setDocTranslating] = useState(false)
+  const [docResult, setDocResult] = useState<Blob | null>(null)
+  const [docError, setDocError] = useState('')
+  const [docPreview, setDocPreview] = useState<{ paragraphs: string[]; total_paragraphs: number } | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const getFileType = (name: string): string | null => {
+    const ext = name.split('.').pop()?.toLowerCase()
+    if (ext === 'docx' || ext === 'xlsx' || ext === 'pptx') return ext
+    return null
+  }
+
+  const handleFileSelect = async (file: File) => {
+    const ftype = getFileType(file.name)
+    if (!ftype) {
+      setDocError('Фақат DOCX, XLSX ёки PPTX файллар қабул қилинади')
+      return
+    }
+    setDocFile(file)
+    setDocResult(null)
+    setDocError('')
+    setDocProgress(0)
+    // Load preview
+    try {
+      const prev = await api.documents.preview(file)
+      setDocPreview({ paragraphs: prev.paragraphs, total_paragraphs: prev.total_paragraphs })
+    } catch {
+      setDocPreview(null)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) handleFileSelect(f)
+  }
+
+  const translateDocument = async () => {
+    if (!docFile) return
+    const ftype = getFileType(docFile.name)
+    if (!ftype) return
+
+    setDocTranslating(true)
+    setDocProgress(5)
+    setDocError('')
+    setDocResult(null)
+
+    const sLang = sourceLang.startsWith('uz') ? 'uz' : sourceLang
+    const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
+
+    try {
+      let blob: Blob
+      const onProgress = (pct: number) => setDocProgress(pct)
+      if (ftype === 'docx') {
+        blob = await api.documents.translateDocx(docFile, sLang, tLang, 'auto', onProgress)
+      } else if (ftype === 'xlsx') {
+        blob = await api.documents.translateXlsx(docFile, sLang, tLang, 'auto', onProgress)
+      } else {
+        blob = await api.documents.translatePptx(docFile, sLang, tLang, 'auto', onProgress)
+      }
+      setDocResult(blob)
+      setDocProgress(100)
+    } catch (err: any) {
+      setDocError(err?.detail || err?.message || 'Таржима хатоси')
+    } finally {
+      setDocTranslating(false)
+    }
+  }
+
+  const downloadResult = () => {
+    if (!docResult || !docFile) return
+    const ext = docFile.name.split('.').pop() || 'docx'
+    const baseName = docFile.name.replace(/\.[^.]+$/, '')
+    const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
+    const outName = `${baseName}_${tLang}.${ext}`
+    const url = URL.createObjectURL(docResult)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = outName
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const ftype = docFile ? getFileType(docFile.name) : null
+  const ftypeInfo = ftype ? DOC_EXTENSIONS[ftype] : null
+
+  return (
+    <div style={{ marginTop: 20, padding: 16, background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: 12 }}>
+      <div style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <FileText size={16} />
+        Ҳужжат таржимаси (формат сақланади)
+      </div>
+
+      {/* Drop zone */}
+      {!docFile && (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragOver ? '#10B981' : '#D1D5DB'}`,
+            borderRadius: 10,
+            padding: '32px 20px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            background: dragOver ? '#F0FDF4' : 'var(--bg-secondary)',
+            transition: 'all 0.2s',
+          }}
+        >
+          <FileUp size={32} color={dragOver ? '#10B981' : '#9CA3AF'} style={{ margin: '0 auto 8px' }} />
+          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            Файлни ташланг ёки танланг
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            DOCX, XLSX, PPTX — барча форматлаш сақланади
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".docx,.xlsx,.pptx"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleFileSelect(f)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      )}
+
+      {/* Selected file info */}
+      {docFile && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 8 }}>
+            <div style={{
+              padding: '3px 8px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 800,
+              background: ftypeInfo?.color || '#6B7280', color: 'white', textTransform: 'uppercase',
+            }}>
+              {ftypeInfo?.label || 'FILE'}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{docFile.name}</div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                {(docFile.size / 1024).toFixed(1)} КБ
+                {docPreview ? ` · ${docPreview.total_paragraphs} параграф` : ''}
+              </div>
+            </div>
+            <button
+              onClick={() => { setDocFile(null); setDocResult(null); setDocPreview(null); setDocError(''); setDocProgress(0) }}
+              style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 10px', color: '#DC2626', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+            >
+              <Trash2 size={12} /> Ўчириш
+            </button>
+          </div>
+
+          {/* Preview */}
+          {docPreview && docPreview.paragraphs.length > 0 && !docResult && (
+            <div style={{ marginBottom: 12, padding: 10, background: '#FAFBFF', border: '1px dashed #E5E7EB', borderRadius: 8, maxHeight: 150, overflow: 'auto' }}>
+              <div style={{ fontSize: '0.6rem', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
+                Асл матн (олдиндан кўриш)
+              </div>
+              {docPreview.paragraphs.slice(0, 20).map((p, i) => (
+                <div key={i} style={{ fontSize: '0.72rem', color: '#374151', padding: '2px 0', borderBottom: '1px solid #F3F4F6' }}>
+                  {p.length > 120 ? p.slice(0, 120) + '...' : p}
+                </div>
+              ))}
+              {docPreview.total_paragraphs > 20 && (
+                <div style={{ fontSize: '0.65rem', color: '#9CA3AF', marginTop: 4 }}>
+                  ... яна {docPreview.total_paragraphs - 20} параграф
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Progress bar */}
+          {docTranslating && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Loader2 size={14} className="animate-spin" color="#10B981" />
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#10B981' }}>
+                  Таржима қилинмоқда... {docProgress}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${docProgress}%`,
+                  background: 'linear-gradient(90deg, #10B981, #059669)',
+                  borderRadius: 3,
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {docError && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, fontSize: '0.75rem', color: '#DC2626' }}>
+              {docError}
+            </div>
+          )}
+
+          {/* Success + Download */}
+          {docResult && (
+            <div style={{ marginBottom: 12, padding: '12px 16px', background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <CheckCircle2 size={20} color="#16A34A" />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534' }}>Таржима тайёр!</div>
+                <div style={{ fontSize: '0.65rem', color: '#15803D' }}>Барча форматлаш сақланди</div>
+              </div>
+              <button
+                onClick={downloadResult}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  padding: '8px 18px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                <Download size={14} /> Юклаб олиш
+              </button>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {!docResult && !docTranslating && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={translateDocument}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  padding: '10px 22px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                  flex: 1, justifyContent: 'center',
+                }}
+              >
+                <Play size={14} /> Ҳужжатни таржима қилиш
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

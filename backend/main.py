@@ -37,6 +37,7 @@ try:
 except ImportError:
     ocr_router = None
 from routes.qa_routes import router as qa_router
+from routes.document_routes import router as document_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -178,6 +179,34 @@ async def startup_event():
 
     asyncio.create_task(run_migration())
 
+    # B-8: Preload PROMT morph engine in background thread
+    async def preload_morph():
+        try:
+            await asyncio.sleep(2)  # Let critical startup finish first
+            logger.info("[morph] Preloading PROMT morph engine...")
+            from routes.unified_analyze_routes import _get_promt_morph
+            await to_thread.run_sync(_get_promt_morph)
+            logger.info("[morph] PROMT morph engine preloaded OK")
+        except Exception as e:
+            logger.warning(f"[morph] Preload failed (non-blocking): {e}")
+
+    asyncio.create_task(preload_morph())
+
+    # B-6: Build FAISS lexicon index in background
+    async def preload_faiss():
+        try:
+            await asyncio.sleep(15)  # After morph preload
+            import faiss_index
+            if faiss_index.is_available():
+                logger.info("[FAISS] Building lexicon index in background...")
+                await to_thread.run_sync(faiss_index.build_lexicon_index)
+            else:
+                logger.info("[FAISS] faiss-cpu not installed — skipping")
+        except Exception as e:
+            logger.warning(f"[FAISS] Background build skipped: {e}")
+
+    asyncio.create_task(preload_faiss())
+
     # ═══════════════════════════════════════════════
     # Phase 6: Nightly dictionary growth scheduler (APScheduler)
     # Runs every night at 03:00 Tashkent time (UTC+5)
@@ -264,6 +293,7 @@ app.include_router(unified_analyze_router)
 if ocr_router:
     app.include_router(ocr_router)
 app.include_router(qa_router)
+app.include_router(document_router)
 
 
 # ═══════════════════════════════════════════════════

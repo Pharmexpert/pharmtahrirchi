@@ -267,12 +267,21 @@ class PromtMorph:
       IPromtMorph    v12 — get_relatives_of_base
     """
 
+    # Common Uzbek prefixes (бе-, но-, ба-, сер-, кам-, ҳам-, бар-, бад-, ге-, ги-, гу-, гў-)
+    COMMON_PREFIXES = [
+        "бе", "но", "ба", "сер", "кам", "ҳам", "бар", "бад",
+        "ге", "ги", "гу", "гў",
+        "be", "no", "ba", "ser", "kam", "ham", "bar", "bad",
+        "ge", "gi", "gu", "go'",
+    ]
+
     def __init__(self):
         self._initialized = False
         self._data_path   = None
         self._roots_cyr   = frozenset()
         self._roots_lat   = frozenset()
         self._word_id     = {}
+        self._prefixes    = set()    # B-4: prefix set from FDI data
         self._current_word     = ""
         self._current_analysis: Optional[AnalysisResult] = None
         self._bases       = []
@@ -308,6 +317,19 @@ class PromtMorph:
         self._roots_lat = frozenset(raw["roots_latin"])
         self._word_id   = raw.get("word_ids", {})
         self._pos_map   = raw.get("pos_map", {})  # Hunspell+FDI merged POS tags
+
+        # B-4: Load prefixes from FDI data (32K entries)
+        fdi_prefixes = raw.get("prefixes", [])
+        if isinstance(fdi_prefixes, list):
+            self._prefixes = set(p.lower() for p in fdi_prefixes if isinstance(p, str) and len(p) >= 2)
+        elif isinstance(fdi_prefixes, dict):
+            self._prefixes = set(p.lower() for p in fdi_prefixes.keys() if isinstance(p, str) and len(p) >= 2)
+        else:
+            self._prefixes = set()
+        # Always include common Uzbek prefixes
+        for cp in self.COMMON_PREFIXES:
+            self._prefixes.add(cp.lower())
+
         self._bases     = ["Uzbek"]
         self._data_path = str(json_file.parent)
         self._initialized = True
@@ -623,6 +645,23 @@ class PromtMorph:
     def _in_dict(self, word: str) -> bool:
         return word in self._roots_cyr or word in self._roots_lat
 
+    def _strip_prefixes(self, word: str) -> tuple:
+        """B-4: Префикс ажратиш — бе-тартиб, но-тўғри, сер-ҳосил"""
+        wl = word.lower()
+        # Try prefixes longest-first for greedy match
+        sorted_prefixes = sorted(self._prefixes, key=len, reverse=True)
+        for pfx in sorted_prefixes:
+            if wl.startswith(pfx) and len(wl) - len(pfx) >= 2:
+                remainder = word[len(pfx):]
+                # Check if remainder is a known root
+                if self._in_dict(remainder) or self._in_dict(remainder.lower()):
+                    return pfx, remainder
+                # Also try with suffix stripping on the remainder
+                root, suffs, attrs = self._strip_suffixes(remainder)
+                if self._in_dict(root):
+                    return pfx, remainder
+        return "", word
+
     def _strip_suffixes(self, word: str) -> tuple:
         """Суффикслар занжирини ажратиш — энг тўлиқ таҳлил"""
         if self._in_dict(word):
@@ -748,8 +787,17 @@ class PromtMorph:
 
     def _analyze(self, word: str) -> AnalysisResult:
         """Морфологик таҳлил — асосий метод"""
-        root, suffixes, attrs = self._strip_suffixes(word)
-        pos = self._determine_pos(root if root else word, attrs)
+        # B-4: Try prefix stripping first
+        prefix_found = ""
+        work_word = word
+        if hasattr(self, '_prefixes') and self._prefixes:
+            pfx, remainder = self._strip_prefixes(word)
+            if pfx:
+                prefix_found = pfx
+                work_word = remainder
+
+        root, suffixes, attrs = self._strip_suffixes(work_word)
+        pos = self._determine_pos(root if root else work_word, attrs)
 
         # Парадигма яратиш
         psp_entries = []
@@ -792,6 +840,10 @@ class PromtMorph:
             modifs["person"] = attrs["person"]
         if "poss" in attrs:
             modifs["possessive"] = attrs["poss"]
+
+        # B-4: Include prefix info
+        if prefix_found:
+            modifs["prefix"] = prefix_found
 
         return AnalysisResult(
             word=word,
@@ -838,6 +890,14 @@ class PromtMorph:
             })
         return results
 
+    def get_word_id(self, word: str) -> int:
+        """B-10: Return word ID from _word_id dict (182K entries)."""
+        if not self._word_id:
+            return -1
+        wl = word.lower()
+        wid = self._word_id.get(wl, self._word_id.get(word, -1))
+        return wid if isinstance(wid, int) else -1
+
     def stats(self) -> dict:
         """Луғат статистикаси"""
         return {
@@ -846,6 +906,8 @@ class PromtMorph:
             "total_words":    len(self._roots_cyr) + len(self._roots_lat),
             "cyrillic_words": len(self._roots_cyr),
             "latin_words":    len(self._roots_lat),
+            "prefixes":       len(self._prefixes) if hasattr(self, '_prefixes') else 0,
+            "word_ids":       len(self._word_id) if self._word_id else 0,
             "bases":          self._bases,
             "source":         "Uzbek.fdi → PROMT Expert NMT v23.2",
         }

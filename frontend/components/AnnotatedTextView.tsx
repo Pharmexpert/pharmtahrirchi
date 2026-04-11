@@ -16,7 +16,7 @@
  *   style → pink (pharma standards)
  *   morph → blue (word form info — usually not shown as error)
  */
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { X, Search, Loader2 } from 'lucide-react'
 import api from '../services/api'
 
@@ -69,12 +69,35 @@ const LAYER_COLORS: Record<string, { under: string; bg: string; label: string }>
   sayqallash: { under: '#DC2626', bg: '#FEE2E2', label: 'Сайқаллаш' },
   syntax:     { under: '#7C3AED', bg: '#EDE9FE', label: 'Синтаксис' },
   style:      { under: '#DB2777', bg: '#FCE7F3', label: 'Стиль' },
-  morph:      { under: '#1E40AF', bg: '#DBEAFE', label: 'Морфология' },
+  morph:      { under: '#0EA5E9', bg: '#E0F2FE', label: 'Морфология' },
 }
 
 export default function AnnotatedTextView({ text, result, onTextChange }: Props) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; spans: Span[] } | null>(null)
   const [synonymPopup, setSynonymPopup] = useState<{ x: number; y: number; word: string; loading: boolean; synonyms: any[]; error: string | null } | null>(null)
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
+  const isDragging = useRef(false)
+  const dragStart = useRef<{ mx: number; my: number; dx: number; dy: number }>({ mx: 0, my: 0, dx: 0, dy: 0 })
+
+  // Reset drag offset when tooltip changes
+  useEffect(() => { setDragOffset({ dx: 0, dy: 0 }) }, [tooltip])
+
+  // Global mousemove/mouseup for dragging tooltip
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return
+      const newDx = dragStart.current.dx + (e.clientX - dragStart.current.mx)
+      const newDy = dragStart.current.dy + (e.clientY - dragStart.current.my)
+      setDragOffset({ dx: newDx, dy: newDy })
+    }
+    const onMouseUp = () => { isDragging.current = false }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
 
   // Collect all positional errors into spans (merge overlaps)
   const spans = useMemo<Span[]>(() => {
@@ -245,14 +268,20 @@ export default function AnnotatedTextView({ text, result, onTextChange }: Props)
           <div onClick={() => setTooltip(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
           <div style={{
             position: 'fixed',
-            left: Math.min(tooltip.x, window.innerWidth - 360),
-            top: Math.min(tooltip.y, window.innerHeight - 320),
+            left: Math.min(tooltip.x, window.innerWidth - 360) + dragOffset.dx,
+            top: Math.min(tooltip.y, window.innerHeight - 320) + dragOffset.dy,
             width: 340, background: 'white',
             border: '1.5px solid #B48C64', borderRadius: 12,
             boxShadow: '0 20px 50px rgba(0,0,0,.25)', zIndex: 9999,
             overflow: 'hidden', maxHeight: 320,
           }}>
-            <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #8B5E3C, #6F4924)', color: 'white', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault()
+                isDragging.current = true
+                dragStart.current = { mx: e.clientX, my: e.clientY, dx: dragOffset.dx, dy: dragOffset.dy }
+              }}
+              style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #8B5E3C, #6F4924)', color: 'white', display: 'flex', alignItems: 'center', gap: 8, cursor: 'grab', userSelect: 'none' }}>
               <span style={{ fontSize: '.78rem', fontWeight: 800, textTransform: 'uppercase' }}>
                 ⚠ {tooltip.spans.length} та хато
               </span>

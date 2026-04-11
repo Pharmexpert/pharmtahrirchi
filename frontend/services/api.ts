@@ -791,11 +791,123 @@ export const syntax = {
   exportTraining: () => post<{ exported: number; path: string }>('/api/syntax/export-training', {}),
 }
 
+// ═══════════════════════════════════════════════════
+// Document Translation (format-preserving)
+// ═══════════════════════════════════════════════════
+
+export const documents = {
+  translateDocx: async (file: File, sourceLang: string, targetLang: string, engine = 'auto', onProgress?: (pct: number) => void): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/api/documents/translate-docx`)
+      xhr.responseType = 'blob'
+      const token = getToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      if (onProgress) {
+        // Upload progress (file sending)
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 40))
+        }
+        // Once upload is done, show 40-90% as "translating"
+        xhr.upload.onload = () => onProgress(50)
+      }
+      xhr.onload = () => {
+        if (onProgress) onProgress(100)
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+        else reject(new ApiError(xhr.status, `HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Document translation failed'))
+      xhr.timeout = 600000 // 10 min for large documents
+      xhr.ontimeout = () => reject(new ApiError(408, 'Translation timed out'))
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('source_lang', sourceLang)
+      fd.append('target_lang', targetLang)
+      fd.append('engine', engine)
+      xhr.send(fd)
+    })
+  },
+
+  translateXlsx: async (file: File, sourceLang: string, targetLang: string, engine = 'auto', onProgress?: (pct: number) => void): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/api/documents/translate-xlsx`)
+      xhr.responseType = 'blob'
+      const token = getToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 40))
+        }
+        xhr.upload.onload = () => onProgress(50)
+      }
+      xhr.onload = () => {
+        if (onProgress) onProgress(100)
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+        else reject(new ApiError(xhr.status, `HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Document translation failed'))
+      xhr.timeout = 600000
+      xhr.ontimeout = () => reject(new ApiError(408, 'Translation timed out'))
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('source_lang', sourceLang)
+      fd.append('target_lang', targetLang)
+      fd.append('engine', engine)
+      xhr.send(fd)
+    })
+  },
+
+  translatePptx: async (file: File, sourceLang: string, targetLang: string, engine = 'auto', onProgress?: (pct: number) => void): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/api/documents/translate-pptx`)
+      xhr.responseType = 'blob'
+      const token = getToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 40))
+        }
+        xhr.upload.onload = () => onProgress(50)
+      }
+      xhr.onload = () => {
+        if (onProgress) onProgress(100)
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+        else reject(new ApiError(xhr.status, `HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Document translation failed'))
+      xhr.timeout = 600000
+      xhr.ontimeout = () => reject(new ApiError(408, 'Translation timed out'))
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('source_lang', sourceLang)
+      fd.append('target_lang', targetLang)
+      fd.append('engine', engine)
+      xhr.send(fd)
+    })
+  },
+
+  preview: async (file: File): Promise<{ type: string; filename: string; paragraphs: string[]; total_paragraphs: number }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const token = getToken()
+    const res = await fetch(`${API_BASE}/api/documents/preview`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+    return res.json()
+  },
+}
+
 // Re-export everything as default namespace
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
   morph, grammar, learn, nlp, tilshunos, assistant, billing, syntax, analyze,
+  documents,
   API_BASE,
 }
 

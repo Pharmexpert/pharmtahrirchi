@@ -45,6 +45,7 @@ def _ensure_script(value: str, target_script: str) -> str:
 
 
 _promt_morph = None
+_promt_syntdata = None
 
 def _get_promt_morph():
     """Lazy-load PROMT morph engine (250K roots)."""
@@ -61,6 +62,27 @@ def _get_promt_morph():
         if m.initialize(backend_dir):
             _promt_morph = m
             return m
+    except Exception:
+        pass
+    return None
+
+def _get_syntdata():
+    """Lazy-load PROMT SyntData engine (SOV + NER 30 types)."""
+    global _promt_syntdata
+    if _promt_syntdata is not None:
+        return _promt_syntdata
+    try:
+        import sys
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+        from promt_syntdata import SyntData
+        sd = SyntData()
+        morph = _get_promt_morph()
+        if morph:
+            sd.set_morph(morph)
+        _promt_syntdata = sd
+        return sd
     except Exception:
         pass
     return None
@@ -96,10 +118,18 @@ def _run_morph(text: str) -> list:
             number = mods.get("number", "")
             person = mods.get("person", "")
 
-            # Affix breakdown
+            # Affix breakdown (B-4: prefix support)
             suffixes = mods.get("suffixes", [])
+            prefix = mods.get("prefix", "")
             affix_desc = ""
-            if root and root != word and root != word.lower():
+            if prefix and root and root != word:
+                # e.g. "бе + тартиб" for "бетартиб", or "бе + тартиб + сиз" for "бетартибсиз"
+                suffix_part = word[len(prefix) + len(root):] if len(word) > len(prefix) + len(root) else ""
+                if suffix_part:
+                    affix_desc = f"{prefix} + {root} + {suffix_part}"
+                else:
+                    affix_desc = f"{prefix} + {root}"
+            elif root and root != word and root != word.lower():
                 suffix_part = word[len(root):] if word.lower().startswith(root.lower()) else ""
                 if suffix_part:
                     affix_desc = f"{root} + {suffix_part}"
@@ -122,11 +152,23 @@ def _run_morph(text: str) -> list:
                 entry["affix"] = affix_desc
             if suffixes:
                 entry["suffixes"] = suffixes
+            if prefix:
+                entry["prefix"] = prefix
+
+            # B-10: word_id from morph engine
+            try:
+                wid = morph.get_word_id(word)
+                if wid >= 0:
+                    entry["word_id"] = wid
+            except Exception:
+                pass
 
             # Description for tooltip
             parts = []
             if root and root != word:
                 parts.append(f"Ўзак: {root}")
+            if prefix:
+                parts.append(f"Префикс: {prefix}")
             parts.append(f"Туркум: {pos}")
             if case and case != "?":
                 case_labels = {"nominative": "бош", "genitive": "қаратқич", "dative": "жўналиш", "accusative": "тушум", "locative": "ўрин-пайт", "ablative": "чиқиш"}
@@ -147,7 +189,72 @@ def _run_morph(text: str) -> list:
         except Exception:
             results.append({"word": word, "pos": "ERROR", "root": word, "layer": "morph"})
 
+    # B-5: Attach collocation info to morph results
+    try:
+        collocations = _check_collocations(text)
+        if collocations and results:
+            results[-1]["collocations"] = collocations
+    except Exception:
+        pass
+
     return results[:200]
+
+
+def _check_collocations(text: str) -> list:
+    """B-5: Collocation check — validate bigrams/trigrams against word_frequency_corpus."""
+    results = []
+    try:
+        text_script = _detect_script(text)
+        pattern = r'[а-яёўқғҳА-ЯЁЎҚҒҲ]+' if text_script == "cyr" else r"[a-zA-Z\'ʻʼ]+"
+        words = [m.group().lower() for m in re.finditer(pattern, text) if len(m.group()) >= 2]
+        if len(words) < 2:
+            return results
+
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+
+        # Check bigrams
+        for i in range(len(words) - 1):
+            bigram = f"{words[i]} {words[i+1]}"
+            try:
+                cur.execute(
+                    "SELECT frequency FROM word_frequency_corpus WHERE word = ? LIMIT 1",
+                    (bigram,)
+                )
+                row = cur.fetchone()
+                if row and row[0] and row[0] >= 3:
+                    results.append({
+                        "collocation": bigram,
+                        "type": "bigram",
+                        "frequency": row[0],
+                        "status": "confirmed",
+                    })
+            except Exception:
+                pass
+
+        # Check trigrams
+        for i in range(len(words) - 2):
+            trigram = f"{words[i]} {words[i+1]} {words[i+2]}"
+            try:
+                cur.execute(
+                    "SELECT frequency FROM word_frequency_corpus WHERE word = ? LIMIT 1",
+                    (trigram,)
+                )
+                row = cur.fetchone()
+                if row and row[0] and row[0] >= 2:
+                    results.append({
+                        "collocation": trigram,
+                        "type": "trigram",
+                        "frequency": row[0],
+                        "status": "confirmed",
+                    })
+            except Exception:
+                pass
+
+        conn.close()
+    except Exception:
+        pass
+    return results[:50]
 
 
 def _run_sayqallash(text: str, lang: str) -> list:
@@ -330,11 +437,56 @@ def _run_sayqallash(text: str, lang: str) -> list:
 
 
 def _run_syntax(text: str) -> list:
-    """Syntax layer — sentence structure analysis using PROMT morph POS.
+    """Syntax layer — PROMT SyntData SOV analysis + morph POS roles.
+    Uses SyntData for SOV structure, NER entities, EventFrames.
     Analyzes: SOV word order, sentence members (Эга/Кесим/Тўлдирувчи/Аниқловчи/Ҳол).
     Each word gets a syntactic role label shown in purple."""
     results = []
     morph = _get_promt_morph()
+
+    # SyntData full parse (SOV + NER + EventFrame)
+    sd = _get_syntdata()
+    if sd:
+        try:
+            pr = sd.parse(text)
+            # Add SOV structure info
+            if pr.syntax:
+                results.append({
+                    "type": "sov_structure",
+                    "subject": pr.syntax.get("subject"),
+                    "predicate": pr.syntax.get("predicate"),
+                    "objects": pr.syntax.get("objects", []),
+                    "message": f"SOV: Эга={pr.syntax.get('subject', '—')} | Кесим={pr.syntax.get('predicate', '—')} | Тўлдирувчи={', '.join(pr.syntax.get('objects', []))}",
+                    "severity": "info",
+                    "layer": "syntax",
+                })
+            # Add NER entities as syntax-layer annotations
+            for ent in pr.entities:
+                etype = ent.entity_type.replace("entity_", "").upper()
+                results.append({
+                    "word": ent.text,
+                    "from": ent.start,
+                    "to": ent.end,
+                    "role": f"NER: {etype}",
+                    "message": f"{ent.text} — {etype}",
+                    "description": f"Объект: {etype} | {ent.text}",
+                    "layer": "syntax",
+                    "severity": "info",
+                    "ner_type": ent.entity_type,
+                })
+            # Add EventFrames
+            for fr in pr.frames:
+                results.append({
+                    "type": "event_frame",
+                    "event": fr.event_type,
+                    "agent": fr.agent,
+                    "location": fr.location,
+                    "message": f"Ҳодиса: {fr.event_type}" + (f" (агент: {fr.agent})" if fr.agent else ""),
+                    "severity": "info",
+                    "layer": "syntax",
+                })
+        except Exception:
+            pass
 
     # Split into sentences
     sentences = re.split(r'[.!?;]\s*', text)
@@ -432,6 +584,67 @@ def _run_syntax(text: str) -> list:
                 "layer": "syntax",
             })
 
+        # B-9: Match against syntax_sentence_templates (1,490 patterns)
+        try:
+            role_sequence = "+".join(
+                "S" if "ЭГА" in w.get("role", "") else
+                "V" if "КЕСИМ" in w.get("role", "") else
+                "O" if "ТЎЛДИРУВЧИ" in w.get("role", "") else
+                "Adj" if "АНИҚЛОВЧИ" in w.get("role", "") else
+                "Adv" if "ҲОЛ" in w.get("role", "") else
+                w.get("pos", "X")[:3].upper()
+                for w in words_info if w.get("role")
+            )
+            if role_sequence:
+                tpl_conn = sqlite3.connect(DB_PATH)
+                tpl_cur = tpl_conn.cursor()
+                tpl_cur.execute(
+                    "SELECT template, sentence_type, semantic_type, formula FROM syntax_sentence_templates WHERE template = ? LIMIT 1",
+                    (role_sequence,)
+                )
+                tpl_row = tpl_cur.fetchone()
+                if tpl_row:
+                    results.append({
+                        "type": "template_match",
+                        "template": tpl_row[0],
+                        "sentence_type": tpl_row[1],
+                        "semantic_type": tpl_row[2],
+                        "formula": tpl_row[3],
+                        "sentence": sentence,
+                        "message": f"Шаблон: {tpl_row[0]} ({tpl_row[1]}) — {tpl_row[3] or ''}",
+                        "severity": "info",
+                        "layer": "syntax",
+                    })
+                tpl_conn.close()
+        except Exception:
+            pass
+
+        # B-9: Check word order rules (446 rules)
+        try:
+            pos_sequence = " ".join(w.get("pos", "unknown").upper() for w in words_info if w.get("pos") != "unknown")
+            if pos_sequence:
+                wo_conn = sqlite3.connect(DB_PATH)
+                wo_cur = wo_conn.cursor()
+                wo_cur.execute(
+                    "SELECT wrong_order, correct_order, pos_pattern_wrong, pos_pattern_correct, explanation_uz, severity FROM syntax_word_order_rules"
+                )
+                for wo_row in wo_cur.fetchall():
+                    wrong_pat = wo_row[2] or ""
+                    if wrong_pat and wrong_pat in pos_sequence:
+                        results.append({
+                            "type": "word_order_issue",
+                            "wrong_order": wo_row[0],
+                            "correct_order": wo_row[1],
+                            "explanation": wo_row[4],
+                            "sentence": sentence,
+                            "message": wo_row[4] or f"Сўз тартиби: {wo_row[0]} → {wo_row[1]}",
+                            "severity": wo_row[5] or "warning",
+                            "layer": "syntax",
+                        })
+                wo_conn.close()
+        except Exception:
+            pass
+
         offset += len(sentence) + 2  # +2 for ". " separator
 
     return results
@@ -506,16 +719,40 @@ def _run_style(text: str) -> list:
 
 @router.post("/ner")
 async def analyze_ner(payload: Dict[str, Any]):
-    """Extract named entities from text (drugs, doses, persons, organizations)."""
+    """Extract named entities from text — uses PROMT SyntData (30 types) + ner_engine (pharma)."""
     text = (payload.get("text") or "").strip()
     if not text:
         return {"entities": [], "total": 0}
+    entities = []
+    # 1. PROMT SyntData NER (30 entity types: NAME, PROFESSION, POSITION, ORG, ADDRESS...)
+    sd = _get_syntdata()
+    if sd:
+        try:
+            pr = sd.parse(text)
+            for ent in pr.entities:
+                entities.append({
+                    "text": ent.text,
+                    "type": ent.entity_type,
+                    "start": ent.start,
+                    "end": ent.end,
+                    "source": "promt_syntdata",
+                    "attributes": ent.attributes,
+                })
+        except Exception:
+            pass
+    # 2. Pharma NER (DRUG, DOSE, CHEMICAL, etc.)
     try:
         import ner_engine
-        entities = ner_engine.extract_entities(text)
-        return {"entities": entities, "total": len(entities)}
-    except Exception as e:
-        return {"entities": [], "total": 0, "error": str(e)}
+        pharma_ents = ner_engine.extract_entities(text)
+        # Merge avoiding duplicates
+        covered = {(e["start"], e["end"]) for e in entities}
+        for pe in pharma_ents:
+            s, e = pe.get("start", 0), pe.get("end", 0)
+            if (s, e) not in covered:
+                entities.append(pe)
+    except Exception:
+        pass
+    return {"entities": entities, "total": len(entities)}
 
 
 @router.post("/protect-entities")
