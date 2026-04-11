@@ -60,7 +60,7 @@ interface Props {
 interface Span {
   start: number
   end: number
-  layer: 'sayqallash' | 'syntax' | 'style'
+  layer: 'sayqallash' | 'syntax' | 'style' | 'morph'
   issue: AnalysisIssue
 }
 
@@ -68,6 +68,7 @@ const LAYER_COLORS: Record<string, { under: string; bg: string; label: string }>
   sayqallash: { under: '#DC2626', bg: '#FEE2E2', label: 'Сайқаллаш' },
   syntax:     { under: '#7C3AED', bg: '#EDE9FE', label: 'Синтаксис' },
   style:      { under: '#DB2777', bg: '#FCE7F3', label: 'Стиль' },
+  morph:      { under: '#1E40AF', bg: '#DBEAFE', label: 'Морфология' },
 }
 
 export default function AnnotatedTextView({ text, result }: Props) {
@@ -78,11 +79,13 @@ export default function AnnotatedTextView({ text, result }: Props) {
   const spans = useMemo<Span[]>(() => {
     if (!result) return []
     const out: Span[] = []
-    const layers = ['sayqallash', 'style'] as const
+    const layers = ['sayqallash', 'style', 'morph'] as const
     for (const layer of layers) {
       const items = (result as any)[layer] as AnalysisIssue[] | undefined
       if (!items) continue
       for (const issue of items) {
+        // For morph: only show UNKNOWN words (errors)
+        if (layer === 'morph' && !(issue as any).is_unknown) continue
         const start = typeof issue.from === 'number' ? issue.from
                     : typeof issue.from_index === 'number' ? issue.from_index : -1
         const end = typeof issue.to === 'number' ? issue.to
@@ -92,7 +95,20 @@ export default function AnnotatedTextView({ text, result }: Props) {
         }
       }
     }
-    // Syntax errors are often sentence-level (no position) — skip for highlight, show as banner
+    // Syntax positional errors
+    const syntaxItems = (result as any).syntax as AnalysisIssue[] | undefined
+    if (syntaxItems) {
+      for (const issue of syntaxItems) {
+        const start = typeof issue.from === 'number' ? issue.from
+                    : typeof issue.from_index === 'number' ? issue.from_index : -1
+        const end = typeof issue.to === 'number' ? issue.to
+                  : typeof issue.to_index === 'number' ? issue.to_index : -1
+        if (start >= 0 && end > start && end <= text.length) {
+          out.push({ start, end, layer: 'syntax', issue })
+        }
+      }
+    }
+    // Sentence-level syntax errors (no position) — shown as banner
     return out.sort((a, b) => a.start - b.start)
   }, [result, text])
 
