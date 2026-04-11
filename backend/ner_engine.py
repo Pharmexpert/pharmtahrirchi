@@ -396,12 +396,27 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
         try:
             results = pipe(text)
             for r in results:
+                word = r.get("word", "")
+                start = int(r.get("start", 0))
+                end = int(r.get("end", 0))
+                score = float(r.get("score", 0.0))
+                etype = str(r.get("entity_group", "MISC")).upper()
+                # Filter out BPE subword artifacts (##...) and short garbage
+                if not word or word.startswith("##") or len(word) < 2:
+                    continue
+                # Filter low confidence
+                if score < 0.5:
+                    continue
+                # Use actual text span from original text (not BPE-reconstructed)
+                actual_text = text[start:end].strip() if 0 <= start < end <= len(text) else word
+                if not actual_text or len(actual_text) < 2:
+                    continue
                 entities.append({
-                    "text": r.get("word", ""),
-                    "from": int(r.get("start", 0)),
-                    "to": int(r.get("end", 0)),
-                    "type": str(r.get("entity_group", "MISC")).upper(),
-                    "score": float(r.get("score", 0.0)),
+                    "text": actual_text,
+                    "from": start,
+                    "to": end,
+                    "type": etype,
+                    "score": score,
                 })
         except Exception as e:
             logger.warning(f"[NER] pipeline failed: {e}")

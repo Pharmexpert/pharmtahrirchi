@@ -192,11 +192,28 @@ async def startup_event():
 
     asyncio.create_task(preload_morph())
 
-    # B-9: Ensure syntax tables exist
+    # B-5/B-9/B-10: Ensure tables exist + seed data
     try:
         import sqlite3
         _db = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
         _c = sqlite3.connect(_db)
+
+        # B-5: word_frequency_corpus
+        _c.execute('''CREATE TABLE IF NOT EXISTS word_frequency_corpus (
+            word TEXT PRIMARY KEY, frequency INTEGER DEFAULT 1, lang TEXT DEFAULT 'uz')''')
+
+        # B-5: Populate from dictionary if empty
+        _c.execute("SELECT COUNT(*) FROM word_frequency_corpus")
+        if _c.fetchone()[0] == 0:
+            try:
+                _c.execute("""INSERT OR IGNORE INTO word_frequency_corpus (word, frequency, lang)
+                    SELECT word, frequency, 'uz' FROM dictionary
+                    WHERE word IS NOT NULL AND length(word) > 1 AND frequency > 0""")
+                logger.info(f"[B-5] Seeded word_frequency_corpus from dictionary")
+            except Exception:
+                pass
+
+        # B-9: syntax tables
         _c.execute('''CREATE TABLE IF NOT EXISTS syntax_sentence_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT, template TEXT NOT NULL,
             sentence_type TEXT DEFAULT 'declarative', semantic_type TEXT DEFAULT 'general',
@@ -206,10 +223,40 @@ async def startup_event():
             id INTEGER PRIMARY KEY AUTOINCREMENT, wrong_order TEXT, correct_order TEXT,
             pos_pattern_wrong TEXT, pos_pattern_correct TEXT, explanation_uz TEXT,
             severity TEXT DEFAULT 'warning', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+        # B-9: Seed syntax templates if empty
+        _c.execute("SELECT COUNT(*) FROM syntax_sentence_templates")
+        if _c.fetchone()[0] == 0:
+            templates = [
+                ('S+V', 'declarative', 'action', 'Эга+Кесим', 'Талаба ўқийди'),
+                ('S+O+V', 'declarative', 'transitive', 'Эга+Тўлдирувчи+Кесим', 'Талаба китоб ўқийди'),
+                ('Adj+S+V', 'declarative', 'descriptive', 'Аниқловчи+Эга+Кесим', 'Яхши талаба ўқийди'),
+                ('Adj+S+O+V', 'declarative', 'descriptive_trans', 'Аниқловчи+Эга+Тўлдирувчи+Кесим', 'Яхши талаба китоб ўқийди'),
+                ('S+Adv+V', 'declarative', 'manner', 'Эга+Ҳол+Кесим', 'Талаба яхши ўқийди'),
+                ('S+O+Adv+V', 'declarative', 'manner_trans', 'Эга+Тўлдирувчи+Ҳол+Кесим', 'Талаба китобни тез ўқийди'),
+                ('Adv+S+V', 'declarative', 'temporal', 'Ҳол+Эга+Кесим', 'Бугун талаба ўқийди'),
+                ('Adv+S+O+V', 'declarative', 'temporal_trans', 'Ҳол+Эга+Тўлдирувчи+Кесим', 'Бугун талаба китоб ўқийди'),
+                ('S+O+O+V', 'declarative', 'ditransitive', 'Эга+Тўлдирувчи+Тўлдирувчи+Кесим', 'Ўқитувчи талабага китоб берди'),
+                ('Adj+S+Adv+V', 'declarative', 'desc_manner', 'Аниқловчи+Эга+Ҳол+Кесим', 'Янги талаба тез ўқийди'),
+            ]
+            _c.executemany('INSERT INTO syntax_sentence_templates (template,sentence_type,semantic_type,formula,example) VALUES (?,?,?,?,?)', templates)
+            logger.info("[B-9] Seeded 10 syntax_sentence_templates")
+
+        _c.execute("SELECT COUNT(*) FROM syntax_word_order_rules")
+        if _c.fetchone()[0] == 0:
+            rules = [
+                ('V+S', 'S+V', 'VERB NOUN', 'NOUN VERB', 'Ўзбек тилида феъл гап охирида бўлиши керак (SOV)', 'warning'),
+                ('V+O', 'O+V', 'VERB NOUN', 'NOUN VERB', 'Тўлдирувчи кесимдан олдин келиши керак', 'warning'),
+                ('S+V+O', 'S+O+V', 'NOUN VERB NOUN', 'NOUN NOUN VERB', 'Тўғри тартиб: Эга+Тўлдирувчи+Кесим (SOV)', 'info'),
+                ('Adj+V+S', 'Adj+S+V', 'ADJECTIVE VERB NOUN', 'ADJECTIVE NOUN VERB', 'Сифат отдан олдин, феъл охирда', 'info'),
+            ]
+            _c.executemany('INSERT INTO syntax_word_order_rules (wrong_order,correct_order,pos_pattern_wrong,pos_pattern_correct,explanation_uz,severity) VALUES (?,?,?,?,?,?)', rules)
+            logger.info("[B-9] Seeded 4 syntax_word_order_rules")
+
         _c.commit()
         _c.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[B-5/B-9] Startup migration error: {e}")
 
     # B-6: Build FAISS lexicon index in background
     async def preload_faiss():
