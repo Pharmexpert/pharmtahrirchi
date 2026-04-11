@@ -301,7 +301,7 @@ def merge_and_count(db_pairs, systematic_pairs):
     return all_pairs
 
 
-MAX_REP_RULES = 1000000  # No practical limit — spylls handles large REP fine after warmup
+MAX_REP_RULES = 10000  # Railway startup fails with >30K REP — spylls parse is O(n²)
 
 
 def inject_rep_into_aff(aff_path, pairs):
