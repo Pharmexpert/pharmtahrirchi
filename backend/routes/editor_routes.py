@@ -572,26 +572,28 @@ async def improve_row(payload: Dict[str, Any]):
         except Exception:
             pass
 
-    # 3. Additional layers: syntax + style (Phase 13: unified analysis)
+    # 3. Additional layers: morph + sayqallash + syntax + style (Phase 13: unified analysis)
+    morph_results = []
+    sayqallash_results = []
+    style_issues = []
+    syntax_issues = []
     try:
-        from routes.unified_analyze_routes import _run_style, _run_syntax
+        from routes.unified_analyze_routes import _run_morph, _run_sayqallash, _run_style, _run_syntax
+        morph_results = _run_morph(final_text)
+        sayqallash_results = _run_sayqallash(final_text, target_lang)
         style_issues = _run_style(final_text)
         syntax_issues = _run_syntax(final_text)
-        # Tag with layer for frontend AnnotatedTextView
-        for s in style_issues:
-            s["layer"] = "style"
-        for s in syntax_issues:
-            s["layer"] = "syntax"
     except Exception:
-        style_issues = []
-        syntax_issues = []
+        pass
 
     return {
         f"{target_lang}_v2": final_text,
         "annotations": annotations,
+        "morph": morph_results,
+        "sayqallash": sayqallash_results,
         "style": style_issues,
         "syntax": syntax_issues,
-        "rationale": f"Engine: {engine_used} → Sayqallash → Style+Syntax.",
+        "rationale": f"Engine: {engine_used} → Sayqallash → Morph+Style+Syntax.",
         "engine": engine_used,
     }
 

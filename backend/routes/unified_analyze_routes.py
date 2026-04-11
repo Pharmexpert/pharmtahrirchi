@@ -339,6 +339,25 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
+    # Annotated words (9,923 terms) + medical_terms — pharma vocabulary
+    try:
+        _conn_aw = sqlite3.connect(DB_PATH)
+        _cur_aw = _conn_aw.cursor()
+        for _aw_query in [
+            "SELECT DISTINCT word FROM annotated_words WHERE word IS NOT NULL",
+            "SELECT DISTINCT term FROM medical_terms WHERE term IS NOT NULL",
+        ]:
+            try:
+                _cur_aw.execute(_aw_query)
+                for row in _cur_aw.fetchall():
+                    if row[0] and len(row[0]) > 1:
+                        correct_set.add(row[0].strip().lower())
+            except Exception:
+                pass
+        _conn_aw.close()
+    except Exception:
+        pass
+
     # Syntax DB dictionary (88K words) — these are CORRECT words
     try:
         _conn = sqlite3.connect(DB_PATH)

@@ -921,12 +921,17 @@ async def synonyms_fast(payload: Dict[str, Any], current_user: Dict = Depends(ge
         conn.close()
     except Exception:
         pass
-    # Dedupe
+    # Dedupe + convert synonyms to match query word's script
+    query_script = _detect_text_script(word)
     seen = set()
     final = []
     for s in out:
-        if s["word"].lower() not in seen:
-            seen.add(s["word"].lower())
+        w = s["word"]
+        # Convert synonym to match query script (Cyrillic query → Cyrillic synonyms)
+        w = _to_text_script(w, query_script)
+        s["word"] = w
+        if w.lower() not in seen:
+            seen.add(w.lower())
             final.append(s)
     return {"synonyms": final[:20]}
 
@@ -1160,6 +1165,33 @@ async def tahrirchi_transliterate_endpoint(payload: Dict[str, Any], current_user
     except Exception as e:
         logger.warning(f"[tahrirchi transliterate] {e}")
         return {"text": text, "error": str(e)}
+
+
+@router.post("/transliterate")
+async def transliterate_endpoint(payload: Dict[str, Any]):
+    """Transliterate Uzbek text between Cyrillic and Latin using dual_script.
+    Accepts: {text, direction: "cyr2lat"|"lat2cyr"}
+    Returns: {text, original, direction}
+    """
+    text = (payload.get("text") or "").strip()
+    direction = (payload.get("direction") or "cyr2lat").strip()
+    if not text:
+        return {"text": "", "original": "", "direction": direction}
+    try:
+        import dual_script
+        original = text
+        if direction == "lat2cyr":
+            converted = dual_script.to_cyrillic(text)
+        else:
+            converted = dual_script.to_latin(text)
+        return {
+            "text": converted or text,
+            "original": original,
+            "direction": direction,
+        }
+    except Exception as e:
+        logger.warning(f"[transliterate] {e}")
+        return {"text": text, "original": text, "direction": direction, "error": str(e)}
 
 
 @router.post("/uzbek/pos-tag")

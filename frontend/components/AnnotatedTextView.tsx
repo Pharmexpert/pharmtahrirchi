@@ -232,6 +232,31 @@ export default function AnnotatedTextView({ text, result, onTextChange }: Props)
             if (!found) { cyr += wl[ci]; ci++ }
           }
           w = cyr
+        } else if (!isCyr && /[а-яёўқғҳ]/i.test(w) && !/[a-z]/i.test(w)) {
+          // Cyrillic → Latin basic conversion (reverse mapping)
+          const cyrToLatMap: [string, string][] = [
+            ['\u0448','sh'],['\u0447','ch'],['\u043D\u0433','ng'],['\u045E',"o'"],['\u0493',"g'"],
+            ['\u0451','yo'],['\u044F','ya'],['\u044E','yu'],
+            ['\u0430','a'],['\u0431','b'],['\u0434','d'],['\u0435','e'],['\u0444','f'],
+            ['\u0433','g'],['\u04B3','h'],['\u0438','i'],['\u0436','j'],['\u043A','k'],
+            ['\u043B','l'],['\u043C','m'],['\u043D','n'],['\u043E','o'],['\u043F','p'],
+            ['\u049B','q'],['\u0440','r'],['\u0441','s'],['\u0442','t'],['\u0443','u'],
+            ['\u0432','v'],['\u0445','x'],['\u0439','y'],['\u0437','z'],
+          ]
+          const sorted = [...cyrToLatMap].sort((a, b) => b[0].length - a[0].length)
+          let lat = ''
+          let ci2 = 0
+          const wl2 = w.toLowerCase()
+          while (ci2 < wl2.length) {
+            let found2 = false
+            for (const [from, to] of sorted) {
+              if (wl2.substring(ci2, ci2 + from.length) === from) {
+                lat += to; ci2 += from.length; found2 = true; break
+              }
+            }
+            if (!found2) { lat += wl2[ci2]; ci2++ }
+          }
+          w = lat
         }
         return { word: w, frequency: s.frequency }
       }).filter((s: any) => s.word && s.word !== word && s.word !== word.toLowerCase())

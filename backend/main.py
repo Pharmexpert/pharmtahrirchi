@@ -262,6 +262,38 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"[B-5/B-9] Startup migration error: {e}")
 
+    # Phase 11: Verify PROMT resources are loaded (dual_script_rules + abbreviations)
+    try:
+        _db_promt = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
+        _cp = sqlite3.connect(_db_promt)
+        _cur_p = _cp.cursor()
+
+        # Check dual_script_rules (should have 81+ rules from PROMT import)
+        try:
+            _cur_p.execute("SELECT COUNT(*) FROM dual_script_rules")
+            dsr_count = _cur_p.fetchone()[0]
+            if dsr_count >= 81:
+                logger.info(f"[PROMT] dual_script_rules: {dsr_count} rules OK")
+            else:
+                logger.warning(f"[PROMT] dual_script_rules has only {dsr_count} rules (expected 81+). Run: python scripts/import_promt_resources.py")
+        except Exception:
+            logger.warning("[PROMT] dual_script_rules table missing. Run: python scripts/import_promt_resources.py")
+
+        # Check abbreviations (should have 3,000+ entries from PROMT import)
+        try:
+            _cur_p.execute("SELECT COUNT(*) FROM abbreviations")
+            abbr_count = _cur_p.fetchone()[0]
+            if abbr_count >= 3000:
+                logger.info(f"[PROMT] abbreviations: {abbr_count} entries OK")
+            else:
+                logger.warning(f"[PROMT] abbreviations has only {abbr_count} entries (expected 3000+). Run: python scripts/import_promt_resources.py")
+        except Exception:
+            logger.warning("[PROMT] abbreviations table missing. Run: python scripts/import_promt_resources.py")
+
+        _cp.close()
+    except Exception as e:
+        logger.warning(f"[PROMT] Seed check failed: {e}")
+
     # Background: populate dictionary from pos_map if needed
     async def populate_dictionary():
         try:

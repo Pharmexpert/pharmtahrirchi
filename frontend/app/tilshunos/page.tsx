@@ -48,6 +48,58 @@ const WORD_COLORS: Record<string, string> = {
 
 const SEV_LABELS: Record<string, string> = { high: 'юқори', medium: 'ўртача', low: 'паст' }
 
+// Client-side Uzbek Latin↔Cyrillic transliteration
+const LAT_TO_CYR_MAP: [string, string][] = [
+  ["sh", "ш"], ["ch", "ч"], ["ng", "нг"], ["o'", "ў"], ["g'", "ғ"],
+  ["yo", "ё"], ["ya", "я"], ["yu", "ю"],
+  ["a", "а"], ["b", "б"], ["d", "д"], ["e", "е"], ["f", "ф"],
+  ["g", "г"], ["h", "ҳ"], ["i", "и"], ["j", "ж"], ["k", "к"],
+  ["l", "л"], ["m", "м"], ["n", "н"], ["o", "о"], ["p", "п"],
+  ["q", "қ"], ["r", "р"], ["s", "с"], ["t", "т"], ["u", "у"],
+  ["v", "в"], ["x", "х"], ["y", "й"], ["z", "з"],
+]
+const CYR_TO_LAT_MAP: [string, string][] = [
+  ["ш", "sh"], ["ч", "ch"], ["нг", "ng"], ["ў", "o'"], ["ғ", "g'"],
+  ["ё", "yo"], ["я", "ya"], ["ю", "yu"],
+  ["а", "a"], ["б", "b"], ["д", "d"], ["е", "e"], ["ф", "f"],
+  ["г", "g"], ["ҳ", "h"], ["и", "i"], ["ж", "j"], ["к", "k"],
+  ["л", "l"], ["м", "m"], ["н", "n"], ["о", "o"], ["п", "p"],
+  ["қ", "q"], ["р", "r"], ["с", "s"], ["т", "t"], ["у", "u"],
+  ["в", "v"], ["х", "x"], ["й", "y"], ["з", "z"],
+]
+
+function clientTransliterate(input: string, direction: 'to-cyrillic' | 'to-latin'): string {
+  const map = direction === 'to-cyrillic' ? LAT_TO_CYR_MAP : CYR_TO_LAT_MAP
+  // Sort by key length descending so multi-char mappings match first
+  const sorted = [...map].sort((a, b) => b[0].length - a[0].length)
+  let result = ''
+  let i = 0
+  while (i < input.length) {
+    let found = false
+    const ch = input[i]
+    const isUpper = ch === ch.toUpperCase() && ch !== ch.toLowerCase()
+    for (const [from, to] of sorted) {
+      const slice = input.substring(i, i + from.length).toLowerCase()
+      if (slice === from) {
+        result += isUpper ? to.charAt(0).toUpperCase() + to.slice(1) : to
+        i += from.length
+        found = true
+        break
+      }
+    }
+    if (!found) { result += input[i]; i++ }
+  }
+  return result
+}
+
+function detectScript(text: string): 'cyrillic' | 'latin' | 'unknown' {
+  const cyr = (text.match(/[а-яА-ЯёЁўғқҳЎҒҚҲ]/g) || []).length
+  const lat = (text.match(/[a-zA-Z]/g) || []).length
+  if (cyr > lat) return 'cyrillic'
+  if (lat > cyr) return 'latin'
+  return 'unknown'
+}
+
 function detectLang(text: string): Lang {
   if (!text || text.length < 3) return 'uz-lat'
   // Count cyrillic vs latin
@@ -99,6 +151,8 @@ export default function TilshunosPage() {
   const [stats, setStats] = useState<any>(null)
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
   const [popup, setPopup] = useState<{ issue: LinguisticIssue; x: number; y: number } | null>(null)
+  const [popupMorph, setPopupMorph] = useState<any | null>(null)
+  const [popupSynonyms, setPopupSynonyms] = useState<{ loading: boolean; items: string[] }>({ loading: false, items: [] })
   const [synPopup, setSynPopup] = useState<{ word: string; x: number; y: number; options: string[] } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const richEditRef = useRef<HTMLDivElement>(null)
@@ -213,6 +267,32 @@ export default function TilshunosPage() {
     }, 800)
     return () => clearTimeout(t)
   }, [text, showEntities])
+
+  // Enrich popup with morph data + synonyms when it opens
+  useEffect(() => {
+    if (!popup) {
+      setPopupMorph(null)
+      setPopupSynonyms({ loading: false, items: [] })
+      return
+    }
+    const word = popup.issue.matched_text || text.substring(popup.issue.from_index, popup.issue.to_index)
+    if (!word || word.length < 2) return
+    // Look for morph data in result
+    const morphItems = (result as any)?.morphology || []
+    const morphEntry = morphItems.find((m: any) => {
+      const mWord = text.substring(m.from ?? 0, m.to ?? 0)
+      return mWord.toLowerCase() === word.toLowerCase()
+    })
+    setPopupMorph(morphEntry || null)
+    // Fetch synonyms
+    setPopupSynonyms({ loading: true, items: [] })
+    api.synonyms.list(word).then((r: any) => {
+      const syns = (r?.synonyms || []).map((s: any) => s.synonym || s.word || s).filter((s: string) => s && s !== word && s !== word.toLowerCase())
+      setPopupSynonyms({ loading: false, items: syns.slice(0, 8) })
+    }).catch(() => {
+      setPopupSynonyms({ loading: false, items: [] })
+    })
+  }, [popup])
 
   useEffect(() => {
     if (text && text.length > 5) {
@@ -819,6 +899,34 @@ export default function TilshunosPage() {
                 <option value="uz-lat">🇺🇿 O'zbek (Lotin)</option>
               </select>
 
+              {/* Transliteration toggle — client-side Latin↔Cyrillic */}
+              <button
+                onClick={() => {
+                  if (!text.trim()) return
+                  const script = detectScript(text)
+                  if (script === 'cyrillic') {
+                    const converted = clientTransliterate(text, 'to-latin')
+                    setText(converted)
+                    setLang('uz-lat')
+                  } else {
+                    const converted = clientTransliterate(text, 'to-cyrillic')
+                    setText(converted)
+                    setLang('uz-cyr')
+                  }
+                  setResult(null)
+                  setClassified(null)
+                }}
+                disabled={!text.trim()}
+                title={detectScript(text) === 'cyrillic' ? 'Лотинга ўтказиш' : 'Кириллга ўтказиш'}
+                style={{
+                  ...toolbarBtn,
+                  background: '#FFF7ED', color: '#B45309', borderColor: '#FCD34D',
+                  opacity: text.trim() ? 1 : 0.5,
+                }}
+              >
+                🔄 {detectScript(text) === 'cyrillic' ? 'Лотин' : 'Кирилл'}
+              </button>
+
               <button onClick={handlePaste} style={toolbarBtn}><ClipboardPaste size={13} /> Жойлаш</button>
 
               <label style={{ ...toolbarBtn, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -1337,6 +1445,7 @@ export default function TilshunosPage() {
             <div style={{ color: '#374151', marginBottom: 10, fontSize: '0.78rem' }}>
               {popup.issue.message}
             </div>
+            {/* SECTION 1: Сайқаллаш (suggestions) */}
             <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
               <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 4 }}>ТАКЛИФЛАР</div>
               {(() => {
@@ -1356,6 +1465,60 @@ export default function TilshunosPage() {
                   </button>
                 ))
               })()}
+
+              {/* SECTION 2: Морфология */}
+              {popupMorph && (
+                <div style={{ marginTop: 8, padding: 8, background: '#E0F2FE', border: '1px solid #7DD3FC', borderRadius: 6 }}>
+                  <div style={{ fontSize: '0.6rem', color: '#0369A1', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>Морфология</div>
+                  <div style={{ fontSize: '0.75rem', color: '#1E3A5F', lineHeight: 1.6 }}>
+                    {popupMorph.root && <div><strong>Ўзак:</strong> {popupMorph.root}</div>}
+                    {popupMorph.pos && <div><strong>Сўз туркуми:</strong> {popupMorph.pos}</div>}
+                    {popupMorph.case && <div><strong>Келишик:</strong> {popupMorph.case}</div>}
+                    {popupMorph.affixes && popupMorph.affixes.length > 0 && (
+                      <div><strong>Аффикслар:</strong> {popupMorph.affixes.map((a: any, i: number) => (
+                        <span key={i} style={{ display: 'inline-block', margin: '1px 2px', padding: '0 4px', background: '#BAE6FD', borderRadius: 3, fontSize: '0.7rem' }}>
+                          -{a.affix || a}{a.meaning ? ` (${a.meaning})` : ''}
+                        </span>
+                      ))}</div>
+                    )}
+                    {popupMorph.prefix && <div><strong>Префикс:</strong> {popupMorph.prefix}</div>}
+                    {popupMorph.suffix && <div><strong>Суффикс:</strong> {popupMorph.suffix}</div>}
+                    {popupMorph.description && <div style={{ marginTop: 4, fontStyle: 'italic', color: '#475569', fontSize: '0.7rem' }}>{popupMorph.description}</div>}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 3: Синонимлар */}
+              <div style={{ marginTop: 8, padding: 8, background: '#F5F3FF', border: '1px solid #C4B5FD', borderRadius: 6 }}>
+                <div style={{ fontSize: '0.6rem', color: '#6D28D9', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>Синонимлар</div>
+                {popupSynonyms.loading ? (
+                  <div style={{ textAlign: 'center', padding: 4, color: '#7C3AED', fontSize: '0.7rem' }}>
+                    <Loader2 size={12} className="animate-spin" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                    Юкланмоқда...
+                  </div>
+                ) : popupSynonyms.items.length === 0 ? (
+                  <div style={{ fontSize: '0.7rem', color: '#9CA3AF' }}>Синоним топилмади</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                    {popupSynonyms.items.map((syn, i) => (
+                      <span
+                        key={i}
+                        onClick={() => applyFix(popup.issue, syn)}
+                        style={{
+                          padding: '2px 7px', background: '#EDE9FE', borderRadius: 4,
+                          fontSize: '0.72rem', fontWeight: 600, color: '#5B21B6',
+                          cursor: 'pointer', border: '1px solid transparent',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#DDD6FE'; e.currentTarget.style.borderColor = '#7C3AED' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#EDE9FE'; e.currentTarget.style.borderColor = 'transparent' }}
+                      >
+                        {syn}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Custom user input */}
               <div style={{ marginTop: 8, padding: 8, background: '#FFF7ED', border: '1.5px dashed #FB923C', borderRadius: 6 }}>
                 <div style={{ fontSize: '0.62rem', color: '#9A3412', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase' }}>✎ Ўз вариантингиз</div>
