@@ -860,7 +860,48 @@ export default function TilshunosPage() {
 
             {/* 4-layer Linguistic Analysis Bar */}
             <div style={{ padding: '10px 18px 0' }}>
-              <LinguisticAnalysisBar text={text} lang="uz" compact onTextChange={(t) => setText(t)} onResult={(r) => setResult(r as any)} />
+              <LinguisticAnalysisBar text={text} lang="uz" compact onTextChange={(t) => setText(t)} onResult={(r: any) => {
+                // Convert analyze/full format to TilshunosCheckResult format
+                const issues: any[] = []
+                for (const item of (r.sayqallash || [])) {
+                  issues.push({
+                    from_index: item.from ?? item.from_index ?? 0,
+                    to_index: item.to ?? item.to_index ?? 0,
+                    old_value: item.old ?? item.old_value ?? '',
+                    new_value: item.new ?? item.new_value ?? '',
+                    error_type: item.error_type || 'S/Spelling',
+                    severity: item.severity || 'error',
+                    source: item.source || 'analyze',
+                    confidence: item.confidence || 80,
+                    suggestions: item.suggestions || [],
+                    layer: 'sayqallash',
+                  })
+                }
+                for (const item of (r.style || [])) {
+                  issues.push({
+                    from_index: item.from ?? 0,
+                    to_index: item.to ?? 0,
+                    old_value: item.old ?? '',
+                    new_value: item.suggestion ?? '',
+                    error_type: item.rule_id || 'Style',
+                    severity: item.severity || 'should',
+                    source: item.source || 'style_rules',
+                    description: item.description,
+                    layer: 'style',
+                  })
+                }
+                setResult({
+                  text,
+                  lang: 'uz',
+                  issues,
+                  by_category: {},
+                  by_severity: {},
+                  total: r.total || issues.length,
+                  morphology: r.morph || [],
+                  score: Math.max(0, 100 - issues.length * 3),
+                  word_count: text.split(/\s+/).length,
+                } as any)
+              }} />
             </div>
 
             {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
