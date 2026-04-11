@@ -253,10 +253,46 @@ async def startup_event():
             _c.executemany('INSERT INTO syntax_word_order_rules (wrong_order,correct_order,pos_pattern_wrong,pos_pattern_correct,explanation_uz,severity) VALUES (?,?,?,?,?,?)', rules)
             logger.info("[B-9] Seeded 4 syntax_word_order_rules")
 
+        # Populate dictionary table from pos_map (87K Hunspell words not in FDI)
+        _c.execute("CREATE TABLE IF NOT EXISTS dictionary (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, lemma TEXT, pos TEXT, frequency INTEGER DEFAULT 1, source TEXT DEFAULT 'hunspell', lang TEXT DEFAULT 'uz', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        _c.execute("CREATE INDEX IF NOT EXISTS idx_dict_word ON dictionary(word)")
+
         _c.commit()
         _c.close()
     except Exception as e:
         logger.warning(f"[B-5/B-9] Startup migration error: {e}")
+
+    # Background: populate dictionary from pos_map if needed
+    async def populate_dictionary():
+        try:
+            await asyncio.sleep(10)
+            import json as _json
+            _db2 = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
+            _fdi_path = os.path.join(os.path.dirname(__file__), "uzbek_fdi_data.json")
+            if not os.path.exists(_fdi_path):
+                return
+            _c2 = sqlite3.connect(_db2)
+            _cur2 = _c2.cursor()
+            _cur2.execute("SELECT COUNT(*) FROM dictionary WHERE source='pos_map'")
+            existing = _cur2.fetchone()[0]
+            if existing > 50000:
+                _c2.close()
+                return  # Already populated
+            raw = _json.loads(open(_fdi_path, 'r', encoding='utf-8').read())
+            pm = raw.get("pos_map", {})
+            batch = []
+            for word, pos in pm.items():
+                if pos and pos != "unknown" and len(word) >= 2:
+                    batch.append((word, word, pos, 1, 'pos_map', 'uz'))
+            _cur2.executemany("INSERT OR IGNORE INTO dictionary (word,lemma,pos,frequency,source,lang) VALUES (?,?,?,?,?,?)", batch)
+            _c2.commit()
+            added = _c2.total_changes
+            _c2.close()
+            logger.info(f"[dict] Populated dictionary with {added} pos_map entries")
+        except Exception as e:
+            logger.warning(f"[dict] Population failed: {e}")
+
+    asyncio.create_task(populate_dictionary())
 
     # B-6: Build FAISS lexicon index in background
     async def preload_faiss():

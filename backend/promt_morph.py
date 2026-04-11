@@ -703,10 +703,21 @@ class PromtMorph:
             ("имиздан", {"case": Case.ABL, "poss": (Person.P1, Number.PL)}),
             ("ингизга",  {"case": Case.DAT, "poss": (Person.P2, Number.PL)}),
             ("ингизда",  {"case": Case.LOC, "poss": (Person.P2, Number.PL)}),
+            ("ингга",  {"case": Case.DAT, "poss": (Person.P2, Number.SG)}),
+            ("ингда",  {"case": Case.LOC, "poss": (Person.P2, Number.SG)}),
+            ("ингдан", {"case": Case.ABL, "poss": (Person.P2, Number.SG)}),
+            ("ингни",  {"case": Case.ACC, "poss": (Person.P2, Number.SG)}),
+            ("ингнинг", {"case": Case.GEN, "poss": (Person.P2, Number.SG)}),
             ("ларига",   {"case": Case.DAT, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
             ("ларини",   {"case": Case.ACC, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
             ("ларида",   {"case": Case.LOC, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
             ("ларидан",  {"case": Case.ABL, "number": Number.PL, "poss": (Person.P3, Number.SG)}),
+            ("ларимга",  {"case": Case.DAT, "number": Number.PL, "poss": (Person.P1, Number.SG)}),
+            ("ларимда",  {"case": Case.LOC, "number": Number.PL, "poss": (Person.P1, Number.SG)}),
+            ("ларимдан", {"case": Case.ABL, "number": Number.PL, "poss": (Person.P1, Number.SG)}),
+            ("ларимни",  {"case": Case.ACC, "number": Number.PL, "poss": (Person.P1, Number.SG)}),
+            ("ларингга", {"case": Case.DAT, "number": Number.PL, "poss": (Person.P2, Number.SG)}),
+            ("ларингда", {"case": Case.LOC, "number": Number.PL, "poss": (Person.P2, Number.SG)}),
             # Оддий эгалик (келишиксиз)
             ("си",    {"poss": (Person.P3, Number.SG)}),
             ("сини",  {"case": Case.ACC, "poss": (Person.P3, Number.SG)}),
@@ -721,15 +732,57 @@ class PromtMorph:
                 if self._in_dict(root):
                     return root, [suf], {"pos": POS.NOUN, **attrs_pc}
 
-        # Феъл суффикслари
-        for suf in ["япман","япсан","япти","япмиз","япсиз","яптилар",
-                     "аман","асан","ади","амиз","асиз","адилар",
-                     "дим","динг","ди","дик","дингиз","дилар",
-                     "моқ","иш","ган","иб","маган"]:
+        # Феъл суффикслари (кенгайтирилган)
+        verb_suffixes = [
+            # Давом этаётган (progressive)
+            "аяпман","аяпсан","аяпти","аяпмиз","аяпсиз","аяптилар",
+            "яяпман","яяпсан","яяпти","яяпмиз","яяпсиз","яяптилар",
+            # Ҳозирги замон
+            "япман","япсан","япти","япмиз","япсиз","яптилар",
+            "айман","айсан","айди","аймиз","айсиз","айдилар",
+            # Ҳозирги-келаси
+            "аман","асан","ади","амиз","асиз","адилар",
+            "йман","йсан","йди","йдилар",
+            # Ўтган замон
+            "дим","динг","ди","дик","дингиз","дилар",
+            # Инкор (negation)
+            "мади","мадим","мадинг","мадик","мадилар",
+            "майди","майман","майсан","маймиз","майсиз","майдилар",
+            "маган","маяпти","маяпман",
+            # Феъл номлари + сифатдош
+            "моқда","моқчи","моқдаман","моқдасан",
+            "аётган","яётган","ётган","увчи","адиган",
+            "тириш","тириб","тирган","тирилган","тирилади",
+            "моқ","иш","ган","иб","маган",
+            "лаш","латиш","ланиш","латилган",
+            # Мажҳул (passive)
+            "илди","илган","илади","илмоқ",
+            "инди","инган",
+        ]
+        for suf in sorted(verb_suffixes, key=len, reverse=True):
             if word.endswith(suf) and len(word) - len(suf) >= 2:
                 root = word[:-len(suf)]
                 if self._in_dict(root):
-                    return root, [suf], SUFFIX_ANALYSIS.get(suf, {"pos": POS.VERB})
+                    attrs = SUFFIX_ANALYSIS.get(suf, {"pos": POS.VERB})
+                    if "pos" not in attrs:
+                        attrs["pos"] = POS.VERB
+                    return root, [suf], attrs
+
+        # Йўналтирувчи феъллар (-тир-, -лан-, -ла-) 2-қадамли
+        causative = [
+            ("тирди","тир"),("тирган","тир"),("тиради","тир"),("тириш","тир"),("тирилди","тирил"),
+            ("ланди","лан"),("ланган","лан"),("ланади","лан"),("ланиш","лан"),
+            ("лади","ла"),("лаган","ла"),("лайди","ла"),("лаш","ла"),("ланган","лан"),
+        ]
+        for suf, mid in sorted(causative, key=lambda x: len(x[0]), reverse=True):
+            if word.endswith(suf) and len(word) - len(suf) >= 2:
+                stem = word[:-len(suf)]
+                if self._in_dict(stem):
+                    return stem, [mid, suf[len(mid):]], {"pos": POS.VERB}
+                # Try stem without mid
+                full_root = stem + mid
+                if self._in_dict(full_root):
+                    return full_root, [suf[len(mid):]], {"pos": POS.VERB}
 
         return word, [], {"pos": POS.UNKNOWN}
 
