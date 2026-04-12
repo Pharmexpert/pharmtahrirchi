@@ -541,8 +541,29 @@ export default function TilshunosPage() {
     }
 
     const newText = text.substring(0, from) + suggestion + text.substring(to)
-    setText(newText)
+    const lenDiff = suggestion.length - matched.length
     setPopup(null)
+
+    // Update result immediately: remove the fixed issue, shift positions of remaining issues
+    if (result) {
+      const updatedResult = { ...result }
+      const issueArrays = ['sayqallash', 'style', 'morph', 'syntax'] as const
+      for (const key of issueArrays) {
+        if (Array.isArray((updatedResult as any)[key])) {
+          (updatedResult as any)[key] = (updatedResult as any)[key]
+            .filter((iss: any) => !(iss.from_index === issue.from_index && iss.to_index === issue.to_index))
+            .map((iss: any) => {
+              if (iss.from_index > from) {
+                return { ...iss, from_index: iss.from_index + lenDiff, to_index: iss.to_index + lenDiff }
+              }
+              return iss
+            })
+        }
+      }
+      setResult(updatedResult)
+    }
+
+    setText(newText)
 
     const backendLang = lang.startsWith('uz') ? 'uz' : lang
 
@@ -555,7 +576,7 @@ export default function TilshunosPage() {
       lang: backendLang,
     }).catch(() => {})
 
-    // Re-run tilshunos check (keeps result in correct format for renderAnnotated)
+    // Re-run check in background (don't clear existing result while loading)
     try {
       const [checkRes, classifyRes] = await Promise.all([
         api.tilshunos.check(newText, backendLang),
@@ -566,8 +587,7 @@ export default function TilshunosPage() {
       setResult(checkRes)
       setClassified(classifyRes.spans || [])
     } catch (_) {
-      // If re-check fails, just clear the result to avoid stale state
-      setResult(null)
+      // Keep existing result — don't clear it
     }
   }
 
