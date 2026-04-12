@@ -38,6 +38,7 @@ except ImportError:
     ocr_router = None
 from routes.qa_routes import router as qa_router
 from routes.document_routes import router as document_router
+from routes.assistant2_routes import router as assistant2_router
 TEMP_DIR = os.path.join(BACKEND_DIR, "temp_files")
 # Use persistent volume for uploads on Railway
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.path.exists("/app/data"))
@@ -438,6 +439,7 @@ if ocr_router:
     app.include_router(ocr_router)
 app.include_router(qa_router)
 app.include_router(document_router)
+app.include_router(assistant2_router)
 
 
 # ═══════════════════════════════════════════════════

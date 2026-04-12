@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { 
   Database, Menu, X, LayoutDashboard, FileText, Settings, 
   LogOut, User, Globe, ChevronLeft, ChevronRight, Search, 
-  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen, Repeat2, UserCog, Library, Layers
+  PlusCircle, History, Bell, ShieldCheck, Mail, Info, MessageSquare, BookOpen, FolderOpen, Repeat2, UserCog, Library, Layers, Languages
 } from 'lucide-react'
 import { useAuth } from './LoginGuard'
 import Link from 'next/link'
@@ -27,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: t('nav.dashboard'), icon: LayoutDashboard, path: '/dashboard' },
     { name: 'Фармацевт ёрдамчиси', icon: ShieldCheck, path: '/assistant' },
+    { name: 'AI Ассистент', icon: Languages, path: '/assistant2' },
     { name: t('nav.tilshunos'), icon: Globe, path: '/tilshunos' },
     { name: t('nav.paragraphs'), icon: FileText, path: '/paragraphs' },
     { name: t('nav.projects'), icon: History, path: '/projects' },

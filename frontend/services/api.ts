@@ -902,11 +902,42 @@ export const documents = {
   },
 }
 
+// ═══════════════════════════════════════════════════
+// Assistant2 (Translation, Editing, Quality Check)
+// ═══════════════════════════════════════════════════
+
+export const assistant2 = {
+  translate: (text: string, source_lang: string, target_langs: string[]) =>
+    post<{ translations: Record<string, string>; source_lang: string }>('/api/assistant2/translate', { text, source_lang, target_langs }),
+  edit: (text: string, lang: string) =>
+    post<{ edited: string; lang: string }>('/api/assistant2/edit', { text, lang }),
+  checkTranslation: (original: string, translation: string, source_lang: string, target_lang: string) =>
+    post<{ result: any }>('/api/assistant2/check-translation', { original, translation, source_lang, target_lang }),
+  checkEdit: (original: string, edited: string, lang: string) =>
+    post<{ result: any }>('/api/assistant2/check-edit', { original, edited, lang }),
+  upload: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const token = getToken()
+    const res = await fetch(`${API_BASE}/api/assistant2/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const err = await res.json(); detail = err.detail || detail } catch {}
+      throw new Error(detail)
+    }
+    return res.json() as Promise<{ filename: string; text: string }>
+  },
+}
+
 // Re-export everything as default namespace
 const api = {
   auth, projects, editor, sayqallash, dictionary, synonyms,
   files, upload, dashboard, linguistic, admin, profile, user, specialists,
-  morph, grammar, learn, nlp, tilshunos, assistant, billing, syntax, analyze,
+  morph, grammar, learn, nlp, tilshunos, assistant, assistant2, billing, syntax, analyze,
   documents,
   API_BASE,
 }
