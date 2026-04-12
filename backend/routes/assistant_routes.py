@@ -99,7 +99,7 @@ async def list_engines(current_user: Dict = Depends(get_current_user)):
     add("russian", "Sage FRED-T5 Russian", "russian_engine", ["ru"], ["edit"])
     add("nllb", "NLLB-200 Multilingual", "translator_engine", ["en", "ru", "uz"], ["translate"])
     engines.append({"key": "gemini", "label": "Google Gemini 2.0 Flash", "available": bool(os.getenv("GOOGLE_API_KEY")), "mode": "cloud", "model": "gemini-2.0-flash", "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate", "vision"]})
-    engines.append({"key": "anthropic", "label": "Anthropic Claude Haiku", "available": bool(os.getenv("ANTHROPIC_API_KEY")), "mode": "cloud", "model": "claude-haiku-4-5", "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate", "vision"]})
+    engines.append({"key": "anthropic", "label": "Anthropic Claude Sonnet", "available": bool(os.getenv("ANTHROPIC_API_KEY")), "mode": "cloud", "model": "claude-sonnet-4-20250514", "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate", "vision"]})
     engines.append({"key": "auto", "label": "Авто (энг яхшиси)", "available": True, "languages": ["en", "ru", "uz"], "capabilities": ["chat", "edit", "translate"]})
     return {"engines": engines}
 
@@ -107,7 +107,7 @@ async def list_engines(current_user: Dict = Depends(get_current_user)):
 async def _cloud_fallback(prompt: str, system: Optional[str] = None, task: str = "chat", source_lang: str = "en", target_lang: str = "uz") -> Dict[str, Any]:
     """Guaranteed Gemini/Anthropic fallback when local engines are empty."""
     try:
-        from routes.editor_routes import generate_ai_content
+        from routes.ai_helpers import generate_ai_content
         if task == "edit":
             p = (system + "\n\n" if system else "") + f"Илмий-фарма муҳаррир сифатида матнни тузат:\n\n{prompt}"
         elif task == "translate":
@@ -116,10 +116,7 @@ async def _cloud_fallback(prompt: str, system: Optional[str] = None, task: str =
             p = (system + "\n\n" if system else "") + prompt
         txt = await generate_ai_content(p, prefer="cloud")
         if txt and txt.strip():
-            # Detect which cloud engine actually responded
-            import os as _os
-            engine_name = "gemini" if _os.getenv("GOOGLE_API_KEY") else "anthropic"
-            return {"text": txt.strip(), "engine": engine_name}
+            return {"text": txt.strip(), "engine": "claude-sonnet"}
     except Exception as e:
         logger.warning(f"[cloud_fallback] {e}")
     return {"text": "", "engine": "none", "error": "cloud_fallback_failed"}
@@ -229,7 +226,7 @@ async def _call_engine(engine: str, prompt: str, system: Optional[str] = None, l
                         msg = await _aio.get_event_loop().run_in_executor(
                             None,
                             lambda: anthropic_client.messages.create(
-                                model="claude-haiku-4-5-20251001",
+                                model="claude-sonnet-4-20250514",
                                 max_tokens=4096,
                                 messages=[{"role": "user", "content": p}]
                             )
