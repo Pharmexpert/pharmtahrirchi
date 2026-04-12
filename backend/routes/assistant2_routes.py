@@ -141,6 +141,12 @@ TARJIMA QOIDALARI:
 5. Farmakopiya maqolasi raqamlari (masalan: 03/2021:20201) o'zgartirilmasin
 6. Davlat farmakopeyasi uslubiga mos: rasmiy, ilmiy, aniq
 
+MUHIM — FORMATNI SAQLASH:
+- Markdown formatini AYNAN saqlang: sarlavhalar (#, ##, ###), jadvallar (| ... |), qalin (**text**), kursiv (*text*), ro'yxatlar (- yoki 1.)
+- Jadval strukturasini buzMANG — | va --- satrlari to'g'ri qaytarilsin
+- Formulalar, raqamlar, o'lchov birliklari o'zgartirilmasin
+- Bo'sh satrlar va paragraflar saqlansin
+
 FAQAT tarjima matnini qaytaring. Izoh, sharh, qo'shimcha ma'lumot YOZMANG."""
 
 EDIT_SYSTEM = """Siz farmatsevtika sohasidagi ilmiy muharrirsiz.
@@ -169,6 +175,13 @@ TAHRIR MEZONLARI:
    - Sinov usullari tavsiflari to'liq va aniq
    - Mezonlar va normalar raqamli qiymatlari to'g'ri
    - Reagentlar va standart moddalar to'g'ri nomlangan (R - reagent, CRS - standart)
+
+MUHIM — FORMATNI SAQLASH:
+- Markdown formatini AYNAN saqlang: sarlavhalar (#, ##, ###), jadvallar (| ... |), qalin (**text**), kursiv (*text*), ro'yxatlar (- yoki 1.)
+- Jadval strukturasini buzMANG — | va --- satrlari to'g'ri qaytarilsin
+- Formulalar, raqamlar, o'lchov birliklari o'zgartirilmasin
+- Bo'sh satrlar va paragraflar saqlansin
+- Faqat ilmiy-grammatik tuzatishlar kiriting, strukturani o'zgartirmang
 
 FAQAT tahrirlangan matnni qaytaring. Izoh, sharh, qayd YOZMANG."""
 
