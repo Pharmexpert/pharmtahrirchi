@@ -408,7 +408,7 @@ async def delete_linguistic_item(category: str, item_id: int, current_user: Dict
     valid_categories = ["annotated", "disputed", "abbreviations", "paragraphs"]
     if category not in valid_categories:
         raise HTTPException(status_code=400, detail="Invalid category")
-    
+
     table_map = {
         "annotated": "annotated_words",
         "disputed": "disputed_words",
@@ -416,16 +416,51 @@ async def delete_linguistic_item(category: str, item_id: int, current_user: Dict
         "paragraphs": "paragraphs_dashboard"
     }
     table_name = table_map[category]
-    
+
     conn = db.connect_db()
     cursor = conn.cursor()
-    try:
-        cursor.execute(f"DELETE FROM {table_name} WHERE id = ?", (item_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    
-    return {"success": True}
+    cursor.execute(f"DELETE FROM {table_name} WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "deleted_id": item_id}
+
+
+@router.post("/delete-bulk/{category}")
+async def delete_linguistic_bulk(category: str, payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Bulk delete linguistic items by ID range or list."""
+    valid_categories = ["annotated", "disputed", "abbreviations", "paragraphs"]
+    if category not in valid_categories:
+        raise HTTPException(status_code=400, detail="Invalid category")
+
+    table_map = {
+        "annotated": "annotated_words",
+        "disputed": "disputed_words",
+        "abbreviations": "abbreviations",
+        "paragraphs": "paragraphs_dashboard"
+    }
+    table_name = table_map[category]
+
+    ids = payload.get("ids", [])
+    from_id = payload.get("from_id")
+    to_id = payload.get("to_id")
+
+    conn = db.connect_db()
+    cursor = conn.cursor()
+
+    if ids:
+        placeholders = ','.join(['?'] * len(ids))
+        cursor.execute(f"DELETE FROM {table_name} WHERE id IN ({placeholders})", ids)
+    elif from_id is not None and to_id is not None:
+        cursor.execute(f"DELETE FROM {table_name} WHERE id >= ? AND id <= ?", (from_id, to_id))
+    else:
+        raise HTTPException(status_code=400, detail="ids yoki from_id/to_id kerak")
+
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "deleted": deleted}
 
 @router.post("/synonyms/select")
 async def select_synonym(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
