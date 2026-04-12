@@ -262,6 +262,16 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"[B-5/B-9] Startup migration error: {e}")
 
+    # B-9: Full syntax templates + word order rules (1,490+ templates, 446+ rules)
+    try:
+        from syntax_db import seed_full_templates, seed_full_word_order_rules
+        t_count = seed_full_templates()
+        r_count = seed_full_word_order_rules()
+        if t_count or r_count:
+            logger.info(f"[B-9] Full syntax seed: {t_count} templates, {r_count} rules")
+    except Exception as e:
+        logger.warning(f"[B-9] Full syntax seed error: {e}")
+
     # Phase 11: Verify PROMT resources are loaded (dual_script_rules + abbreviations)
     try:
         _db_promt = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
