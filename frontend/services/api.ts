@@ -915,6 +915,79 @@ export const assistant2 = {
     post<{ result: any }>('/api/assistant2/check-translation', { original, translation, source_lang, target_lang }),
   checkEdit: (original: string, edited: string, lang: string) =>
     post<{ result: any }>('/api/assistant2/check-edit', { original, edited, lang }),
+  learn: (wrong: string, correct: string, error_type: string, context: string, lang: string) =>
+    post<{ success: boolean; rule_id?: number; action?: string }>('/api/assistant2/learn', { wrong, correct, error_type, context, lang }),
+  exportPdf: async (text: string, lang: string, title?: string): Promise<Blob> => {
+    const token = getToken()
+    const res = await fetch(`${API_BASE}/api/assistant2/export-pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ text, lang, title: title || 'Farmatsevtik matn' }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.blob()
+  },
+  textToDocx: async (text: string, title?: string): Promise<Blob> => {
+    const token = getToken()
+    const res = await fetch(`${API_BASE}/api/assistant2/text-to-docx`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ text, title: title || 'Farmatsevtik matn' }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.blob()
+  },
+  translateDocx: async (file: File, sourceLang: string, targetLang: string, onProgress?: (pct: number) => void): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/api/assistant2/translate-docx`)
+      xhr.responseType = 'blob'
+      const token = getToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 30)) }
+        xhr.upload.onload = () => onProgress(40)
+      }
+      xhr.onload = () => {
+        if (onProgress) onProgress(100)
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+        else reject(new Error(`HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Translation failed'))
+      xhr.timeout = 600000
+      xhr.ontimeout = () => reject(new Error('Timeout'))
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('source_lang', sourceLang)
+      fd.append('target_lang', targetLang)
+      xhr.send(fd)
+    })
+  },
+  editDocx: async (file: File, lang: string, onProgress?: (pct: number) => void): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE}/api/assistant2/edit-docx`)
+      xhr.responseType = 'blob'
+      const token = getToken()
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 30)) }
+        xhr.upload.onload = () => onProgress(40)
+      }
+      xhr.onload = () => {
+        if (onProgress) onProgress(100)
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
+        else reject(new Error(`HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Edit failed'))
+      xhr.timeout = 600000
+      xhr.ontimeout = () => reject(new Error('Timeout'))
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('lang', lang)
+      xhr.send(fd)
+    })
+  },
   upload: async (file: File) => {
     const fd = new FormData()
     fd.append('file', file)

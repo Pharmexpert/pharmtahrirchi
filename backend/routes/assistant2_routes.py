@@ -1,22 +1,38 @@
 """
 Assistant2 — AI-powered translation, scientific editing, and quality checking.
 
+Uses Claude Sonnet for high-quality pharmaceutical text processing.
+System prompts based on O'zbekiston Respublikasi Davlat farmakopeyasi
+and European Pharmacopoeia (Ph.Eur.) style and terminology.
+
 Endpoints:
-  POST /api/assistant2/translate       — translate text between UZ/RU/EN
-  POST /api/assistant2/edit            — scientific editing of pharma text
-  POST /api/assistant2/check-translation — evaluate translation quality (0-100)
-  POST /api/assistant2/check-edit      — evaluate edit quality (0-100)
-  POST /api/assistant2/upload          — extract text from .txt/.docx files
+  POST /api/assistant2/translate          — translate text between UZ/RU/EN
+  POST /api/assistant2/edit               — scientific editing of pharma text
+  POST /api/assistant2/check-translation  — evaluate translation quality (0-100)
+  POST /api/assistant2/check-edit         — evaluate edit quality (0-100)
+  POST /api/assistant2/upload             — extract text from .txt/.docx files
+  POST /api/assistant2/translate-docx     — format-preserving DOCX translation
+  POST /api/assistant2/edit-docx          — format-preserving DOCX editing
+  POST /api/assistant2/export-pdf         — generate PDF from text
+  POST /api/assistant2/text-to-docx       — generate DOCX from text
+  POST /api/assistant2/learn              — save user correction for AI learning
 """
 import io
+import os
+import json
+import re
 import logging
+import asyncio
 from typing import Dict, Any, Optional, List
+from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from auth import get_current_user
-from routes.ai_helpers import generate_ai_content
+from routes.ai_helpers import generate_ai_content, get_anthropic
+import db
 
 logger = logging.getLogger("assistant2")
 router = APIRouter(prefix="/api/assistant2", tags=["assistant2"])
@@ -24,44 +40,195 @@ router = APIRouter(prefix="/api/assistant2", tags=["assistant2"])
 LANG_NAMES = {"uz": "o'zbek", "ru": "rus", "en": "ingliz"}
 
 # ═══════════════════════════════════════════════════
-# System prompts
+# Claude Sonnet direct caller
 # ═══════════════════════════════════════════════════
 
-TRANSLATE_SYSTEM = """Siz farmatsevtika sohasidagi mutaxassis tarjimonisiz, farmakopeya va dori vositalarini standartlashtirish bo'yicha chuqur ilmga egasiz.
-Berilgan matnni ko'rsatilgan tillarga tarjima qiling.
-Farmatsevtik terminologiyaga qat'iy rioya qiling.
-Faqat tarjima matnini qaytaring, izoh yozmang."""
+async def generate_with_claude(system_prompt: str, user_prompt: str, max_tokens: int = 8192) -> str:
+    """Call Claude Sonnet directly with system + user separation.
+    Falls back to generate_ai_content() if Anthropic unavailable."""
+    client = get_anthropic()
+    if client:
+        try:
+            loop = asyncio.get_event_loop()
+            msg = await loop.run_in_executor(
+                None,
+                lambda: client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}]
+                )
+            )
+            return msg.content[0].text
+        except Exception as e:
+            logger.warning(f"[claude-sonnet] failed: {e}, falling back to cascade")
+    # Fallback
+    return await generate_ai_content(f"{system_prompt}\n\n{user_prompt}", prefer="cloud")
 
-EDIT_SYSTEM = """Siz farmatsevtika sohasidagi ilmiy muharrirsiz, farmakopeya va dori vositalarini standartlashtirish bo'yicha chuqur ilmga egasiz.
-Berilgan matnni ilmiy tahrir qiling:
-- Terminologik aniqlik
-- Uslubiy izchillik
-- Grammatik to'g'rilik
-- Farmatsevtik standartlarga moslik
-Faqat tahrirlangan matnni qaytaring, izoh yoki tushuntirish yozmang."""
 
-CHECK_TRANSLATION_SYSTEM = """Siz farmatsevtika tarjimasi sifatini baholovchi ekspertsiz, farmakopeya va dori vositalarini standartlashtirish bo'yicha chuqur ilmga egasiz.
-Faqat JSON qaytaring, boshqa hech narsa yozmang:
+# ═══════════════════════════════════════════════════
+# Learned rules loader
+# ═══════════════════════════════════════════════════
+
+_learned_rules_cache: Dict[str, Any] = {"rules": "", "ts": 0}
+
+def _load_learned_rules(lang: str = "uz") -> str:
+    """Load corrections from sayqallash_rules + hunspell learning to augment prompts.
+    Caches for 5 minutes to avoid DB hammering."""
+    import time
+    now = time.time()
+    cache_key = f"{lang}_{now // 300}"  # 5 min buckets
+    if _learned_rules_cache.get("key") == cache_key:
+        return _learned_rules_cache.get("rules", "")
+
+    rules_text = ""
+    try:
+        conn = db.get_db()
+        cur = conn.cursor()
+        # Get top corrections by frequency (sayqallash rules)
+        cur.execute("""
+            SELECT wrong_form, correct_form, error_type, context
+            FROM sayqallash_rules
+            WHERE lang = ? AND frequency > 0
+            ORDER BY frequency DESC, updated_at DESC
+            LIMIT 80
+        """, (lang,))
+        rows = cur.fetchall()
+        if rows:
+            rules_parts = []
+            for r in rows:
+                wrong, correct, etype, ctx = r[0], r[1], r[2] or '', r[3] or ''
+                rules_parts.append(f"- \"{wrong}\" → \"{correct}\" ({etype})")
+            rules_text = "\n\nO'RGANILGAN QOIDALAR (avvalgi tuzatishlar asosida):\n" + "\n".join(rules_parts)
+
+        _learned_rules_cache["key"] = cache_key
+        _learned_rules_cache["rules"] = rules_text
+    except Exception as e:
+        logger.warning(f"[learned_rules] {e}")
+
+    return rules_text
+
+
+# ═══════════════════════════════════════════════════
+# System prompts — based on DF & EP style
+# ═══════════════════════════════════════════════════
+
+TRANSLATE_SYSTEM = """Siz farmatsevtika sohasidagi yuqori malakali mutaxassis tarjimonisiz.
+
+MALAKA:
+- O'zbekiston Respublikasi Davlat farmakopeyasi (DF) va Yevropa farmakopeyasi (Ph.Eur.) uslubida ishlaysiz
+- Farmatsevtik terminologiyani uch tilda (o'zbek, rus, ingliz) mukammal bilasiz
+- INN (Xalqaro patentlanmagan nomlar), ATC kodlar, dozaj shakllari terminlarini bilasiz
+
+TARJIMA QOIDALARI:
+1. Farmakopiya terminlarini qat'iy standartlarga mos tarjima qiling:
+   - Assay → Миқдорий аниқлаш / Количественное определение
+   - Identification → Аниқлаш / Идентификация
+   - Related substances → Ёндош аралашмалар / Сопутствующие примеси
+   - Dissolution → Эриш / Растворение
+   - Loss on drying → Қуритишда йўқотиш / Потеря в массе при высушивании
+   - Residue on ignition → Куйдиришдаги қолдиқ / Остаток после прокаливания
+   - Uniformity of dosage units → Дозалаш бирликлари бир хиллиги
+   - Disintegration → Парчаланиш / Распадаемость
+   - Friability → Ишқаланувчанлик / Истираемость
+   - Wetting → Намланиш / Смачивание
+   - Hardness → Қаттиқлик / Твёрдость
+   - Content uniformity → Таркиб бир хиллиги / Однородность содержимого
+
+2. Lotin nomlari (INN, kimyoviy formulalar, ATC kodlar) O'ZGARTIRILMASIN
+3. Raqamlar, o'lchov birliklari, formulalar AYNAN saqlansin
+4. Jadval va ro'yxat strukturasi saqlansin
+5. Farmakopiya maqolasi raqamlari (masalan: 03/2021:20201) o'zgartirilmasin
+6. Davlat farmakopeyasi uslubiga mos: rasmiy, ilmiy, aniq
+
+FAQAT tarjima matnini qaytaring. Izoh, sharh, qo'shimcha ma'lumot YOZMANG."""
+
+EDIT_SYSTEM = """Siz farmatsevtika sohasidagi ilmiy muharrirsiz.
+
+MALAKA:
+- O'zbekiston Respublikasi Davlat farmakopeyasi va Yevropa farmakopeyasi uslubida ishlaysiz
+- GxP (GMP, GLP, GCP, GDP) hujjatlari standartlarini bilasiz
+- Farmatsevtik terminologiyani uch tilda mukammal bilasiz
+
+TAHRIR MEZONLARI:
+1. TERMINOLOGIK ANIQLIK:
+   - Farmakopiya terminlari standartga mos bo'lishi (assay, identification, dissolution va h.k.)
+   - INN nomlar to'g'ri yozilishi
+   - O'lchov birliklari (mg, ml, %, IU) standart formatda
+
+2. USLUBIY IZCHILLIK:
+   - Farmakopiya maqolalari uslubi: formal, aniq, qisqa
+   - Davlat farmakopeyasi formatiga mos: bob, band, punkt tuzilishi
+   - Jadval, formula, rasm havola formati saqlanishi
+
+3. GRAMMATIK TO'G'RILIK:
+   - Ilmiy matn grammatikasi
+   - O'zbek/Rus/Ingliz tilida terminlar to'g'ri kelishikda
+
+4. FARMATSEVTIK STANDARTLARGA MOSLIK:
+   - Sinov usullari tavsiflari to'liq va aniq
+   - Mezonlar va normalar raqamli qiymatlari to'g'ri
+   - Reagentlar va standart moddalar to'g'ri nomlangan (R - reagent, CRS - standart)
+
+FAQAT tahrirlangan matnni qaytaring. Izoh, sharh, qayd YOZMANG."""
+
+CHECK_TRANSLATION_SYSTEM = """Siz farmatsevtika tarjimasi sifatini baholovchi ekspertsiz.
+O'zbekiston Respublikasi Davlat farmakopeyasi va Yevropa farmakopeyasi (Ph.Eur.) standartlarini bilasiz.
+
+Tarjima sifatini quyidagi mezonlar bo'yicha baholang va FAQAT JSON qaytaring:
 {
   "umumiy_ball": 0-100,
-  "terminologiya": {"ball": 0-100, "muammolar": [], "tavsiyalar": []},
-  "toliqligi": {"ball": 0-100, "muammolar": []},
-  "grammatika": {"ball": 0-100, "muammolar": []},
-  "uslub": {"ball": 0-100, "muammolar": []},
-  "xulosa": "",
-  "ijobiy_jihatlar": []
-}"""
+  "terminologiya": {
+    "ball": 0-100,
+    "muammolar": ["har bir noto'g'ri tarjima qilingan termin"],
+    "tavsiyalar": ["to'g'ri tarjima varianti"]
+  },
+  "toliqligi": {
+    "ball": 0-100,
+    "muammolar": ["tushirib qoldirilgan yoki qo'shilgan qismlar"]
+  },
+  "grammatika": {
+    "ball": 0-100,
+    "muammolar": ["grammatik xatolar"]
+  },
+  "uslub": {
+    "ball": 0-100,
+    "muammolar": ["uslubiy nomuvofiqliklar - farmakopiya uslubiga mos emas"]
+  },
+  "xulosa": "qisqa xulosa",
+  "ijobiy_jihatlar": ["yaxshi tarjima qilingan jihatlar"]
+}
 
-CHECK_EDIT_SYSTEM = """Siz farmatsevtika ilmiy tahrir sifatini baholovchi ekspertsiz, farmakopeya va dori vositalarini standartlashtirish bo'yicha chuqur ilmga egasiz.
-Faqat JSON qaytaring, boshqa hech narsa yozmang:
+BAHOLASH MEZONLARI:
+- 90-100: Mukammal farmakopiya tarjimasi, terminlar to'g'ri, uslub mos
+- 70-89: Yaxshi, ammo ba'zi terminlar noaniq yoki uslub nomuvofiq
+- 50-69: O'rtacha, ko'p terminologik xatolar, mazmun saqlanmagan
+- 0-49: Past sifat, jiddiy terminologik va mazmuniy xatolar"""
+
+CHECK_EDIT_SYSTEM = """Siz farmatsevtika ilmiy tahrir sifatini baholovchi ekspertsiz.
+O'zbekiston Respublikasi Davlat farmakopeyasi va Yevropa farmakopeyasi standartlarini bilasiz.
+
+Tahrir sifatini baholang va FAQAT JSON qaytaring:
 {
   "umumiy_ball": 0-100,
-  "ilmiy_aniqlik": {"ball": 0-100, "izohlar": []},
-  "ravonlik": {"ball": 0-100, "izohlar": []},
-  "izchillik": {"ball": 0-100, "izohlar": []},
-  "farmatsevtik_standart": {"ball": 0-100, "izohlar": []},
-  "xulosa": "",
-  "yaxshilanishlar": []
+  "ilmiy_aniqlik": {
+    "ball": 0-100,
+    "izohlar": ["ilmiy jihatdan noto'g'ri yoki noaniq joylar"]
+  },
+  "ravonlik": {
+    "ball": 0-100,
+    "izohlar": ["matn ravonligi bilan bog'liq muammolar"]
+  },
+  "izchillik": {
+    "ball": 0-100,
+    "izohlar": ["terminologik yoki uslubiy nomuvofiqliklar"]
+  },
+  "farmatsevtik_standart": {
+    "ball": 0-100,
+    "izohlar": ["farmakopiya standartlariga mos kelmaydigan joylar"]
+  },
+  "xulosa": "qisqa xulosa",
+  "yaxshilanishlar": ["taklif etiladigan o'zgarishlar"]
 }"""
 
 
@@ -71,12 +238,12 @@ Faqat JSON qaytaring, boshqa hech narsa yozmang:
 
 class TranslateRequest(BaseModel):
     text: str
-    source_lang: str  # uz, ru, en
-    target_langs: List[str]  # ["uz", "ru"] etc.
+    source_lang: str
+    target_langs: List[str]
 
 class EditRequest(BaseModel):
     text: str
-    lang: str  # uz, ru, en
+    lang: str
 
 class CheckTranslationRequest(BaseModel):
     original: str
@@ -89,9 +256,25 @@ class CheckEditRequest(BaseModel):
     edited: str
     lang: str
 
+class LearnRequest(BaseModel):
+    wrong: str
+    correct: str
+    error_type: str = "terminology"
+    context: str = ""
+    lang: str = "uz"
+
+class ExportPdfRequest(BaseModel):
+    text: str
+    lang: str = "uz"
+    title: str = "Farmatsevtik matn"
+
+class TextToDocxRequest(BaseModel):
+    text: str
+    title: str = "Farmatsevtik matn"
+
 
 # ═══════════════════════════════════════════════════
-# Endpoints
+# Text endpoints
 # ═══════════════════════════════════════════════════
 
 @router.post("/translate")
@@ -102,6 +285,8 @@ async def translate_text(req: TranslateRequest, current_user: Dict = Depends(get
     if len(req.text) > 50000:
         raise HTTPException(400, "Matn juda uzun (max 50000 belgi)")
 
+    learned = _load_learned_rules(req.source_lang)
+    system = TRANSLATE_SYSTEM + learned
     results = {}
     source_name = LANG_NAMES.get(req.source_lang, req.source_lang)
 
@@ -109,15 +294,9 @@ async def translate_text(req: TranslateRequest, current_user: Dict = Depends(get
         if target == req.source_lang:
             continue
         target_name = LANG_NAMES.get(target, target)
-        prompt = f"""{TRANSLATE_SYSTEM}
-
-Manba til: {source_name}
-Maqsad til: {target_name}
-
-Matn:
-{req.text}"""
+        user_prompt = f"Manba til: {source_name}\nMaqsad til: {target_name}\n\nMatn:\n{req.text}"
         try:
-            result = await generate_ai_content(prompt, prefer="cloud")
+            result = await generate_with_claude(system, user_prompt)
             results[target] = result.strip() if result else ""
         except Exception as e:
             logger.error(f"[translate] {req.source_lang}->{target} failed: {e}")
@@ -134,16 +313,13 @@ async def edit_text(req: EditRequest, current_user: Dict = Depends(get_current_u
     if len(req.text) > 50000:
         raise HTTPException(400, "Matn juda uzun (max 50000 belgi)")
 
+    learned = _load_learned_rules(req.lang)
+    system = EDIT_SYSTEM + learned
     lang_name = LANG_NAMES.get(req.lang, req.lang)
-    prompt = f"""{EDIT_SYSTEM}
-
-Til: {lang_name}
-
-Matn:
-{req.text}"""
+    user_prompt = f"Til: {lang_name}\n\nMatn:\n{req.text}"
 
     try:
-        result = await generate_ai_content(prompt, prefer="cloud")
+        result = await generate_with_claude(system, user_prompt)
         return {"edited": result.strip() if result else "", "lang": req.lang}
     except Exception as e:
         logger.error(f"[edit] failed: {e}")
@@ -158,22 +334,10 @@ async def check_translation(req: CheckTranslationRequest, current_user: Dict = D
 
     source_name = LANG_NAMES.get(req.source_lang, req.source_lang)
     target_name = LANG_NAMES.get(req.target_lang, req.target_lang)
-
-    prompt = f"""{CHECK_TRANSLATION_SYSTEM}
-
-Manba til: {source_name}
-Maqsad til: {target_name}
-
-Original matn:
-{req.original}
-
-Tarjima:
-{req.translation}"""
+    user_prompt = f"Manba til: {source_name}\nMaqsad til: {target_name}\n\nOriginal matn:\n{req.original}\n\nTarjima:\n{req.translation}"
 
     try:
-        result = await generate_ai_content(prompt, prefer="cloud")
-        # Try to parse JSON from result
-        import json, re
+        result = await generate_with_claude(CHECK_TRANSLATION_SYSTEM, user_prompt)
         match = re.search(r'\{.*\}', result, re.DOTALL)
         if match:
             data = json.loads(match.group())
@@ -191,20 +355,10 @@ async def check_edit(req: CheckEditRequest, current_user: Dict = Depends(get_cur
         raise HTTPException(400, "Dastlabki va tahrirlangan matn kerak")
 
     lang_name = LANG_NAMES.get(req.lang, req.lang)
-
-    prompt = f"""{CHECK_EDIT_SYSTEM}
-
-Til: {lang_name}
-
-Dastlabki matn:
-{req.original}
-
-Tahrirlangan matn:
-{req.edited}"""
+    user_prompt = f"Til: {lang_name}\n\nDastlabki matn:\n{req.original}\n\nTahrirlangan matn:\n{req.edited}"
 
     try:
-        result = await generate_ai_content(prompt, prefer="cloud")
-        import json, re
+        result = await generate_with_claude(CHECK_EDIT_SYSTEM, user_prompt)
         match = re.search(r'\{.*\}', result, re.DOTALL)
         if match:
             data = json.loads(match.group())
@@ -214,6 +368,10 @@ Tahrirlangan matn:
         logger.error(f"[check-edit] failed: {e}")
         raise HTTPException(500, f"Tekshirish xatoligi: {str(e)[:200]}")
 
+
+# ═══════════════════════════════════════════════════
+# File upload
+# ═══════════════════════════════════════════════════
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), current_user: Dict = Depends(get_current_user)):
@@ -228,7 +386,6 @@ async def upload_file(file: UploadFile = File(...), current_user: Dict = Depends
         raise HTTPException(400, "Fayl hajmi 10MB dan oshmasligi kerak")
 
     if name.endswith('.txt'):
-        # Try UTF-8, fallback to cp1251
         try:
             text = raw.decode('utf-8')
         except UnicodeDecodeError:
@@ -251,3 +408,265 @@ async def upload_file(file: UploadFile = File(...), current_user: Dict = Depends
 
     else:
         raise HTTPException(400, "Faqat .txt va .docx fayllar qo'llab-quvvatlanadi")
+
+
+# ═══════════════════════════════════════════════════
+# Format-preserving DOCX translation/editing
+# ═══════════════════════════════════════════════════
+
+async def _process_docx_runs(raw_bytes: bytes, processor_fn, batch_size: int = 5) -> bytes:
+    """Process DOCX run-by-run preserving formatting. Batches runs for efficiency."""
+    from docx import Document
+    doc = Document(io.BytesIO(raw_bytes))
+
+    async def process_text(text: str) -> str:
+        if not text or not text.strip():
+            return text
+        return await processor_fn(text)
+
+    # Process paragraphs
+    for para in doc.paragraphs:
+        for run in para.runs:
+            if run.text and run.text.strip():
+                run.text = await process_text(run.text)
+
+    # Process tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        if run.text and run.text.strip():
+                            run.text = await process_text(run.text)
+
+    # Process headers/footers
+    for section in doc.sections:
+        for header in [section.header, section.first_page_header]:
+            if header and not header.is_linked_to_previous:
+                for para in header.paragraphs:
+                    for run in para.runs:
+                        if run.text and run.text.strip():
+                            run.text = await process_text(run.text)
+        for footer in [section.footer, section.first_page_footer]:
+            if footer and not footer.is_linked_to_previous:
+                for para in footer.paragraphs:
+                    for run in para.runs:
+                        if run.text and run.text.strip():
+                            run.text = await process_text(run.text)
+
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output.read()
+
+
+@router.post("/translate-docx")
+async def translate_docx(
+    file: UploadFile = File(...),
+    source_lang: str = Form(...),
+    target_lang: str = Form(...),
+    current_user: Dict = Depends(get_current_user)
+):
+    """Format-preserving DOCX translation."""
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(400, "Fayl hajmi 20MB dan oshmasligi kerak")
+
+    learned = _load_learned_rules(source_lang)
+    system = TRANSLATE_SYSTEM + learned
+    source_name = LANG_NAMES.get(source_lang, source_lang)
+    target_name = LANG_NAMES.get(target_lang, target_lang)
+
+    async def translate_fn(text: str) -> str:
+        user_prompt = f"Manba til: {source_name}\nMaqsad til: {target_name}\n\nMatn:\n{text}"
+        try:
+            result = await generate_with_claude(system, user_prompt, max_tokens=4096)
+            return result.strip() if result else text
+        except Exception:
+            return text
+
+    result_bytes = await _process_docx_runs(raw, translate_fn)
+
+    return StreamingResponse(
+        io.BytesIO(result_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="translated_{target_lang}_{file.filename}"'}
+    )
+
+
+@router.post("/edit-docx")
+async def edit_docx(
+    file: UploadFile = File(...),
+    lang: str = Form("uz"),
+    current_user: Dict = Depends(get_current_user)
+):
+    """Format-preserving DOCX scientific editing."""
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(400, "Fayl hajmi 20MB dan oshmasligi kerak")
+
+    learned = _load_learned_rules(lang)
+    system = EDIT_SYSTEM + learned
+    lang_name = LANG_NAMES.get(lang, lang)
+
+    async def edit_fn(text: str) -> str:
+        user_prompt = f"Til: {lang_name}\n\nMatn:\n{text}"
+        try:
+            result = await generate_with_claude(system, user_prompt, max_tokens=4096)
+            return result.strip() if result else text
+        except Exception:
+            return text
+
+    result_bytes = await _process_docx_runs(raw, edit_fn)
+
+    return StreamingResponse(
+        io.BytesIO(result_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="edited_{file.filename}"'}
+    )
+
+
+# ═══════════════════════════════════════════════════
+# Export endpoints
+# ═══════════════════════════════════════════════════
+
+@router.post("/export-pdf")
+async def export_pdf(req: ExportPdfRequest, current_user: Dict = Depends(get_current_user)):
+    """Generate PDF from text content."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+        from reportlab.pdfgen import canvas
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        width, height = A4
+
+        # Try to register a Unicode font
+        font_name = "Helvetica"
+        for font_path in [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]:
+            if os.path.exists(font_path):
+                try:
+                    pdfmetrics.registerFont(TTFont("UniFont", font_path))
+                    font_name = "UniFont"
+                    break
+                except Exception:
+                    pass
+
+        # Title
+        c.setFont(font_name, 16)
+        c.drawString(2 * cm, height - 2 * cm, req.title)
+
+        # Body text
+        c.setFont(font_name, 11)
+        y = height - 3.5 * cm
+        line_height = 14
+        max_width = width - 4 * cm
+
+        for line in req.text.split("\n"):
+            if y < 2 * cm:
+                c.showPage()
+                c.setFont(font_name, 11)
+                y = height - 2 * cm
+
+            # Simple word-wrap
+            words = line.split()
+            current_line = ""
+            for word in words:
+                test = current_line + (" " if current_line else "") + word
+                if c.stringWidth(test, font_name, 11) > max_width:
+                    if current_line:
+                        c.drawString(2 * cm, y, current_line)
+                        y -= line_height
+                        if y < 2 * cm:
+                            c.showPage()
+                            c.setFont(font_name, 11)
+                            y = height - 2 * cm
+                    current_line = word
+                else:
+                    current_line = test
+            if current_line:
+                c.drawString(2 * cm, y, current_line)
+                y -= line_height
+            elif not words:
+                y -= line_height  # empty line
+
+        c.save()
+        buf.seek(0)
+
+        return StreamingResponse(
+            buf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{req.title}.pdf"'}
+        )
+    except ImportError:
+        raise HTTPException(500, "reportlab kutubxonasi topilmadi")
+
+
+@router.post("/text-to-docx")
+async def text_to_docx(req: TextToDocxRequest, current_user: Dict = Depends(get_current_user)):
+    """Generate a simple DOCX from text."""
+    try:
+        from docx import Document
+        from docx.shared import Pt, Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        doc = Document()
+
+        # Title
+        title = doc.add_heading(req.title, level=1)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Body
+        for paragraph_text in req.text.split("\n"):
+            p = doc.add_paragraph(paragraph_text)
+            for run in p.runs:
+                run.font.name = "Times New Roman"
+                run.font.size = Pt(12)
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{req.title}.docx"'}
+        )
+    except ImportError:
+        raise HTTPException(500, "python-docx kutubxonasi topilmadi")
+
+
+# ═══════════════════════════════════════════════════
+# Learning endpoint
+# ═══════════════════════════════════════════════════
+
+@router.post("/learn")
+async def learn_correction(req: LearnRequest, current_user: Dict = Depends(get_current_user)):
+    """Save user correction to improve AI quality."""
+    if not req.wrong.strip() or not req.correct.strip():
+        raise HTTPException(400, "Xato va to'g'ri variantlar kerak")
+
+    try:
+        result = db.learn_from_correction(
+            wrong_form=req.wrong.strip(),
+            correct_form=req.correct.strip(),
+            error_type=req.error_type,
+            context=req.context,
+            lang=req.lang,
+            user_id=current_user.get("id"),
+            user_name=current_user.get("name", ""),
+        )
+        # Clear cache so next request picks up the new rule
+        _learned_rules_cache.clear()
+
+        return {"success": True, "rule_id": result.get("rule_id"), "action": result.get("rule_action", "saved")}
+    except Exception as e:
+        logger.error(f"[learn] failed: {e}")
+        raise HTTPException(500, f"Saqlash xatoligi: {str(e)[:200]}")
