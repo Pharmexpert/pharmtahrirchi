@@ -15,7 +15,21 @@ from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("ocr_engine")
 
-TESSDATA_DIR = os.getenv("TESSDATA_PREFIX", "/usr/share/tesseract-ocr/5/tessdata")
+def _find_tessdata():
+    """Find tessdata directory from multiple possible locations."""
+    candidates = [
+        os.getenv("TESSDATA_PREFIX", ""),
+        "/usr/share/tesseract-ocr/5/tessdata",
+        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/share/tessdata",
+        os.path.join(os.path.dirname(__file__), "tessdata"),
+    ]
+    for d in candidates:
+        if d and os.path.isdir(d):
+            return d
+    return "/usr/share/tesseract-ocr/5/tessdata"
+
+TESSDATA_DIR = _find_tessdata()
 
 # Language code mapping: ISO 639-1 -> Tesseract lang code
 LANG_MAP = {

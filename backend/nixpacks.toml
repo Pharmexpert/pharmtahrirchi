@@ -1,12 +1,14 @@
-# Nixpacks config for Railway — adds build tools needed by llama-cpp-python
+# Nixpacks config for Railway — adds build tools + Tesseract OCR
 [phases.setup]
-nixPkgs = ["python311", "gcc", "cmake", "pkg-config", "openblas"]
+nixPkgs = ["python311", "gcc", "cmake", "pkg-config", "openblas", "tesseract", "tessdata"]
+aptPkgs = ["tesseract-ocr", "tesseract-ocr-eng", "tesseract-ocr-rus", "leptonica-progs"]
 
 [phases.install]
 cmds = [
   "pip install --upgrade pip",
-  "CMAKE_ARGS='-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS' pip install -r requirements.txt"
+  "CMAKE_ARGS='-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS' pip install -r requirements.txt",
+  "pip install pytesseract>=0.3.10"
 ]
 
 [start]
-cmd = "python scripts/download_mistral.py || true; uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "python scripts/download_mistral.py || true; python scripts/setup_tessdata.py || true; uvicorn main:app --host 0.0.0.0 --port $PORT"
