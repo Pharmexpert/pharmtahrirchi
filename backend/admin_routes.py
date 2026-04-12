@@ -1282,8 +1282,12 @@ async def get_page_list(current_user: dict = Depends(get_admin_user)):
         {"path": "/affix-flags", "label": "Affix Flags"},
         {"path": "/morphology", "label": "Морфология"},
         {"path": "/syntax", "label": "Синтаксис"},
+        {"path": "/syntax/templates", "label": "Синтаксис шаблонлари"},
         {"path": "/workbench", "label": "Workbench"},
         {"path": "/qa", "label": "QA Lab"},
+        {"path": "/billing", "label": "Биллинг"},
+        {"path": "/profile", "label": "Профиль"},
+        {"path": "/history", "label": "Тарих"},
     ]
     return {"pages": pages}
 
@@ -1315,7 +1319,8 @@ async def set_page_visibility(payload: Dict[str, Any], current_user: dict = Depe
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id kerak")
     conn = db.connect_db()
-    value = json.dumps(pages) if pages else None
+    # pages=None means "show all", pages=[] means "hide all", pages=[...] means specific
+    value = json.dumps(pages) if pages is not None else None
     conn.cursor().execute("UPDATE users SET visible_pages = ? WHERE id = ?", (value, user_id))
     conn.commit()
     conn.close()

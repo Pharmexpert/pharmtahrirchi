@@ -94,19 +94,12 @@ export default function AdminPage() {
     }
   }
 
-  const loadPageVisibility = async (userId: number) => {
-    try {
-      const res = await api.admin.getPageVisibility(userId)
-      setPageVisibility(prev => ({ ...prev, [userId]: res.visible_pages }))
-    } catch {}
-  }
-
   const togglePageForUser = (userId: number, pagePath: string) => {
     setPageVisibility(prev => {
       const current = prev[userId]
       const allPaths = pageList.map(p => p.path)
-      // If null (all visible), initialize with all paths minus the toggled one
-      if (!current) {
+      // If null/undefined (all visible), initialize with all paths minus the toggled one
+      if (current === null || current === undefined) {
         return { ...prev, [userId]: allPaths.filter(p => p !== pagePath) }
       }
       // Toggle
@@ -122,9 +115,12 @@ export default function AdminPage() {
     try {
       const pages = pageVisibility[userId]
       const allPaths = pageList.map(p => p.path)
-      // If all pages selected, save as null (default)
-      const isAll = pages && allPaths.every(p => pages.includes(p))
+      // If all pages selected or null, save as null (default = show all)
+      const isAll = !pages || (Array.isArray(pages) && allPaths.every(p => pages.includes(p)))
       await api.admin.setPageVisibility(userId, isAll ? null : pages)
+      // Update user object in local state too
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, visible_pages: isAll ? null : JSON.stringify(pages) } : u))
+      alert('Saqlandi!')
     } catch (e: any) {
       alert(`Xatolik: ${e.message}`)
     } finally {
@@ -144,12 +140,22 @@ export default function AdminPage() {
     if (token) fetchData()
   }, [token])
 
-  // Load visibility data when pages tab is opened
+  // Initialize visibility data from users list when pages tab opens
   useEffect(() => {
     if (activeTab === 'pages' && users.length > 0 && pageList.length > 0) {
+      const init: Record<number, string[] | null> = {}
       users.forEach(u => {
-        if (!(u.id in pageVisibility)) loadPageVisibility(u.id)
+        if (u.id in pageVisibility) return // already loaded
+        let vp: string[] | null = null
+        try {
+          if (typeof u.visible_pages === 'string') vp = JSON.parse(u.visible_pages)
+          else if (Array.isArray(u.visible_pages)) vp = u.visible_pages
+        } catch {}
+        init[u.id] = vp
       })
+      if (Object.keys(init).length > 0) {
+        setPageVisibility(prev => ({ ...prev, ...init }))
+      }
     }
   }, [activeTab, users.length, pageList.length])
 
