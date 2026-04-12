@@ -39,3 +39,13 @@ v4.1 Platform Enhancement — **ALL 14 PHASES COMPLETE** ✅
 - TM: 11,000 segments
 - New pages: /workbench, /qa
 - New endpoints: /api/analyze/ner, /protect-entities, /restore-entities, /api/nlp/discover-terms, /api/nlp/approve-term, /api/ocr/extract, /api/qa/check
+
+## Session 5 Summary
+- Date: 2026-04-12
+- B-9 syntax templates: 1,490 templates + 456 word order rules (7 types: sodda, qoshma_bog, qoshma_bogsiz, qoshma_ergash, pharma, ilmiy, rasmiy)
+- OCR: nixpacks.toml + tessdata auto-download script for Railway (tesseract + eng/rus/uzb)
+- pdfplumber dependency added
+- Document Processing: DOCX preview + translate verified on production
+- Debug logging added to 5 translation engine fallbacks
+- Production verified: Railway 9 AI engines, Vercel frontend, 4-layer analysis working
+- Commits: a4db47e (B-9 syntax), ee5fdf3 (pdfplumber+logging), 767c94b (OCR tessdata)
