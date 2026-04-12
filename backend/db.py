@@ -526,6 +526,9 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
     except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN visible_pages TEXT DEFAULT NULL")
+    except Exception: pass
 
     # ═══════════════════════════════════════════════
     # Pharma DB: drugs (INN, brand, ATC, doses)

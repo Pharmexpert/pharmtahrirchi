@@ -1262,6 +1262,66 @@ async def toggle_can_edit_db(payload: Dict[str, Any], current_user: dict = Depen
     conn.close()
     return {"success": True, "can_edit_db": can_edit}
 
+@router.get("/page-list")
+async def get_page_list(current_user: dict = Depends(get_admin_user)):
+    """Return all available pages with labels."""
+    pages = [
+        {"path": "/dashboard", "label": "Дашборд"},
+        {"path": "/assistant", "label": "Фармацевт ёрдамчиси"},
+        {"path": "/assistant2", "label": "AI Ассистент"},
+        {"path": "/tilshunos", "label": "Тилшунос"},
+        {"path": "/paragraphs", "label": "Ҳатбошилар"},
+        {"path": "/projects", "label": "Лойиҳалар"},
+        {"path": "/files", "label": "Файллар"},
+        {"path": "/rules", "label": "Sayqallash DB"},
+        {"path": "/linguistic/annotated", "label": "Изоҳли луғат"},
+        {"path": "/linguistic/disputed", "label": "Мунозарали"},
+        {"path": "/linguistic/abbreviations", "label": "Қисқартмалар"},
+        {"path": "/synonyms", "label": "Синонимлар"},
+        {"path": "/dictionary", "label": "Луғат"},
+        {"path": "/affix-flags", "label": "Affix Flags"},
+        {"path": "/morphology", "label": "Морфология"},
+        {"path": "/syntax", "label": "Синтаксис"},
+        {"path": "/workbench", "label": "Workbench"},
+        {"path": "/qa", "label": "QA Lab"},
+    ]
+    return {"pages": pages}
+
+
+@router.get("/page-visibility/{user_id}")
+async def get_page_visibility(user_id: int, current_user: dict = Depends(get_admin_user)):
+    """Get visible pages for a user. NULL means all visible."""
+    import json
+    conn = db.connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT visible_pages FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row or not row[0]:
+        return {"user_id": user_id, "visible_pages": None}
+    try:
+        pages = json.loads(row[0])
+        return {"user_id": user_id, "visible_pages": pages}
+    except Exception:
+        return {"user_id": user_id, "visible_pages": None}
+
+
+@router.post("/page-visibility")
+async def set_page_visibility(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
+    """Set visible pages for a user. Pass pages=null to show all."""
+    import json
+    user_id = payload.get("user_id")
+    pages = payload.get("pages")  # list of path strings or null
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id kerak")
+    conn = db.connect_db()
+    value = json.dumps(pages) if pages else None
+    conn.cursor().execute("UPDATE users SET visible_pages = ? WHERE id = ?", (value, user_id))
+    conn.commit()
+    conn.close()
+    return {"success": True, "user_id": user_id, "visible_pages": pages}
+
+
 @router.post("/users/reject")
 async def reject_user(payload: Dict[str, Any], current_user: dict = Depends(get_admin_user)):
     """Reject or block a user."""

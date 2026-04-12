@@ -53,6 +53,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     navItems.push({ name: 'Она тилини бойитиш', icon: Database, path: '/admin/language-resources' })
   }
 
+  // Filter by visible_pages (from admin settings). null = show all.
+  let visiblePages: string[] | null = null
+  try {
+    const vp = user?.visible_pages
+    if (typeof vp === 'string') visiblePages = JSON.parse(vp)
+    else if (Array.isArray(vp)) visiblePages = vp
+  } catch {}
+
+  const filteredNavItems = visiblePages
+    ? navItems.filter(item => visiblePages!.includes(item.path) || item.path.startsWith('/admin'))
+    : navItems
+
+  const displayNavItems = filteredNavItems
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
       <style jsx global>{`
@@ -146,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Navigation */}
         <nav style={{ padding: '24px 12px', flex: 1, overflowY: 'auto' }}>
-          {navItems.map((item) => {
+          {displayNavItems.map((item) => {
             const isActive = pathname === item.path
             return (
               <Link key={item.path} href={item.path} style={{ textDecoration: 'none' }}>
@@ -288,7 +302,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {isMobileOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {navItems.find(i => pathname.startsWith(i.path))?.name || 'Dashboard'}
+              {displayNavItems.find(i => pathname.startsWith(i.path))?.name || 'Dashboard'}
             </h2>
           </div>
 
