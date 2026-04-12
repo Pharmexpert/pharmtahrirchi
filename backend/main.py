@@ -444,6 +444,54 @@ async def auto_seed_databases():
         if bertbek_engine.is_available():
             asyncio.create_task(bertbek_engine.prewarm_async())
             logger.info("[startup] BERTbek prewarm scheduled")
+
+            # Phase 4: Periodic dictionary enrichment via BERTbek POS
+            async def periodic_bertbek_enrich():
+                """Enrich dictionary POS tags every 6 hours (graceful degradation)."""
+                import asyncio as _aio
+                await _aio.sleep(120)  # Wait 2 min for prewarm to finish
+                while True:
+                    try:
+                        import bertbek_engine as _be
+                        if not _be.is_available():
+                            logger.info("[bertbek-enrich] Not available, stopping periodic task")
+                            return
+                        import sqlite3, os
+                        _db_path = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "pharma_editor.db"))
+                        conn = sqlite3.connect(_db_path)
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT word FROM dictionary WHERE (pos IS NULL OR pos = '' OR pos = 'unknown') AND word IS NOT NULL LIMIT 100"
+                        )
+                        words = [r[0] for r in cur.fetchall() if r[0] and r[0].strip()]
+                        conn.close()
+
+                        if not words:
+                            logger.info("[bertbek-enrich] No words need enrichment, sleeping 6h")
+                        else:
+                            enriched = 0
+                            text = " ".join(words[:50])
+                            tagged = _be.tag_pos(text)
+                            pos_map = {t.lower().strip(): p for t, p in tagged if p and p != "X"}
+                            if pos_map:
+                                conn = sqlite3.connect(_db_path)
+                                cur = conn.cursor()
+                                for w, p in pos_map.items():
+                                    cur.execute(
+                                        "UPDATE dictionary SET pos = ? WHERE LOWER(word) = ? AND (pos IS NULL OR pos = '' OR pos = 'unknown')",
+                                        (p, w)
+                                    )
+                                    enriched += cur.rowcount
+                                conn.commit()
+                                conn.close()
+                            logger.info(f"[bertbek-enrich] Enriched {enriched} words with POS tags")
+                    except Exception as e:
+                        logger.warning(f"[bertbek-enrich] Cycle error (non-fatal): {e}")
+
+                    await _aio.sleep(6 * 3600)  # Every 6 hours
+
+            asyncio.create_task(periodic_bertbek_enrich())
+            logger.info("[startup] BERTbek periodic enrichment scheduled (every 6h)")
     except Exception as e:
         logger.warning(f"[startup] BERTbek prewarm skip: {e}")
 

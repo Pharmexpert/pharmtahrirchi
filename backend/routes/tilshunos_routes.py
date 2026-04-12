@@ -1396,3 +1396,78 @@ async def learn_from_diff(payload: Dict[str, Any], current_user: Dict = Depends(
             logger.warning(f"learn-diff add failed for {p}: {e}")
 
     return {"learned": learned, "pairs": pairs}
+
+
+# ═══════════════════════════════════════════════════
+# Phase 14: AI Batch Translate — 9,698 terms UZ→EN+RU
+# ═══════════════════════════════════════════════════
+
+@router.post("/batch-translate")
+async def batch_translate(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Batch translate annotated_words terms that lack EN/RU translations.
+    Input: { limit?: number, source_lang?: string, target_langs?: string[] }
+    Returns: { translated: number, errors: number, results: [...] }
+    """
+    limit = min(payload.get("limit", 50), 200)  # Max 200 per batch
+    source_lang = payload.get("source_lang", "uz")
+    target_langs = payload.get("target_langs", ["en", "ru"])
+
+    import sqlite3
+    _db = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
+    conn = sqlite3.connect(_db)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # Find terms needing translation
+    conditions = []
+    if "en" in target_langs:
+        conditions.append("(term_en IS NULL OR term_en = '' OR term_en = '—')")
+    if "ru" in target_langs:
+        conditions.append("(term_ru IS NULL OR term_ru = '' OR term_ru = '—')")
+    if not conditions:
+        conn.close()
+        return {"translated": 0, "errors": 0, "results": []}
+
+    where = " OR ".join(conditions)
+    cur.execute(f"SELECT id, term, term_uz, term_en, term_ru FROM annotated_words WHERE term_uz IS NOT NULL AND term_uz != '' AND ({where}) LIMIT ?", (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+
+    if not rows:
+        conn.close()
+        return {"translated": 0, "errors": 0, "results": [], "message": "Барча терминлар таржима қилинган"}
+
+    translated = 0
+    errors = 0
+    results = []
+
+    for row in rows:
+        term_uz = row["term_uz"] or row["term"] or ""
+        if not term_uz.strip():
+            continue
+        updates = {}
+        for tgt in target_langs:
+            existing = row.get(f"term_{tgt}", "")
+            if existing and existing.strip() and existing != "—":
+                continue
+            try:
+                # Use cloud AI for batch (faster, no local model dependency)
+                from routes.ai_helpers import generate_ai_content
+                prompt = f"Translate this Uzbek pharmaceutical term to {'English' if tgt == 'en' else 'Russian'}. Return ONLY the translation, no explanation:\n\n{term_uz}"
+                tr = await generate_ai_content(prompt, prefer="claude")
+                tr = (tr or "").strip().strip('"').strip("'")
+                if tr and len(tr) > 0 and tr.lower() != term_uz.lower():
+                    updates[f"term_{tgt}"] = tr
+            except Exception as e:
+                logger.warning(f"[batch-translate] {term_uz} -> {tgt} failed: {e}")
+                errors += 1
+
+        if updates:
+            set_clause = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [row["id"]]
+            cur.execute(f"UPDATE annotated_words SET {set_clause} WHERE id=?", vals)
+            translated += 1
+            results.append({"term_uz": term_uz, **updates})
+
+    conn.commit()
+    conn.close()
+    return {"translated": translated, "errors": errors, "total_found": len(rows), "results": results}

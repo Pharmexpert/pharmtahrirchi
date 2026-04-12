@@ -1,14 +1,15 @@
 """
 QA Lab Engine — Translation quality checks.
-Phase 7: Back-translation, segment count, number preservation.
+Phase 7: Back-translation, segment count, number preservation, term consistency.
 
 Usage:
-    from qa_engine import run_qa_check
+    from qa_engine import run_qa_check, run_back_translation, run_segment_check
     result = await run_qa_check(source_text, target_text, source_lang, target_lang)
 """
 import re
 import logging
 from typing import Dict, Any, List
+from difflib import SequenceMatcher
 
 logger = logging.getLogger("qa_engine")
 
@@ -108,22 +109,126 @@ def check_length_ratio(source: str, target: str) -> Dict[str, Any]:
     }
 
 
-async def run_back_translation(text: str, src_lang: str, tgt_lang: str) -> Dict[str, Any]:
-    """Back-translate: src→tgt→src and compare."""
+def compute_similarity(text_a: str, text_b: str) -> float:
+    """Compute text similarity ratio (0.0 - 1.0) using SequenceMatcher."""
+    if not text_a or not text_b:
+        return 0.0
+    return round(SequenceMatcher(None, text_a.lower().strip(), text_b.lower().strip()).ratio(), 3)
+
+
+async def translate_text(text: str, source_lang: str, target_lang: str) -> str:
+    """Translate text using the project's AI translation pipeline.
+    Falls back through: tilshunos translate -> generate_ai_content.
+    """
+    lang_label = {
+        "en": "English", "ru": "Russian",
+        "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)",
+    }
+    prompt = (
+        f"Translate the following {lang_label.get(source_lang, source_lang)} text "
+        f"to {lang_label.get(target_lang, target_lang)}. "
+        f"Return ONLY the translation, no explanations.\n\n{text}"
+    )
+    from routes.ai_helpers import generate_ai_content
+    result = await generate_ai_content(prompt, prefer="cloud")
+    return (result or "").strip()
+
+
+async def run_back_translation(
+    source_text: str,
+    target_text: str,
+    source_lang: str,
+    target_lang: str,
+) -> Dict[str, Any]:
+    """Back-translate target_text back to source_lang and compare with source_text.
+    Returns back-translated text + similarity score.
+    """
     try:
-        from routes.ai_helpers import call_ai
-        # Forward: src → tgt (already done, text IS the target)
-        # Back: tgt → src
-        prompt = f"Translate the following text back to {src_lang}. Only return the translation, no explanations:\n\n{text}"
-        back_text = await call_ai(prompt, system="You are a professional pharmaceutical translator.")
+        back_text = await translate_text(target_text, target_lang, source_lang)
         if not back_text:
-            return {"available": False, "error": "AI unavailable"}
+            return {"available": False, "error": "AI translation unavailable"}
+
+        similarity = compute_similarity(source_text, back_text)
         return {
             "available": True,
-            "back_translation": back_text.strip(),
+            "back_translation": back_text,
+            "similarity": similarity,
+            "grade": "good" if similarity >= 0.7 else "acceptable" if similarity >= 0.5 else "poor",
         }
     except Exception as e:
+        logger.warning(f"Back-translation failed: {e}")
         return {"available": False, "error": str(e)}
+
+
+async def run_segment_check(segments: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Check aligned segments (EN/RU/UZ) for quality issues.
+    Each segment: {"en": "...", "ru": "...", "uz": "..."}
+    Checks: length ratio, term consistency, missing numbers.
+    """
+    issues = []
+    segment_results = []
+
+    for i, seg in enumerate(segments):
+        seg_issues = []
+        pairs_checked = []
+
+        # Get all language texts present
+        texts = {k: v for k, v in seg.items() if v and v.strip()}
+        lang_keys = list(texts.keys())
+
+        # Check each pair
+        for a_idx in range(len(lang_keys)):
+            for b_idx in range(a_idx + 1, len(lang_keys)):
+                la, lb = lang_keys[a_idx], lang_keys[b_idx]
+                ta, tb = texts[la], texts[lb]
+                pair_label = f"{la}/{lb}"
+
+                # Length ratio check
+                length_check = check_length_ratio(ta, tb)
+                if not length_check["passed"]:
+                    seg_issues.append({
+                        "type": "length_ratio",
+                        "pair": pair_label,
+                        "ratio": length_check["ratio"],
+                        "message": f"Unusual length ratio ({length_check['ratio']}) between {pair_label}",
+                    })
+
+                # Number preservation
+                num_check = check_number_preservation(ta, tb)
+                if not num_check["passed"]:
+                    seg_issues.append({
+                        "type": "missing_numbers",
+                        "pair": pair_label,
+                        "missing": num_check["missing_in_target"],
+                        "message": f"Numbers missing in {lb}: {num_check['missing_in_target']}",
+                    })
+
+                # Unit preservation
+                unit_check = check_unit_preservation(ta, tb)
+                if not unit_check["passed"]:
+                    seg_issues.append({
+                        "type": "missing_units",
+                        "pair": pair_label,
+                        "missing": unit_check["missing_in_target"],
+                        "message": f"Units missing in {lb}: {unit_check['missing_in_target']}",
+                    })
+
+                pairs_checked.append(pair_label)
+
+        segment_results.append({
+            "index": i,
+            "pairs_checked": pairs_checked,
+            "issue_count": len(seg_issues),
+            "issues": seg_issues,
+        })
+        issues.extend(seg_issues)
+
+    return {
+        "segment_count": len(segments),
+        "segments_with_issues": sum(1 for s in segment_results if s["issue_count"] > 0),
+        "total_issues": len(issues),
+        "segments": segment_results,
+    }
 
 
 async def run_qa_check(

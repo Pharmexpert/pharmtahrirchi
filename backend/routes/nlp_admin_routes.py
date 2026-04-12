@@ -149,6 +149,31 @@ async def nlp_health(current_user: Dict = Depends(get_current_user)):
     except Exception as e:
         health["grammar_checker"] = {"status": "error", "error": str(e)}
 
+    # 8. BERTbek POS engine (Phase 4)
+    try:
+        import bertbek_engine
+        binfo = bertbek_engine.info()
+        health["bertbek"] = {
+            "status": "ready" if binfo.get("pos_loaded") else ("available" if binfo.get("available") else "disabled"),
+            "enabled": binfo.get("enabled", False),
+            "pos_loaded": binfo.get("pos_loaded", False),
+            "pos_model": binfo.get("pos_model", ""),
+        }
+    except Exception as e:
+        health["bertbek"] = {"status": "error", "error": str(e)}
+
+    # 9. Mistral LLM engine (Phase 8)
+    try:
+        import mistral_engine
+        health["mistral"] = {
+            "status": "ready" if mistral_engine.is_available() else "unavailable",
+            "mode": mistral_engine.get_mode(),
+            "model": mistral_engine.MODEL_ID,
+            "has_hf_token": bool(mistral_engine.HF_TOKEN),
+        }
+    except Exception as e:
+        health["mistral"] = {"status": "error", "error": str(e)}
+
     # Overall status
     statuses = [v.get("status") for v in health.values() if isinstance(v, dict)]
     if all(s in ("ready", "active") for s in statuses):
@@ -259,6 +284,126 @@ async def approve_term(payload: Dict[str, Any], current_user: Dict = Depends(get
         return {"success": True, "term": term, "category": category}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/mistral-status")
+async def mistral_status(current_user: Dict = Depends(get_current_user)):
+    """Phase 8: Mistral engine health check with optional connectivity probe."""
+    try:
+        import mistral_engine
+        basic = mistral_engine.info()
+        # Quick probe only if available (avoids timeout on cold start)
+        if basic.get("available"):
+            try:
+                probe = await mistral_engine.health_check()
+                return {**basic, **probe}
+            except Exception as e:
+                return {**basic, "status": "error", "probe_error": str(e)[:200]}
+        return {**basic, "status": "unavailable"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@router.post("/auto-enrich")
+async def auto_enrich(payload: Dict[str, Any] = None, current_user: Dict = Depends(get_admin_user)):
+    """
+    Phase 4: BERTbek POS auto-enrichment of dictionary table.
+    Input (optional): { words: ["word1", "word2", ...], limit: 200 }
+    If no words provided, fetches words from dictionary that lack POS tags.
+    Returns: { enriched: int, skipped: int, errors: int, bertbek_available: bool }
+    """
+    import os
+    import sqlite3
+
+    payload = payload or {}
+    words = payload.get("words", [])
+    limit = min(payload.get("limit", 200), 500)  # cap at 500
+
+    # Check BERTbek availability
+    try:
+        import bertbek_engine
+        bertbek_ok = bertbek_engine.is_available()
+    except Exception:
+        bertbek_ok = False
+
+    if not bertbek_ok:
+        return {
+            "enriched": 0, "skipped": 0, "errors": 0,
+            "bertbek_available": False,
+            "message": "BERTbek not available (BERTBEK_ENABLED=0 or transformers missing)"
+        }
+
+    DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "pharma_editor.db"))
+
+    # If no words provided, fetch from dictionary where pos is NULL or empty
+    if not words:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT word FROM dictionary WHERE (pos IS NULL OR pos = '' OR pos = 'unknown') AND word IS NOT NULL LIMIT ?",
+                (limit,)
+            )
+            words = [row[0] for row in cur.fetchall() if row[0] and row[0].strip()]
+            conn.close()
+        except Exception as e:
+            logger.error(f"[auto-enrich] Failed to fetch words: {e}")
+            raise HTTPException(status_code=500, detail=f"DB fetch failed: {e}")
+
+    if not words:
+        return {"enriched": 0, "skipped": 0, "errors": 0, "bertbek_available": True, "message": "No words need enrichment"}
+
+    # POS-tag in batches (group words into short sentences for efficiency)
+    enriched = 0
+    skipped = 0
+    errors = 0
+    pos_results: Dict[str, str] = {}
+
+    BATCH_SIZE = 20
+    for i in range(0, len(words), BATCH_SIZE):
+        batch = words[i:i + BATCH_SIZE]
+        text = " ".join(batch)
+        try:
+            tagged = bertbek_engine.tag_pos(text)
+            for token, pos in tagged:
+                key = token.lower().strip()
+                if pos and pos != "X" and key:
+                    pos_results[key] = pos
+        except Exception as e:
+            logger.warning(f"[auto-enrich] Batch {i} failed: {e}")
+            errors += len(batch)
+
+    # Update dictionary table
+    if pos_results:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            for word_key, pos in pos_results.items():
+                try:
+                    cur.execute(
+                        "UPDATE dictionary SET pos = ? WHERE LOWER(word) = ? AND (pos IS NULL OR pos = '' OR pos = 'unknown')",
+                        (pos, word_key)
+                    )
+                    if cur.rowcount > 0:
+                        enriched += cur.rowcount
+                    else:
+                        skipped += 1
+                except Exception:
+                    errors += 1
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[auto-enrich] DB update failed: {e}")
+            raise HTTPException(status_code=500, detail=f"DB update failed: {e}")
+
+    logger.info(f"[auto-enrich] Done: enriched={enriched}, skipped={skipped}, errors={errors}")
+    return {
+        "enriched": enriched,
+        "skipped": skipped,
+        "errors": errors,
+        "bertbek_available": True,
+        "words_processed": len(words),
+    }
 
 
 @router.get("/dashboard-summary")

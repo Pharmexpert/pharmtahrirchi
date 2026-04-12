@@ -327,6 +327,36 @@ async def explain_term(word: str, lang: str = "uz") -> str:
     return await generate_async(prompt, max_tokens=200, temperature=0.2)
 
 
+def info() -> dict:
+    """Return engine status info (mirrors bertbek_engine.info pattern)."""
+    return {
+        "available": is_available(),
+        "mode": get_mode(),
+        "model": MODEL_ID,
+        "has_hf_token": bool(HF_TOKEN),
+        "has_endpoint": bool(ENDPOINT_URL),
+        "local_mode": LOCAL_MODE,
+        "full_hf_mode": FULL_HF_MODE,
+    }
+
+
+async def health_check() -> dict:
+    """Quick health probe -- attempts a tiny generation to verify connectivity."""
+    if not is_available():
+        return {"status": "unavailable", "mode": get_mode(), "model": MODEL_ID}
+    try:
+        result = await generate_async("Салом", max_tokens=8, temperature=0.0)
+        ok = bool(result and len(result.strip()) > 0)
+        return {
+            "status": "ready" if ok else "degraded",
+            "mode": get_mode(),
+            "model": MODEL_ID,
+            "probe_response": result[:50] if result else "",
+        }
+    except Exception as e:
+        return {"status": "error", "mode": get_mode(), "model": MODEL_ID, "error": str(e)[:200]}
+
+
 def learn_record(prompt: str, response: str, kind: str = "edit") -> None:
     """Пайдо бўлган AI самарасини self-learning логига ёзиш — кейинчалик fine-tune учун."""
     try:
