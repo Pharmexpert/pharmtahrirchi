@@ -13,6 +13,7 @@ python-docx==1.2.0
 python-pptx>=0.6.23
 pdf2docx==0.5.12
 pypdf>=4.0.0
+pdfplumber>=0.10.0
 
 # Mistral-7B-Instruct-Uz: HF Inference API (no llama-cpp needed for cloud mode)
 # To enable local GGUF mode later: pip install llama-cpp-python (~10 min build with cmake)

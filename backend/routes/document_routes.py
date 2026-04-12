@@ -52,8 +52,8 @@ async def _translate_text(text: str, source_lang: str, target_lang: str) -> str:
         tm_match = tm_search.best_match(text, src_lang=base_src, tgt_lang=base_tgt)
         if tm_match and tm_match["score"] >= 0.80:
             return tm_match["tgt_text"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[doc-translate] TM lookup failed: {e}")
 
     # 2. Tahrirchi dilmash
     try:
@@ -62,8 +62,8 @@ async def _translate_text(text: str, source_lang: str, target_lang: str) -> str:
             tr = await tahrirchi_engine.translate_async(text, source_lang, target_lang)
             if tr and len(tr.strip()) > 1 and tr.strip() != text.strip():
                 return tr.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[doc-translate] Tahrirchi failed: {e}")
 
     # 3. NLLB for Russian pairs
     needs_russian = "ru" in (base_src, base_tgt)
@@ -74,8 +74,8 @@ async def _translate_text(text: str, source_lang: str, target_lang: str) -> str:
                 tr = await translator_engine.translate_async(text, source_lang, target_lang)
                 if tr and len(tr.strip()) > 1:
                     return tr.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[doc-translate] NLLB failed: {e}")
 
     # 4. Llama
     try:
@@ -84,8 +84,8 @@ async def _translate_text(text: str, source_lang: str, target_lang: str) -> str:
             tr = await llama_engine.translate(text, source_lang, target_lang)
             if tr and len(tr.strip()) > 1:
                 return tr.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[doc-translate] Llama failed: {e}")
 
     # 5. Mistral
     try:
@@ -94,8 +94,8 @@ async def _translate_text(text: str, source_lang: str, target_lang: str) -> str:
             tr = await mistral_engine.translate(text, source_lang, target_lang)
             if tr and len(tr.strip()) > 1:
                 return tr.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[doc-translate] Mistral failed: {e}")
 
     # 6. Cloud fallback (Gemini / Claude)
     try:
