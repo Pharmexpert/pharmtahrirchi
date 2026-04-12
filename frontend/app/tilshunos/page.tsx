@@ -268,26 +268,32 @@ export default function TilshunosPage() {
     return () => clearTimeout(t)
   }, [text, showEntities])
 
-  // Enrich popup with morph data + synonyms when it opens
+  // Enrich popup with morph data + synonyms for the SUGGESTED (correct) word
   useEffect(() => {
     if (!popup) {
       setPopupMorph(null)
       setPopupSynonyms({ loading: false, items: [] })
       return
     }
-    const word = popup.issue.matched_text || text.substring(popup.issue.from_index, popup.issue.to_index)
-    if (!word || word.length < 2) return
-    // Look for morph data in result
-    const morphItems = (result as any)?.morphology || []
-    const morphEntry = morphItems.find((m: any) => {
-      const mWord = text.substring(m.from ?? 0, m.to ?? 0)
-      return mWord.toLowerCase() === word.toLowerCase()
-    })
-    setPopupMorph(morphEntry || null)
-    // Fetch synonyms
+    // Use the first suggestion (correct word) instead of the error word
+    const issue = popup.issue
+    const suggestedWord = issue.suggestions?.[0] || issue.suggestion || issue.matched_text || text.substring(issue.from_index, issue.to_index)
+    if (!suggestedWord || suggestedWord.length < 2) return
+
+    // Fetch morphology for the suggested word via API
+    setPopupMorph(null)
+    api.morph.analyze(suggestedWord).then((r: any) => {
+      if (r?.results?.[0]) {
+        setPopupMorph(r.results[0])
+      } else if (r?.root || r?.pos) {
+        setPopupMorph(r)
+      }
+    }).catch(() => {})
+
+    // Fetch synonyms for the suggested word
     setPopupSynonyms({ loading: true, items: [] })
-    api.synonyms.list(word).then((r: any) => {
-      const syns = (r?.synonyms || []).map((s: any) => s.synonym || s.word || s).filter((s: string) => s && s !== word && s !== word.toLowerCase())
+    api.synonyms.list(suggestedWord).then((r: any) => {
+      const syns = (r?.synonyms || []).map((s: any) => s.synonym || s.word || s).filter((s: string) => s && s !== suggestedWord && s !== suggestedWord.toLowerCase())
       setPopupSynonyms({ loading: false, items: syns.slice(0, 8) })
     }).catch(() => {
       setPopupSynonyms({ loading: false, items: [] })
@@ -1529,22 +1535,54 @@ export default function TilshunosPage() {
         />
       )}
 
-      {/* Error popup */}
+      {/* Error popup — draggable */}
       {popup && (
         <>
           <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
-          <div style={{
-            position: 'fixed',
-            left: Math.min(popup.x, window.innerWidth - 300),
-            top: Math.min(popup.y, window.innerHeight - 300),
-            background: 'white',
-            border: '1.5px solid var(--border)',
-            borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-            zIndex: 100,
-            minWidth: 260, maxWidth: 340,
-            padding: 12, fontSize: '0.8rem',
-          }}>
+          <div
+            style={{
+              position: 'fixed',
+              left: Math.min(popup.x, window.innerWidth - 300),
+              top: Math.min(popup.y, window.innerHeight - 300),
+              background: 'white',
+              border: '1.5px solid var(--border)',
+              borderRadius: 10,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+              zIndex: 100,
+              minWidth: 260, maxWidth: 340,
+              padding: 0, fontSize: '0.8rem',
+              cursor: 'default',
+            }}
+            ref={(el) => {
+              if (!el) return
+              // Make draggable via header
+              const header = el.querySelector('[data-drag-handle]') as HTMLElement
+              if (!header || header.dataset.dragBound) return
+              header.dataset.dragBound = '1'
+              let startX = 0, startY = 0, initLeft = 0, initTop = 0
+              header.addEventListener('mousedown', (e: MouseEvent) => {
+                e.preventDefault()
+                startX = e.clientX; startY = e.clientY
+                initLeft = el.offsetLeft; initTop = el.offsetTop
+                const onMove = (ev: MouseEvent) => {
+                  el.style.left = `${initLeft + ev.clientX - startX}px`
+                  el.style.top = `${initTop + ev.clientY - startY}px`
+                }
+                const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+                document.addEventListener('mousemove', onMove)
+                document.addEventListener('mouseup', onUp)
+              })
+            }}
+          >
+            {/* Drag handle */}
+            <div data-drag-handle="" style={{
+              padding: '8px 12px 4px', cursor: 'grab', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              borderBottom: '1px solid var(--border)', background: '#FAFAFA', borderRadius: '10px 10px 0 0',
+            }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>⠿ Суриб кўчириш</span>
+              <button onClick={() => setPopup(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: 12 }}>
             <div style={{
               display: 'inline-block', padding: '2px 8px', borderRadius: 6,
               background: CAT_COLORS[popup.issue.category] || '#6B7280',
@@ -1694,6 +1732,7 @@ export default function TilshunosPage() {
                 </div>
               </div>
             </div>
+            </div>{/* close padding wrapper */}
           </div>
         </>
       )}
