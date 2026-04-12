@@ -336,6 +336,8 @@ export const linguistic = {
     put<{ success: boolean }>(`/api/linguistic/update/${category}/${id}`, data),
   remove: (category: string, id: number) =>
     del<{ success: boolean }>(`/api/linguistic/delete/${category}/${id}`),
+  removeBulk: (category: string, fromId: number, toId: number) =>
+    post<{ success: boolean; deleted: number }>(`/api/linguistic/delete-bulk/${category}`, { from_id: fromId, to_id: toId }),
   transliterate: (text: string, target: string) =>
     post<{ text: string }>('/api/transliterate', { text, target }),
   normalizeDrug: (name: string) =>
