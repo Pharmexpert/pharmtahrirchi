@@ -430,16 +430,25 @@ export function useTableEditor({ initialData, filename, textId = '' }: UseTableE
   const confirmSaveLinguisticItems = async () => {
     if (!linguisticPreview) return
     try {
+      // Filter out items already in DB and set status to active for new ones
+      const itemsToSave = linguisticPreview.results
+        .filter((item: any) => !item.is_duplicate)
+        .map((item: any) => ({ ...item, status: 'active' }))
+      if (itemsToSave.length === 0) {
+        notify('Барча элементлар аллақачон базада мавжуд')
+        setLinguisticPreview(null)
+        return
+      }
       const res = await fetch(`${API_BASE}/api/linguistic/save`, {
         method: 'POST', headers: authHeaders,
         body: JSON.stringify({
           category: linguisticPreview.category,
-          items: linguisticPreview.results,
+          items: itemsToSave,
           text_id: textId
         })
       })
       if (!res.ok) throw new Error()
-      notify('Маълумотлар базасига сақланди')
+      notify(`${itemsToSave.length} та элемент базага сақланди`)
       setLinguisticPreview(null)
     } catch (_e) { notify('Сақлашда хатолик') }
   }

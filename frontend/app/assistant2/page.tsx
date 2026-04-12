@@ -565,6 +565,38 @@ export default function Assistant2Page() {
   // ── Teach modal ──
   const [teachData, setTeachData] = useState<{ text: string; context: string; lang: string } | null>(null)
 
+  // ── Linguistic analysis (Izohli/Munozarali/Qisqartmalar) ──
+  const [lingLoading, setLingLoading] = useState(false)
+  const [lingProgress, setLingProgress] = useState(0)
+  const [lingPreview, setLingPreview] = useState<{ category: string; results: any[] } | null>(null)
+  const [lingError, setLingError] = useState('')
+
+  const doLinguisticAnalysis = async (category: string) => {
+    const text = trText || edText
+    if (!text || text.trim().length < 10) { alert('Matn juda qisqa'); return }
+    setLingLoading(true); setLingProgress(0); setLingError(''); setLingPreview(null)
+    const interval = setInterval(() => setLingProgress(p => p < 90 ? p + Math.random() * 8 : p), 400)
+    try {
+      const res = await api.linguistic.analyze({ text, category, source_lang: trSourceLang === 'uz' ? 'Uzbek' : trSourceLang === 'ru' ? 'Russian' : 'English' })
+      clearInterval(interval); setLingProgress(100)
+      setTimeout(() => { setLingLoading(false); setLingPreview({ category, results: (res as any).results || [] }) }, 500)
+    } catch (e: any) {
+      clearInterval(interval); setLingLoading(false)
+      setLingError(e.message || 'Tahlil xatoligi')
+    }
+  }
+
+  const saveLinguisticResults = async () => {
+    if (!lingPreview) return
+    const itemsToSave = lingPreview.results.filter((i: any) => !i.is_duplicate).map((i: any) => ({ ...i, status: 'active' }))
+    if (itemsToSave.length === 0) { alert('Barcha elementlar bazada mavjud'); setLingPreview(null); return }
+    try {
+      await api.linguistic.save({ category: lingPreview.category, items: itemsToSave, text_id: '' })
+      alert(`${itemsToSave.length} ta element bazaga saqlandi`)
+      setLingPreview(null)
+    } catch { alert('Saqlashda xatolik') }
+  }
+
   // ── File upload helper ──
   const handleFileUpload = useCallback(async (
     file: File,
@@ -704,6 +736,104 @@ export default function Assistant2Page() {
           Tekshirish
         </TabButton>
       </div>
+
+      {/* Linguistic analysis buttons */}
+      {(trText || edText) && (
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 16, padding: '8px 12px',
+          background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+          alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 4, fontWeight: 600 }}>Tahlil:</span>
+          {[
+            { cat: 'annotated', label: 'Izohli', icon: '📚' },
+            { cat: 'disputed', label: 'Munozarali', icon: '💬' },
+            { cat: 'abbreviations', label: 'Qisqartmalar', icon: '#' },
+          ].map(b => (
+            <button key={b.cat} onClick={() => doLinguisticAnalysis(b.cat)} disabled={lingLoading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-card)', cursor: lingLoading ? 'wait' : 'pointer',
+                fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+              }}>
+              {b.icon} {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Linguistic loading modal */}
+      {lingLoading && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: '32px 40px', textAlign: 'center', minWidth: 320 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Mantiqiy tahlil olib borilmoqda...</div>
+            <div style={{ width: '100%', height: 8, background: '#E5E7EB', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ width: `${lingProgress}%`, height: '100%', background: 'var(--green, #10B981)', borderRadius: 4, transition: 'width 0.3s' }} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--green, #10B981)' }}>{Math.round(lingProgress)}%</div>
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>Butun hujjat bo&apos;yicha qidirilmoqda</div>
+          </div>
+        </div>
+      )}
+
+      {/* Linguistic preview modal */}
+      {lingPreview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setLingPreview(null)}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, maxWidth: 700, width: '90%', maxHeight: '80vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                {lingPreview.category === 'annotated' ? '📚 Izohli terminlar' : lingPreview.category === 'disputed' ? '💬 Munozarali so\'zlar' : '# Qisqartmalar'}
+                <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
+                  ({lingPreview.results.length} ta topildi)
+                </span>
+              </h3>
+              <button onClick={() => setLingPreview(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+            </div>
+
+            {lingPreview.results.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24, color: '#94A3B8' }}>Hech narsa topilmadi</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                {lingPreview.results.map((item: any, i: number) => (
+                  <div key={i} style={{
+                    padding: '10px 12px', borderRadius: 8,
+                    background: item.is_duplicate ? '#FEF2F2' : '#F0FDF4',
+                    border: `1px solid ${item.is_duplicate ? '#FECACA' : '#BBF7D0'}`,
+                    fontSize: 12,
+                  }}>
+                    {item.is_duplicate && <span style={{ fontSize: 10, color: '#DC2626', fontWeight: 700 }}>BAZADA MAVJUD </span>}
+                    {lingPreview.category === 'abbreviations' ? (
+                      <div><strong>{item.short_form}</strong> — EN: {item.long_en} | RU: {item.long_ru} | UZ: {item.long_uz}</div>
+                    ) : (
+                      <div><strong>EN:</strong> {item.en} | <strong>RU:</strong> {item.ru} | <strong>UZ:</strong> {item.uz}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={saveLinguisticResults}
+                style={{ flex: 1, padding: '10px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Bazaga saqlash ({lingPreview.results.filter((i: any) => !i.is_duplicate).length} ta yangi)
+              </button>
+              <button onClick={() => setLingPreview(null)}
+                style={{ padding: '10px 16px', background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lingError && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', color: 'var(--danger)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <AlertCircle size={14} /> {lingError}
+        </div>
+      )}
 
       {/* ═══════════════ CREATE MODE ═══════════════ */}
       {mainTab === 'create' && (
