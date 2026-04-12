@@ -394,15 +394,8 @@ async def upload_file(file: UploadFile = File(...), current_user: Dict = Depends
 
     elif name.endswith('.docx'):
         try:
-            from docx import Document
-            doc = Document(io.BytesIO(raw))
-            paragraphs = [p.text for p in doc.paragraphs]
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        paragraphs.append(cell.text)
-            text = "\n".join(paragraphs)
-            return {"filename": file.filename, "text": text}
+            md_text = _docx_to_markdown(raw)
+            return {"filename": file.filename, "text": md_text}
         except Exception as e:
             raise HTTPException(400, f"DOCX o'qishda xatolik: {str(e)[:200]}")
 
@@ -411,119 +404,74 @@ async def upload_file(file: UploadFile = File(...), current_user: Dict = Depends
 
 
 # ═══════════════════════════════════════════════════
-# Format-preserving DOCX translation/editing
+# DOCX → Markdown extraction (structure-aware)
 # ═══════════════════════════════════════════════════
 
-async def _process_docx_runs(raw_bytes: bytes, processor_fn, batch_size: int = 5) -> bytes:
-    """Process DOCX run-by-run preserving formatting. Batches runs for efficiency."""
+def _docx_to_markdown(raw_bytes: bytes) -> str:
+    """Convert DOCX to Markdown preserving tables, headings, lists, bold/italic."""
     from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     doc = Document(io.BytesIO(raw_bytes))
+    md_parts = []
 
-    async def process_text(text: str) -> str:
-        if not text or not text.strip():
-            return text
-        return await processor_fn(text)
+    def runs_to_md(runs) -> str:
+        parts = []
+        for run in runs:
+            text = run.text or ''
+            if not text:
+                continue
+            if run.bold and run.italic:
+                text = f"***{text}***"
+            elif run.bold:
+                text = f"**{text}**"
+            elif run.italic:
+                text = f"*{text}*"
+            parts.append(text)
+        return ''.join(parts)
 
-    # Process paragraphs
-    for para in doc.paragraphs:
-        for run in para.runs:
-            if run.text and run.text.strip():
-                run.text = await process_text(run.text)
+    def para_to_md(para) -> str:
+        text = runs_to_md(para.runs) if para.runs else para.text
+        if not text.strip():
+            return ''
+        style = (para.style.name or '').lower() if para.style else ''
+        if 'heading 1' in style:
+            return f"# {text}"
+        elif 'heading 2' in style:
+            return f"## {text}"
+        elif 'heading 3' in style:
+            return f"### {text}"
+        elif 'heading 4' in style:
+            return f"#### {text}"
+        elif 'list' in style:
+            return f"- {text}"
+        return text
 
-    # Process tables
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for para in cell.paragraphs:
-                    for run in para.runs:
-                        if run.text and run.text.strip():
-                            run.text = await process_text(run.text)
+    # Body paragraphs and tables
+    for element in doc.element.body:
+        tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+        if tag == 'p':
+            # Find matching paragraph object
+            for para in doc.paragraphs:
+                if para._element is element:
+                    line = para_to_md(para)
+                    if line:
+                        md_parts.append(line)
+                    else:
+                        md_parts.append('')
+                    break
+        elif tag == 'tbl':
+            # Find matching table
+            for table in doc.tables:
+                if table._element is element:
+                    for ri, row in enumerate(table.rows):
+                        cells = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+                        md_parts.append('| ' + ' | '.join(cells) + ' |')
+                        if ri == 0:
+                            md_parts.append('| ' + ' | '.join(['---'] * len(cells)) + ' |')
+                    md_parts.append('')
+                    break
 
-    # Process headers/footers
-    for section in doc.sections:
-        for header in [section.header, section.first_page_header]:
-            if header and not header.is_linked_to_previous:
-                for para in header.paragraphs:
-                    for run in para.runs:
-                        if run.text and run.text.strip():
-                            run.text = await process_text(run.text)
-        for footer in [section.footer, section.first_page_footer]:
-            if footer and not footer.is_linked_to_previous:
-                for para in footer.paragraphs:
-                    for run in para.runs:
-                        if run.text and run.text.strip():
-                            run.text = await process_text(run.text)
-
-    output = io.BytesIO()
-    doc.save(output)
-    output.seek(0)
-    return output.read()
-
-
-@router.post("/translate-docx")
-async def translate_docx(
-    file: UploadFile = File(...),
-    source_lang: str = Form(...),
-    target_lang: str = Form(...),
-    current_user: Dict = Depends(get_current_user)
-):
-    """Format-preserving DOCX translation."""
-    raw = await file.read()
-    if len(raw) > 20 * 1024 * 1024:
-        raise HTTPException(400, "Fayl hajmi 20MB dan oshmasligi kerak")
-
-    learned = _load_learned_rules(source_lang)
-    system = TRANSLATE_SYSTEM + learned
-    source_name = LANG_NAMES.get(source_lang, source_lang)
-    target_name = LANG_NAMES.get(target_lang, target_lang)
-
-    async def translate_fn(text: str) -> str:
-        user_prompt = f"Manba til: {source_name}\nMaqsad til: {target_name}\n\nMatn:\n{text}"
-        try:
-            result = await generate_with_claude(system, user_prompt, max_tokens=4096)
-            return result.strip() if result else text
-        except Exception:
-            return text
-
-    result_bytes = await _process_docx_runs(raw, translate_fn)
-
-    return StreamingResponse(
-        io.BytesIO(result_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="translated_{target_lang}_{file.filename}"'}
-    )
-
-
-@router.post("/edit-docx")
-async def edit_docx(
-    file: UploadFile = File(...),
-    lang: str = Form("uz"),
-    current_user: Dict = Depends(get_current_user)
-):
-    """Format-preserving DOCX scientific editing."""
-    raw = await file.read()
-    if len(raw) > 20 * 1024 * 1024:
-        raise HTTPException(400, "Fayl hajmi 20MB dan oshmasligi kerak")
-
-    learned = _load_learned_rules(lang)
-    system = EDIT_SYSTEM + learned
-    lang_name = LANG_NAMES.get(lang, lang)
-
-    async def edit_fn(text: str) -> str:
-        user_prompt = f"Til: {lang_name}\n\nMatn:\n{text}"
-        try:
-            result = await generate_with_claude(system, user_prompt, max_tokens=4096)
-            return result.strip() if result else text
-        except Exception:
-            return text
-
-    result_bytes = await _process_docx_runs(raw, edit_fn)
-
-    return StreamingResponse(
-        io.BytesIO(result_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="edited_{file.filename}"'}
-    )
+    return '\n'.join(md_parts)
 
 
 # ═══════════════════════════════════════════════════

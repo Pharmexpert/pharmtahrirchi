@@ -548,28 +548,15 @@ export default function Assistant2Page() {
   }
 
   // ── Actions ──
+  // All AI operations work on extracted text (markdown for DOCX).
+  // DOCX is shown via WordDocumentViewer for preview only.
   const doTranslate = async () => {
-    if (!trText.trim() && !trDocxFile) return
+    if (!trText.trim()) return
     if (trTargetLangs.length === 0) return
     setTrLoading(true); setTrError(''); setTrResults(null); setTrResultDocx(null)
-
     try {
-      if (trDocxFile) {
-        // Format-preserving DOCX translation
-        const docxResults: Record<string, Blob> = {}
-        for (const target of trTargetLangs) {
-          if (target === trSourceLang) continue
-          const blob = await api.assistant2.translateDocx(trDocxFile, trSourceLang, target)
-          docxResults[target] = blob
-        }
-        setTrResultDocx(docxResults)
-        // Also get text results for display
-        const res = await api.assistant2.translate(trText, trSourceLang, trTargetLangs)
-        setTrResults(res.translations)
-      } else {
-        const res = await api.assistant2.translate(trText, trSourceLang, trTargetLangs)
-        setTrResults(res.translations)
-      }
+      const res = await api.assistant2.translate(trText, trSourceLang, trTargetLangs)
+      setTrResults(res.translations)
     } catch (e: any) {
       setTrError(e.detail || e.message || 'Xatolik yuz berdi')
     } finally {
@@ -578,18 +565,11 @@ export default function Assistant2Page() {
   }
 
   const doEdit = async () => {
-    if (!edText.trim() && !edDocxFile) return
+    if (!edText.trim()) return
     setEdLoading(true); setEdError(''); setEdResult(null); setEdResultDocx(null)
     try {
-      if (edDocxFile) {
-        const blob = await api.assistant2.editDocx(edDocxFile, edLang)
-        setEdResultDocx(blob)
-        const res = await api.assistant2.edit(edText, edLang)
-        setEdResult(res.edited)
-      } else {
-        const res = await api.assistant2.edit(edText, edLang)
-        setEdResult(res.edited)
-      }
+      const res = await api.assistant2.edit(edText, edLang)
+      setEdResult(res.edited)
     } catch (e: any) {
       setEdError(e.detail || e.message || 'Xatolik yuz berdi')
     } finally {
@@ -748,20 +728,13 @@ export default function Assistant2Page() {
                             }}>
                             <GraduationCap size={13} /> O&apos;qitish
                           </button>
-                          <ExportMenu text={text} lang={lang} onDocxBlob={trResultDocx?.[lang] || null} />
+                          <ExportMenu text={text} lang={lang} onDocxBlob={null} />
                         </div>
                       </div>
 
-                      {/* Show DOCX viewer if we have a result blob */}
-                      {trResultDocx?.[lang] ? (
-                        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxHeight: 300 }}>
-                          <WordDocumentViewer file={new File([trResultDocx[lang]], `result_${lang}.docx`)} />
-                        </div>
-                      ) : (
-                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)', maxHeight: 300, overflowY: 'auto' }}>
-                          {text}
-                        </div>
-                      )}
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)', maxHeight: 300, overflowY: 'auto' }}>
+                        {text}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -827,29 +800,17 @@ export default function Assistant2Page() {
                       }}>
                       <GraduationCap size={13} /> O&apos;qitish
                     </button>
-                    <ExportMenu text={edResult} lang={edLang} onDocxBlob={edResultDocx} />
+                    <ExportMenu text={edResult} lang={edLang} onDocxBlob={null} />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div style={{ background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--danger)', marginBottom: 8 }}>Asl matn</div>
-                      {edDocxFile ? (
-                        <div style={{ maxHeight: 300, overflow: 'hidden', borderRadius: 'var(--radius-sm)' }}>
-                          <WordDocumentViewer file={edDocxFile} />
-                        </div>
-                      ) : (
-                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edText}</div>
-                      )}
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edText}</div>
                     </div>
                     <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--success)', marginBottom: 8 }}>Tahrirlangan</div>
-                      {edResultDocx ? (
-                        <div style={{ maxHeight: 300, overflow: 'hidden', borderRadius: 'var(--radius-sm)' }}>
-                          <WordDocumentViewer file={new File([edResultDocx], 'edited.docx')} />
-                        </div>
-                      ) : (
-                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edResult}</div>
-                      )}
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edResult}</div>
                     </div>
                   </div>
                 </div>
