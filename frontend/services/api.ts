@@ -431,6 +431,10 @@ export const admin = {
   pharmaToc: (q = '', edition = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/toc?${new URLSearchParams({ q, edition }).toString()}`),
   pharmaRegistry: (q = '', country = '', atc = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/registry?${new URLSearchParams({ q, country, atc }).toString()}`),
   pharmaColors: (q = '') => get<{ rows: any[]; total: number }>(`/api/admin/pharma-db/colors${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  // Pharma DB export
+  pharmaTocExportUrl: () => `${API_BASE}/api/admin/pharma-db/toc/export`,
+  pharmaRegistryExportUrl: () => `${API_BASE}/api/admin/pharma-db/registry/export`,
+  pharmaColorsExportUrl: () => `${API_BASE}/api/admin/pharma-db/colors/export`,
 }
 
 // ═══════════════════════════════════════════════════

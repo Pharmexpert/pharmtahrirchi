@@ -684,7 +684,7 @@ async def pharma_toc(q: str = None, edition: str = None, limit: int = 3000, curr
 
 
 @router.get("/pharma-db/registry")
-async def drug_registry(q: str = None, country: str = None, atc: str = None, limit: int = 2000, current_user: dict = Depends(get_current_user)):
+async def drug_registry(q: str = None, country: str = None, atc: str = None, limit: int = 20000, current_user: dict = Depends(get_current_user)):
     """State Drug Registry — dual-script search (Cyr ↔ Lat)."""
     conn = _pharma_db_conn()
     cur = conn.cursor()
@@ -761,6 +761,74 @@ async def colors_table(q: str = None, limit: int = 500, current_user: dict = Dep
     finally:
         conn.close()
     return {"rows": rows, "total": len(rows)}
+
+
+# ── Pharma DB XLSX Export ──────────────────────────
+@router.get("/pharma-db/toc/export")
+async def export_toc_xlsx(current_user: dict = Depends(get_current_user)):
+    """Export ДФ мундарижаси as XLSX."""
+    conn = _pharma_db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT seq_no, edition, name_uz, name_en, name_ru, text_no FROM pharma_toc ORDER BY edition, seq_no")
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    df = pd.DataFrame(rows)
+    cols = {'seq_no': '№', 'edition': 'Нашр', 'name_uz': 'Ўзбекча', 'name_en': 'English', 'name_ru': 'Русский', 'text_no': 'Матн №'}
+    existing = [c for c in cols if c in df.columns]
+    df = df[existing].rename(columns={k: v for k, v in cols.items() if k in existing})
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='ДФ мундарижаси')
+    output.seek(0)
+    return Response(content=output.read(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=df_mundarijasi.xlsx", "Access-Control-Expose-Headers": "Content-Disposition"})
+
+
+@router.get("/pharma-db/registry/export")
+async def export_registry_xlsx(current_user: dict = Depends(get_current_user)):
+    """Export Давлат реестри as XLSX."""
+    conn = _pharma_db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT seq_no, trade_name, inn, dosage_form, country, manufacturer, atc_code, registration_no, registration_date, dispense_type FROM drug_registry ORDER BY seq_no")
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    df = pd.DataFrame(rows)
+    cols = {'seq_no': '№', 'trade_name': 'Савдо номи', 'inn': 'INN', 'dosage_form': 'Шакл', 'country': 'Мамлакат',
+            'manufacturer': 'Ишлаб чиқарувчи', 'atc_code': 'ATC', 'registration_no': 'Рег. №', 'registration_date': 'Сана', 'dispense_type': 'Сотув'}
+    existing = [c for c in cols if c in df.columns]
+    df = df[existing].rename(columns={k: v for k, v in cols.items() if k in existing})
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Давлат реестри')
+    output.seek(0)
+    return Response(content=output.read(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=davlat_reestri.xlsx", "Access-Control-Expose-Headers": "Content-Disposition"})
+
+
+@router.get("/pharma-db/colors/export")
+async def export_colors_xlsx(current_user: dict = Depends(get_current_user)):
+    """Export Ранглар жадвали as XLSX."""
+    conn = _pharma_db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT seq_no, uz, ru, en FROM colors_table ORDER BY seq_no")
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    df = pd.DataFrame(rows)
+    cols = {'seq_no': '№', 'uz': 'Ўзбекча', 'ru': 'Русский', 'en': 'English'}
+    existing = [c for c in cols if c in df.columns]
+    df = df[existing].rename(columns={k: v for k, v in cols.items() if k in existing})
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Ранглар жадвали')
+    output.seek(0)
+    return Response(content=output.read(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=ranglar_jadvali.xlsx", "Access-Control-Expose-Headers": "Content-Disposition"})
 
 
 @router.post("/wordlists/import-uzbek-net")
