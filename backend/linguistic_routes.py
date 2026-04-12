@@ -12,18 +12,45 @@ import asyncio
 router = APIRouter(prefix="/api/linguistic", tags=["linguistic"])
 
 
+LINGUISTIC_SYSTEM = """Siz farmatsevtika sohasidagi yuqori malakali lingvist-ekspertsiz.
+O'zbekiston Respublikasi Davlat farmakopeyasi (DF) va Yevropa farmakopeyasi (Ph.Eur.) terminologiyasini mukammal bilasiz.
+Farmatsevtik terminlarni uch tilda (o'zbek, rus, ingliz) aniq tarjima qilasiz.
+Faqat JSON massiv qaytaring, boshqa hech narsa yozmang."""
+
+
+async def get_ai_text_async(user_prompt: str) -> str:
+    """Claude Sonnet direct call for linguistic analysis. Falls back to cascade."""
+    from routes.ai_helpers import get_anthropic, generate_ai_content
+    client = get_anthropic()
+    if client:
+        try:
+            loop = asyncio.get_event_loop()
+            msg = await loop.run_in_executor(
+                None,
+                lambda: client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=4096,
+                    system=LINGUISTIC_SYSTEM,
+                    messages=[{"role": "user", "content": user_prompt}]
+                )
+            )
+            return msg.content[0].text
+        except Exception as e:
+            print(f"[linguistic] Claude Sonnet failed: {e}, falling back")
+    # Fallback to cascade
+    return await generate_ai_content(f"{LINGUISTIC_SYSTEM}\n\n{user_prompt}", prefer="cloud")
+
+
 def get_ai_text(prompt: str) -> str:
-    """Dual-AI: uses shared ai_helpers module."""
-    from routes.ai_helpers import generate_ai_content
-    # Run async function synchronously
+    """Sync wrapper for backward compatibility."""
     loop = asyncio.get_event_loop()
     if loop.is_running():
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, generate_ai_content(prompt))
-            return future.result(timeout=60)
+            future = pool.submit(asyncio.run, get_ai_text_async(prompt))
+            return future.result(timeout=120)
     else:
-        return asyncio.run(generate_ai_content(prompt))
+        return asyncio.run(get_ai_text_async(prompt))
 
 
 @router.post("/analyze")
@@ -44,19 +71,36 @@ async def analyze_text(payload: Dict[str, Any], current_user: Dict = Depends(get
     seen_terms = set()
 
     if category == "annotated":
-        prompt_task = """Extract pharmaceutical terms (Annotated Words).
-Return ONLY a JSON array. Each object MUST have: en, ru, uz, description_en, description_ru, description_uz."""
+        prompt_task = """Farmatsevtik terminlarni (Изоҳли сўзлар) ajratib chiqaring.
+Faqat JSON massiv qaytaring. Har bir obyektda bo'lishi SHART:
+- en: inglizcha termin
+- ru: ruscha tarjima
+- uz: o'zbekcha tarjima
+- description_en: inglizcha izoh (1-2 gap)
+- description_ru: ruscha izoh
+- description_uz: o'zbekcha izoh
+Masalan: {"en":"Assay","ru":"Количественное определение","uz":"Миқдорий аниқлаш","description_en":"Quantitative determination of active substance content","description_ru":"Количественное определение содержания действующего вещества","description_uz":"Таъсир этувчи модда миқдорини аниқлаш"}"""
     elif category == "disputed":
-        prompt_task = """Extract 'Disputed Words' (context-heavy translations).
-Return ONLY a JSON array. Each object MUST have: en, ru, uz, context_en, context_ru, context_uz."""
+        prompt_task = """Kontekstga bog'liq tarjimalari bor so'zlarni (Мунозарали сўзлар) ajrating.
+Faqat JSON massiv qaytaring. Har bir obyektda:
+- en: inglizcha so'z
+- ru: ruscha tarjima
+- uz: o'zbekcha tarjima
+- context_en: qaysi kontekstda ishlatiladi (inglizcha)
+- context_ru: kontekst (ruscha)
+- context_uz: kontekst (o'zbekcha)"""
     else:
-        prompt_task = """Extract abbreviations and acronyms.
-Return ONLY a JSON array. Each object MUST have: short_form, long_en, long_ru, long_uz."""
+        prompt_task = """Qisqartmalar va akronimlarni ajratib chiqaring.
+Faqat JSON massiv qaytaring. Har bir obyektda:
+- short_form: qisqartma (masalan: INN, GMP, USP)
+- long_en: to'liq shakli inglizcha
+- long_ru: to'liq shakli ruscha
+- long_uz: to'liq shakli o'zbekcha"""
 
     try:
-        for chunk in chunks[:10]: # Limit to 10 chunks to avoid excessive API cost
-            full_prompt = f"Role: Pharmaceutical expert editor. Source Language: {source_lang}. Task: {prompt_task}\nText: {chunk}"
-            result_text = get_ai_text(full_prompt)
+        for chunk in chunks[:10]:
+            full_prompt = f"Manba tili: {source_lang}.\nVazifa: {prompt_task}\n\nMatn:\n{chunk}"
+            result_text = await get_ai_text_async(full_prompt)
 
             match = re.search(r'\[.*\]', result_text, re.DOTALL)
             if match:
