@@ -607,22 +607,8 @@ def _run_syntax(text: str) -> list:
             elif pos != "unknown":
                 role = pos.upper()
 
-            if role:
-                abs_from = offset + match.start()
-                abs_to = offset + match.end()
-                results.append({
-                    "word": word,
-                    "root": root,
-                    "pos": pos,
-                    "role": role,
-                    "case": case_val,
-                    "from": abs_from,
-                    "to": abs_to,
-                    "message": f"{word} — {role}",
-                    "description": f"Ўзак: {root} | Сўз туркуми: {pos} | Келишик: {case_val or '—'}",
-                    "layer": "syntax",
-                    "severity": "info",
-                })
+            # Only add word-level annotations for FIRST sentence (summary) — skip per-word flood
+            # Word-level details are available via morph layer instead
 
             words_info.append({"word": word, "pos": pos, "role": role, "case": case_val})
 
@@ -749,6 +735,12 @@ def _run_style(text: str) -> list:
         for pat in patterns_to_try:
             try:
                 for m in re.finditer(pat, text):
+                    # Resolve regex backreferences (\1, \2) in suggestion
+                    suggestion_raw = rule.get("suggestion", "")
+                    try:
+                        suggestion_resolved = m.expand(suggestion_raw) if suggestion_raw else ""
+                    except (re.error, IndexError):
+                        suggestion_resolved = suggestion_raw
                     issues.append({
                         "rule_id": rule["rule_id"],
                         "category": rule["category"],
@@ -756,7 +748,7 @@ def _run_style(text: str) -> list:
                         "from": m.start(),
                         "to": m.end(),
                         "old": m.group(0),
-                        "suggestion": rule.get("suggestion", ""),
+                        "suggestion": suggestion_resolved,
                         "severity": rule.get("severity", "should"),
                         "examples": rule.get("examples", ""),
                         "source": rule.get("source", ""),

@@ -1149,9 +1149,56 @@ export default function TilshunosPage() {
               }} />
             </div>
 
-            {/* Single editor area: rich view if DOCX HTML, plain textarea otherwise, annotated view when result */}
+            {/* Single editor area: SuperDoc if DOCX file, rich HTML, plain textarea, or annotated view */}
             <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }} onDoubleClick={synonymPopup.handleClick}>
-              {richHtml && !result ? (
+              {loadedDocxFile && !result ? (
+                <ErrorBoundary fallback={<div style={{ padding: 20, color: '#991B1B' }}>SuperDoc юклаб бўлмади — оддий режимга ўтинг</div>}>
+                  <SuperDocEditor
+                    file={loadedDocxFile}
+                    height="65vh"
+                    onReady={(editor: any) => {
+                      // Матнни text state'га синхронлаш
+                      try {
+                        const t = editor?.getText?.() || ''
+                        if (t) setText(t)
+                      } catch {}
+                    }}
+                    aiActions={[
+                      {
+                        label: '4 ҚАТЛАМ текшириш',
+                        icon: <Wand2 size={13} />,
+                        color: '#16A34A',
+                        onClick: async (sel: string, full: string) => {
+                          const t = sel || full
+                          if (!t.trim()) return
+                          setText(t)
+                          // Run 4-layer analysis via LinguisticAnalysisBar button click
+                          const btn = document.querySelector('[data-layer="hammasi"]') as HTMLButtonElement
+                          if (btn) btn.click()
+                        },
+                      },
+                      {
+                        label: 'Сайқаллаш',
+                        icon: <CheckCircle2 size={13} />,
+                        color: '#DC2626',
+                        onClick: async (sel: string, full: string) => {
+                          const t = sel || full
+                          if (!t.trim()) return
+                          setText(t)
+                          const btn = document.querySelector('[data-layer="sayqallash"]') as HTMLButtonElement
+                          if (btn) btn.click()
+                        },
+                      },
+                      {
+                        label: 'DOCX юклаб олиш',
+                        icon: <Download size={13} />,
+                        color: '#1D4ED8',
+                        onClick: () => exportToDocx(),
+                      },
+                    ]}
+                  />
+                </ErrorBoundary>
+              ) : richHtml && !result ? (
                 <div
                   ref={richEditRef}
                   contentEditable
