@@ -339,12 +339,31 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
-    # Scientific terms whitelist (prevents false positives)
+    # Scientific + pharmaceutical terms whitelist (prevents false positives)
+    # Sources: European Pharmacopoeia 9.0, State Pharmacopoeia (UZ/RU), WHO INN
     SCIENTIFIC_WHITELIST = {
-        'in', 'vitro', 'vivo', 'situ', 'silico',  # In vitro, In vivo, etc.
+        # Latin scientific terms
+        'in', 'vitro', 'vivo', 'situ', 'silico', 'et', 'al', 'etc', 'vs',
+        # Ўзбекча фарм терминлар
         'дори', 'дорилар', 'дорининг', 'дорини', 'дорига', 'дорида', 'доридан',
+        'субстанция', 'таблетка', 'суспензия', 'эритма', 'инъекция', 'капсула',
+        'малҳам', 'крем', 'гель', 'кукун', 'сироп', 'суппозиторий', 'настойка',
+        'экстракт', 'дамлама', 'қайнатма', 'реактив', 'эталон', 'титрлаш',
+        'фильтрат', 'центрифугалаш', 'хроматография', 'спектрофотометрия',
+        'фармакопея', 'монография', 'валидация', 'сертификация',
+        # Аналитик усуллар
         'hplc', 'uv', 'ir', 'nmr', 'ms', 'gc', 'lc', 'ph', 'ic50', 'ec50',
-        'мг', 'мл', 'мкг', 'кг', 'нг',
+        'tlc', 'dsc', 'xrpd', 'sds-page', 'lc-ms', 'gc-ms',
+        # Бирликлар
+        'мг', 'мл', 'мкг', 'кг', 'нг', 'мкл', 'ме',
+        # INN суффиксли дори номлари (автоматик чиқарилган)
+        'imidazole', 'streptomycin', 'penicillin', 'bleomycin', 'carbazole',
+        'vancomycin', 'amoxicillin', 'amlodipine', 'tetracycline', 'infliximab',
+        'benzylpenicillin', 'sultamicillin', 'actinomycin', 'magnolol', 'bisabolol',
+        'benzimidazole', 'fluoromisonidazole', 'methylimidazole',
+        # Русча фарм терминлар
+        'раствор', 'порошок', 'таблетка', 'суспензия', 'мазь', 'линимент',
+        'суппозиторий', 'субстанция', 'инъекция', 'экстракт', 'сироп',
     }
     correct_set.update(SCIENTIFIC_WHITELIST)
 
