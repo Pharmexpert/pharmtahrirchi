@@ -159,6 +159,66 @@ function downloadText(text: string, filename: string) {
 }
 
 // ═══════════════════════════════════════════════════
+// Markdown renderer (lightweight, no external deps)
+// ═══════════════════════════════════════════════════
+
+function renderMarkdown(md: string): string {
+  let html = md
+    // Escape HTML
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // Headings
+  html = html.replace(/^#### (.+)$/gm, '<h4 style="font-size:15px;font-weight:700;margin:12px 0 6px">$1</h4>')
+  html = html.replace(/^### (.+)$/gm, '<h3 style="font-size:16px;font-weight:700;margin:14px 0 6px">$1</h3>')
+  html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:17px;font-weight:700;margin:16px 0 8px">$1</h2>')
+  html = html.replace(/^# (.+)$/gm, '<h1 style="font-size:19px;font-weight:700;margin:18px 0 8px">$1</h1>')
+  // Bold + italic
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  // Tables: detect | rows and wrap in table
+  const lines = html.split('\n')
+  const result: string[] = []
+  let inTable = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (line.startsWith('|') && line.endsWith('|')) {
+      if (!inTable) { result.push('<table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:13px">'); inTable = true }
+      if (line.replace(/[|\-\s]/g, '') === '') continue // skip separator row
+      const cells = line.split('|').filter(c => c.trim() !== '')
+      const isHeader = i + 1 < lines.length && lines[i + 1].trim().replace(/[|\-\s:]/g, '') === ''
+      const tag = isHeader ? 'th' : 'td'
+      const style = isHeader
+        ? 'padding:6px 10px;border:1px solid #d4c5b0;background:#f5efe8;font-weight:600;text-align:left'
+        : 'padding:6px 10px;border:1px solid #e5ddd3;text-align:left'
+      result.push('<tr>' + cells.map(c => `<${tag} style="${style}">${c.trim()}</${tag}>`).join('') + '</tr>')
+    } else {
+      if (inTable) { result.push('</table>'); inTable = false }
+      // List items
+      if (line.startsWith('- ')) {
+        result.push(`<div style="padding-left:16px;margin:2px 0">\u2022 ${line.slice(2)}</div>`)
+      } else if (/^\d+\.\s/.test(line)) {
+        result.push(`<div style="padding-left:16px;margin:2px 0">${line}</div>`)
+      } else if (line === '') {
+        result.push('<div style="height:8px"></div>')
+      } else {
+        result.push(`<div style="margin:3px 0;line-height:1.7">${line}</div>`)
+      }
+    }
+  }
+  if (inTable) result.push('</table>')
+  return result.join('\n')
+}
+
+function MarkdownView({ text }: { text: string }) {
+  return (
+    <div
+      style={{ fontSize: 14, color: 'var(--text-primary)' }}
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+    />
+  )
+}
+
+// ═══════════════════════════════════════════════════
 // Export Menu
 // ═══════════════════════════════════════════════════
 
@@ -732,8 +792,8 @@ export default function Assistant2Page() {
                         </div>
                       </div>
 
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)', maxHeight: 300, overflowY: 'auto' }}>
-                        {text}
+                      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                        <MarkdownView text={text} />
                       </div>
                     </div>
                   ))}
@@ -806,11 +866,11 @@ export default function Assistant2Page() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div style={{ background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--danger)', marginBottom: 8 }}>Asl matn</div>
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edText}</div>
+                      <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edText} /></div>
                     </div>
                     <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--success)', marginBottom: 8 }}>Tahrirlangan</div>
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxHeight: 300, overflowY: 'auto' }}>{edResult}</div>
+                      <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edResult || ''} /></div>
                     </div>
                   </div>
                 </div>
