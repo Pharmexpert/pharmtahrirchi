@@ -215,6 +215,7 @@ export default function TilshunosPage() {
   }, [targetText])
 
   // Original snapshots for self-learning diff
+  const skipAutoCheckRef = useRef(false)
   const [originalText, setOriginalText] = useState('')
   const [originalSource, setOriginalSource] = useState('')
   const [originalTarget, setOriginalTarget] = useState('')
@@ -250,8 +251,12 @@ export default function TilshunosPage() {
     api.tilshunos.publicAiEngines().then(r => setAiEngines(r.engines || null)).catch(() => {})
   }, [])
 
-  // Auto-extract entities + linguistic when text is set
+  // Auto-extract entities + linguistic when text is set (skip during applyFix)
   useEffect(() => {
+    if (skipAutoCheckRef.current) {
+      skipAutoCheckRef.current = false
+      return
+    }
     if (!text || text.length < 10 || !showEntities) {
       setEntities([])
       setLinguistic({ annotated: [], disputed: [], abbreviations: [] })
@@ -563,6 +568,7 @@ export default function TilshunosPage() {
       setResult(updatedResult)
     }
 
+    skipAutoCheckRef.current = true
     setText(newText)
 
     const backendLang = lang.startsWith('uz') ? 'uz' : lang
