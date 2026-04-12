@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2, FileText, Sparkles, Download, FileUp, CheckCircle2 } from 'lucide-react'
+import { Loader2, Award, BookPlus, ClipboardPaste, Wand2, ArrowRightLeft, Play, Upload, Trash2, FileText, Sparkles, Download, FileUp, CheckCircle2, FileDown } from 'lucide-react'
 import { useAuth } from '../../components/LoginGuard'
 import api, { TilshunosCheckResult, LinguisticIssue } from '../../services/api'
 import WordDocumentViewer from '../../components/WordDocumentViewer'
@@ -434,6 +434,54 @@ export default function TilshunosPage() {
     }
     const r = await api.tilshunos.extractText(f)
     return { text: r.text || '' }
+  }
+
+  // DOCX export — юклаб олиш (Миссия А/Б натижалари билан)
+  const [loadedDocxFile, setLoadedDocxFile] = useState<File | null>(null)
+  const exportToDocx = async () => {
+    if (!token) return
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    try {
+      // Агар DOCX файл юкланган бўлса — backend'да таржима/таҳрир қилинган файлни юклаб олиш
+      if (loadedDocxFile && mode === 'translate') {
+        const formData = new FormData()
+        formData.append('file', loadedDocxFile)
+        formData.append('source_lang', sourceLang)
+        formData.append('target_lang', targetLang)
+        const res = await fetch(`${API_BASE}/api/documents/translate-docx`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `translated_${loadedDocxFile.name}`
+        a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+      // Оддий матнни DOCX форматга конвертация (python-docx backend endpoint)
+      const content = mode === 'translate' ? targetText || sourceText : text
+      if (!content.trim()) return
+      const res = await fetch(`${API_BASE}/api/documents/export-docx`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content, title: 'Pharma Expert — Илмий таҳрир', lang: 'uz' }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'pharma_tahrir.docx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert('DOCX юклаб бўлмади: ' + (e?.message || e))
+    }
   }
 
   const openSynonymsForSelection = async () => {
@@ -942,6 +990,7 @@ export default function TilshunosPage() {
                       const ex = await extractFile(f)
                       setText(ex.text)
                       setRichHtml(ex.html || '')
+                      if (f.name.toLowerCase().endsWith('.docx')) setLoadedDocxFile(f)
                       setResult(null)
                       setClassified(null)
                     } catch (err: any) {
@@ -952,10 +1001,17 @@ export default function TilshunosPage() {
                 />
               </label>
 
+              <button onClick={exportToDocx} disabled={!text.trim()}
+                title="DOCX форматда юклаб олиш"
+                style={{ ...toolbarBtn, background: '#EFF6FF', color: '#1D4ED8', borderColor: '#93C5FD' }}>
+                <FileDown size={13} /> DOCX
+              </button>
+
               <button
                 onClick={async () => {
                   // Save edits to Sayqallash before clearing
                   await sendLearnDiff(originalText, text, lang.startsWith('uz') ? 'uz' : lang, 'tilshunos_edit')
+                  setLoadedDocxFile(null)
                   setText(''); setRichHtml(''); setResult(null); setClassified(null); setPopup(null); setOriginalText('')
                 }}
                 disabled={!text}
@@ -1215,6 +1271,7 @@ export default function TilshunosPage() {
                     const ex = await extractFile(f)
                     setSourceText(ex.text)
                     setRichSrcHtml(ex.html || '')
+                    if (f.name.toLowerCase().endsWith('.docx')) setLoadedDocxFile(f)
                   } catch (err: any) {
                     alert('Файлни ўқиб бўлмади: ' + (err?.message || err))
                   }
@@ -1223,6 +1280,12 @@ export default function TilshunosPage() {
               />
             </label>
 
+            <button onClick={exportToDocx} disabled={!sourceText.trim() && !targetText.trim()}
+              title="Таржима натижасини DOCX форматда юклаб олиш"
+              style={{ ...toolbarBtn, background: '#EFF6FF', color: '#1D4ED8', borderColor: '#93C5FD' }}>
+              <FileDown size={13} /> DOCX
+            </button>
+
             <button
               onClick={async () => {
                 // Self-learning: diff source + target before clearing
@@ -1230,6 +1293,7 @@ export default function TilshunosPage() {
                 const tLang = targetLang.startsWith('uz') ? 'uz' : targetLang
                 await sendLearnDiff(originalSource, sourceText, sLang, 'tilshunos_translate_src')
                 await sendLearnDiff(originalTarget, targetText, tLang, 'tilshunos_translate_tgt')
+                setLoadedDocxFile(null)
                 setSourceText(''); setTargetText(''); setRichSrcHtml(''); setRichTgtHtml(''); setOriginalSource(''); setOriginalTarget('')
               }}
               disabled={!sourceText && !targetText}

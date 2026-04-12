@@ -382,3 +382,56 @@ async def preview_document(
         "paragraphs": paragraphs[:200],  # Limit preview to 200 paragraphs
         "total_paragraphs": len(paragraphs),
     }
+
+
+@router.post("/export-docx")
+async def export_docx(payload: Dict[str, Any], current_user: Dict = Depends(get_current_user)):
+    """Export plain text to DOCX format with proper formatting.
+    Input: { text: string, title?: string, lang?: string }
+    Returns: DOCX file as download.
+    """
+    from docx import Document as DocxDocument
+    from docx.shared import Pt, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    import io
+
+    text = (payload.get("text") or "").strip()
+    title = payload.get("title", "Pharma Expert")
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    doc = DocxDocument()
+
+    # Set default font
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Times New Roman'
+    font.size = Pt(12)
+
+    # Add title
+    if title:
+        heading = doc.add_heading(title, level=1)
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Split text into paragraphs and add to document
+    paragraphs = text.split('\n')
+    for para_text in paragraphs:
+        para_text = para_text.strip()
+        if not para_text:
+            doc.add_paragraph('')  # Empty paragraph for spacing
+            continue
+        p = doc.add_paragraph(para_text)
+        p.paragraph_format.first_line_indent = Cm(1.25)
+        p.paragraph_format.space_after = Pt(6)
+
+    # Save to bytes
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=pharma_export.docx"},
+    )

@@ -339,6 +339,15 @@ def _run_sayqallash(text: str, lang: str) -> list:
     except Exception:
         pass
 
+    # Scientific terms whitelist (prevents false positives)
+    SCIENTIFIC_WHITELIST = {
+        'in', 'vitro', 'vivo', 'situ', 'silico',  # In vitro, In vivo, etc.
+        'дори', 'дорилар', 'дорининг', 'дорини', 'дорига', 'дорида', 'доридан',
+        'hplc', 'uv', 'ir', 'nmr', 'ms', 'gc', 'lc', 'ph', 'ic50', 'ec50',
+        'мг', 'мл', 'мкг', 'кг', 'нг',
+    }
+    correct_set.update(SCIENTIFIC_WHITELIST)
+
     # Annotated words (9,923 terms) + medical_terms — pharma vocabulary
     try:
         _conn_aw = sqlite3.connect(DB_PATH)
