@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 
 logger = logging.getLogger("ai")
 
@@ -37,44 +38,85 @@ def get_anthropic():
 
 
 def get_client():
-    """Returns Gemini model (primary). Use generate_ai_content() for dual-AI calls."""
-    return get_gemini() or (True if get_anthropic() else None)
+    """Returns first available AI client."""
+    return get_anthropic() or get_gemini() or None
+
+
+async def generate_with_sonnet(system: str, user_prompt: str, max_tokens: int = 8192) -> str:
+    """Call Claude Sonnet directly with system + user separation.
+    Best quality for pharma translation/editing tasks."""
+    client = get_anthropic()
+    if not client:
+        raise Exception("ANTHROPIC_API_KEY not configured")
+    loop = asyncio.get_event_loop()
+    msg = await loop.run_in_executor(
+        None,
+        lambda: client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+    )
+    return msg.content[0].text
 
 
 async def generate_ai_content(prompt: str, prefer: str = "auto") -> str:
     """
-    Multi-AI content generation. Provider order:
-      0. Mistral-7B-Instruct-Uz (if MISTRAL available — best Uzbek)
-      1. Google Gemini 2.0 Flash
-      2. Anthropic Claude (fallback)
+    Multi-AI content generation.
+
+    NEW provider order (Claude Sonnet first):
+      0. Anthropic Claude Sonnet (PRIMARY — best quality)
+      1. Mistral-7B-Instruct-Uz (if local available)
+      2. Google Gemini 2.0 Flash (fallback)
 
     `prefer`:
-      - "auto"     — try Mistral first if available, else cloud
-      - "mistral"  — force Mistral, fallback to cloud
-      - "cloud"    — skip Mistral, use Gemini/Claude only
-      - "uzbek"    — same as "mistral" (best Uzbek-aware)
+      - "auto"     — Claude Sonnet first, fallback to others
+      - "cloud"    — Claude Sonnet first, then Gemini
+      - "mistral"  — try Mistral first, then Claude
+      - "uzbek"    — same as "mistral"
+      - "gemini"   — force Gemini only
     """
-    # Try Mistral (Uzbek-optimized) first when available and preferred
-    try:
-        import mistral_engine
-        if mistral_engine.is_available() and prefer in ("auto", "mistral", "uzbek"):
-            try:
-                txt = await mistral_engine.generate_async(prompt, max_tokens=2048, temperature=0.25)
-                if txt and len(txt.strip()) > 5:
-                    try:
-                        mistral_engine.learn_record(prompt, txt, kind="generate")
-                    except Exception:
-                        pass
-                    return txt
-            except Exception as e:
-                logger.warning(f"[AI] Mistral failed: {e} — falling back to cloud")
-    except Exception:
-        pass
+    # Try Mistral first only if explicitly preferred
+    if prefer in ("mistral", "uzbek"):
+        try:
+            import mistral_engine
+            if mistral_engine.is_available():
+                try:
+                    txt = await mistral_engine.generate_async(prompt, max_tokens=2048, temperature=0.25)
+                    if txt and len(txt.strip()) > 5:
+                        try:
+                            mistral_engine.learn_record(prompt, txt, kind="generate")
+                        except Exception:
+                            pass
+                        return txt
+                except Exception as e:
+                    logger.warning(f"[AI] Mistral failed: {e} — falling back to Claude")
+        except Exception:
+            pass
 
+    # PRIMARY: Claude Sonnet
+    if prefer != "gemini":
+        anthropic_client = get_anthropic()
+        if anthropic_client:
+            try:
+                loop = asyncio.get_event_loop()
+                msg = await loop.run_in_executor(
+                    None,
+                    lambda: anthropic_client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=8192,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                )
+                return msg.content[0].text
+            except Exception as e:
+                logger.warning(f"[AI] Claude Sonnet failed: {e} — falling back to Gemini")
+
+    # FALLBACK: Gemini
     gemini = get_gemini()
     if gemini:
         try:
-            # New google-genai API
             if hasattr(gemini, 'models'):
                 response = gemini.models.generate_content(
                     model="gemini-2.0-flash",
@@ -82,23 +124,20 @@ async def generate_ai_content(prompt: str, prefer: str = "auto") -> str:
                 )
                 return response.text
             else:
-                # Old google-generativeai API
                 response = gemini.generate_content(prompt)
                 return response.text
         except Exception as e:
-            logger.warning(f"[AI] Gemini failed: {e} — switching to Anthropic...")
+            logger.warning(f"[AI] Gemini also failed: {e}")
 
-    anthropic_client = get_anthropic()
-    if anthropic_client:
+    # LAST RESORT: try Mistral if not tried yet
+    if prefer not in ("mistral", "uzbek"):
         try:
-            msg = anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return msg.content[0].text
-        except Exception as e:
-            logger.error(f"[AI] Anthropic also failed: {e}")
-            raise
+            import mistral_engine
+            if mistral_engine.is_available():
+                txt = await mistral_engine.generate_async(prompt, max_tokens=2048, temperature=0.25)
+                if txt and len(txt.strip()) > 5:
+                    return txt
+        except Exception:
+            pass
 
-    raise Exception("No AI client configured. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY.")
+    raise Exception("No AI client configured. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY.")

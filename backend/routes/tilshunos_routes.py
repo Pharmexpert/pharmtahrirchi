@@ -716,7 +716,7 @@ async def translate_text(payload: Dict[str, Any], current_user: Dict = Depends(g
         except Exception as e:
             logger.warning(f"[translate] Mistral path failed: {e}")
         # Cloud fallback
-        from routes.editor_routes import generate_ai_content
+        from routes.ai_helpers import generate_ai_content
         label = {"en": "English", "ru": "Russian", "uz": "Uzbek (Latin)", "uz-lat": "Uzbek (Latin)", "uz-cyr": "Uzbek (Cyrillic)"}
         prompt = f"Translate the following {label.get(src, src)} text to {label.get(tgt, tgt)}. Return ONLY the translation, no explanations.\n\n{text}"
         translated = await generate_ai_content(prompt, prefer="cloud")
@@ -784,7 +784,7 @@ async def ai_improve(payload: Dict[str, Any], current_user: Dict = Depends(get_c
         if mistral_engine.is_available():
             improved = await mistral_engine.improve_text(text, lang)
             return {"improved": improved or text, "engine": "mistral_" + mistral_engine.get_mode()}
-        from routes.editor_routes import generate_ai_content
+        from routes.ai_helpers import generate_ai_content
         prompt = (
             "Сен профессионал ўзбек илмий муҳаррирсан. Берилган матнни имло, грамматика, синтаксис, "
             "тиниш белгилари бўйича тузат. Структурани сақла. Фақат тузатилган матнни қайтар.\n\n" + text
