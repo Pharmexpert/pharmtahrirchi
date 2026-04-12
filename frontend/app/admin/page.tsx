@@ -39,7 +39,10 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [rules, setRules] = useState<any[]>([])
   const [rulesSearch, setRulesSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'assistant' | 'seed'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'assistant' | 'pages' | 'seed'>('all')
+  const [pageList, setPageList] = useState<Array<{ path: string; label: string }>>([])
+  const [pageVisibility, setPageVisibility] = useState<Record<number, string[] | null>>({})
+  const [pageSaving, setPageSaving] = useState<number | null>(null)
   const [seedLog, setSeedLog] = useState<string[]>([])
   const [seedBusy, setSeedBusy] = useState<string | null>(null)
   const [dataFiles, setDataFiles] = useState<any>(null)
@@ -79,6 +82,11 @@ export default function AdminPage() {
         setDbSizes(sData.db_sizes || {})
       }
       if (rRes.status === 'fulfilled') setRules((rRes.value as any).rules || [])
+      // Load page list for visibility management
+      try {
+        const plRes = await api.admin.pageList()
+        setPageList(plRes.pages || [])
+      } catch {}
     } catch (err) {
       setError('Data fetch error')
     } finally {
@@ -86,9 +94,64 @@ export default function AdminPage() {
     }
   }
 
+  const loadPageVisibility = async (userId: number) => {
+    try {
+      const res = await api.admin.getPageVisibility(userId)
+      setPageVisibility(prev => ({ ...prev, [userId]: res.visible_pages }))
+    } catch {}
+  }
+
+  const togglePageForUser = (userId: number, pagePath: string) => {
+    setPageVisibility(prev => {
+      const current = prev[userId]
+      const allPaths = pageList.map(p => p.path)
+      // If null (all visible), initialize with all paths minus the toggled one
+      if (!current) {
+        return { ...prev, [userId]: allPaths.filter(p => p !== pagePath) }
+      }
+      // Toggle
+      if (current.includes(pagePath)) {
+        return { ...prev, [userId]: current.filter(p => p !== pagePath) }
+      }
+      return { ...prev, [userId]: [...current, pagePath] }
+    })
+  }
+
+  const savePageVisibility = async (userId: number) => {
+    setPageSaving(userId)
+    try {
+      const pages = pageVisibility[userId]
+      const allPaths = pageList.map(p => p.path)
+      // If all pages selected, save as null (default)
+      const isAll = pages && allPaths.every(p => pages.includes(p))
+      await api.admin.setPageVisibility(userId, isAll ? null : pages)
+    } catch (e: any) {
+      alert(`Xatolik: ${e.message}`)
+    } finally {
+      setPageSaving(null)
+    }
+  }
+
+  const selectAllPages = (userId: number) => {
+    setPageVisibility(prev => ({ ...prev, [userId]: pageList.map(p => p.path) }))
+  }
+
+  const deselectAllPages = (userId: number) => {
+    setPageVisibility(prev => ({ ...prev, [userId]: [] }))
+  }
+
   useEffect(() => {
     if (token) fetchData()
   }, [token])
+
+  // Load visibility data when pages tab is opened
+  useEffect(() => {
+    if (activeTab === 'pages' && users.length > 0 && pageList.length > 0) {
+      users.forEach(u => {
+        if (!(u.id in pageVisibility)) loadPageVisibility(u.id)
+      })
+    }
+  }, [activeTab, users.length, pageList.length])
 
   const handleApprove = async (userId: string, status: 'approved' | 'rejected') => {
     try {
@@ -264,6 +327,7 @@ export default function AdminPage() {
            <button onClick={() => setActiveTab('active')} style={tabStyle(activeTab === 'active')}>Tasdiqlanganlar</button>
            <button onClick={() => setActiveTab('rules')} style={tabStyle(activeTab === 'rules')}>Linguistik Qoidalar</button>
            <button onClick={() => setActiveTab('assistant')} style={tabStyle(activeTab === 'assistant')}>🤖 Фармацевт ёрдамчиси</button>
+           <button onClick={() => setActiveTab('pages')} style={tabStyle(activeTab === 'pages')}>🔐 Ойналарни бошқариш</button>
            <button onClick={() => setActiveTab('seed')} style={tabStyle(activeTab === 'seed')}>🌱 Seed / Import</button>
         </div>
 
@@ -412,6 +476,77 @@ export default function AdminPage() {
               🤖 AI Ассистентга ўтиш →
             </a>
           </div>
+        </div>
+      ) : activeTab === 'pages' ? (
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', padding: '24px' }}>
+          <h3 style={{ fontWeight: 800, color: '#0F172A', marginBottom: '8px' }}>🔐 Ойналарни бошқариш</h3>
+          <p style={{ color: '#64748B', fontSize: '0.82rem', marginBottom: '20px' }}>
+            Ҳар бир фойдаланувчи учун қайси саҳифалар кўринади/кўринмаслигини бошқаринг. Чекланмаган = барча саҳифалар кўринади.
+          </p>
+
+          {pageList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#94A3B8' }}>Саҳифалар рўйхати юкланмоқда...</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, background: '#F8FAFC', minWidth: 180 }}>Фойдаланувчи</th>
+                    {pageList.map(p => (
+                      <th key={p.path} style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 600, fontSize: '0.68rem', minWidth: 70, whiteSpace: 'nowrap' }}>
+                        {p.label}
+                      </th>
+                    ))}
+                    <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, minWidth: 100 }}>Амаллар</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.filter(u => u.status === 'approved').map(u => {
+                    const userPages = pageVisibility[u.id]
+                    const allPaths = pageList.map(p => p.path)
+                    const isAllVisible = !userPages || allPaths.every(p => userPages.includes(p))
+                    return (
+                      <tr key={u.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: 600, position: 'sticky', left: 0, background: 'white' }}>
+                          <div>{u.name}</div>
+                          <div style={{ fontSize: '0.65rem', color: '#94A3B8', fontWeight: 400 }}>{u.role}</div>
+                        </td>
+                        {pageList.map(p => {
+                          const checked = !userPages || userPages.includes(p.path)
+                          return (
+                            <td key={p.path} style={{ padding: '6px 4px', textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => togglePageForUser(u.id, p.path)}
+                                style={{ cursor: 'pointer', width: 16, height: 16, accentColor: '#B48C64' }}
+                              />
+                            </td>
+                          )
+                        })}
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                            <button onClick={() => selectAllPages(u.id)} title="Ҳаммасини ёқиш"
+                              style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #BBF7D0', background: '#F0FDF4', color: '#166534', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}>
+                              ✅ Барча
+                            </button>
+                            <button onClick={() => deselectAllPages(u.id)} title="Ҳаммасини ўчириш"
+                              style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}>
+                              ❌ Ҳеч бири
+                            </button>
+                            <button onClick={() => savePageVisibility(u.id)} disabled={pageSaving === u.id}
+                              style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #B48C64', background: pageSaving === u.id ? '#FDE68A' : '#FFF8F0', color: '#92400E', fontSize: '0.65rem', fontWeight: 700, cursor: pageSaving === u.id ? 'wait' : 'pointer' }}>
+                              {pageSaving === u.id ? '⏳' : '💾'} Сақлаш
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : activeTab === 'rules' ? (
         <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>

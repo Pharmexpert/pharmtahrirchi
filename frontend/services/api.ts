@@ -369,6 +369,10 @@ export const admin = {
     post<{ success: boolean; can_edit_db: number }>('/api/admin/can-edit-db', { userId, can_edit }),
   blockUser: (userId: string, blocked: boolean) =>
     post<{ success: boolean; is_blocked: number }>('/api/admin/users/block', { userId, blocked }),
+  pageList: () => get<{ pages: Array<{ path: string; label: string }> }>('/api/admin/page-list'),
+  getPageVisibility: (userId: number) => get<{ user_id: number; visible_pages: string[] | null }>(`/api/admin/page-visibility/${userId}`),
+  setPageVisibility: (user_id: number, pages: string[] | null) =>
+    post<{ success: boolean; user_id: number; visible_pages: string[] | null }>('/api/admin/page-visibility', { user_id, pages }),
   userActivity: (userId: string, limit = 100) =>
     get<{ user: any; activity: any[] }>(`/api/admin/users/${encodeURIComponent(userId)}/activity?limit=${limit}`),
   // Pharma DB
