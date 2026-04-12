@@ -570,26 +570,102 @@ async def export_pdf(req: ExportPdfRequest, current_user: Dict = Depends(get_cur
         raise HTTPException(500, "reportlab kutubxonasi topilmadi")
 
 
+def _add_formatted_runs(paragraph, text: str):
+    """Parse markdown bold/italic and add as formatted runs to a python-docx paragraph."""
+    from docx.shared import Pt
+    # Split by ***bold italic***, **bold**, *italic*
+    parts = re.split(r'(\*\*\*.+?\*\*\*|\*\*.+?\*\*|\*.+?\*)', text)
+    for part in parts:
+        if part.startswith('***') and part.endswith('***'):
+            run = paragraph.add_run(part[3:-3])
+            run.bold = True
+            run.italic = True
+        elif part.startswith('**') and part.endswith('**'):
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith('*') and part.endswith('*') and len(part) > 2:
+            run = paragraph.add_run(part[1:-1])
+            run.italic = True
+        else:
+            run = paragraph.add_run(part)
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(12)
+
+
 @router.post("/text-to-docx")
 async def text_to_docx(req: TextToDocxRequest, current_user: Dict = Depends(get_current_user)):
-    """Generate a simple DOCX from text."""
+    """Generate DOCX from markdown text — preserves headings, tables, bold, italic, lists."""
     try:
         from docx import Document
-        from docx.shared import Pt, Inches
+        from docx.shared import Pt, Inches, RGBColor
         from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
 
         doc = Document()
 
-        # Title
-        title = doc.add_heading(req.title, level=1)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Set default font
+        style = doc.styles['Normal']
+        style.font.name = 'Times New Roman'
+        style.font.size = Pt(12)
 
-        # Body
-        for paragraph_text in req.text.split("\n"):
-            p = doc.add_paragraph(paragraph_text)
-            for run in p.runs:
-                run.font.name = "Times New Roman"
-                run.font.size = Pt(12)
+        lines = req.text.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Headings
+            if stripped.startswith('#### '):
+                doc.add_heading(stripped[5:], level=4)
+            elif stripped.startswith('### '):
+                doc.add_heading(stripped[4:], level=3)
+            elif stripped.startswith('## '):
+                doc.add_heading(stripped[3:], level=2)
+            elif stripped.startswith('# '):
+                doc.add_heading(stripped[2:], level=1)
+            # Table detection
+            elif stripped.startswith('|') and stripped.endswith('|'):
+                table_rows = []
+                while i < len(lines) and lines[i].strip().startswith('|') and lines[i].strip().endswith('|'):
+                    row_text = lines[i].strip()
+                    # Skip separator rows (|---|---|)
+                    if re.match(r'^\|[\s\-:|]+\|$', row_text):
+                        i += 1
+                        continue
+                    cells = [c.strip() for c in row_text.split('|')[1:-1]]
+                    table_rows.append(cells)
+                    i += 1
+                i -= 1  # will be incremented at end of loop
+                if table_rows:
+                    max_cols = max(len(r) for r in table_rows)
+                    tbl = doc.add_table(rows=len(table_rows), cols=max_cols)
+                    tbl.style = 'Table Grid'
+                    for ri, row_cells in enumerate(table_rows):
+                        for ci, cell_text in enumerate(row_cells):
+                            if ci < max_cols:
+                                cell = tbl.cell(ri, ci)
+                                cell.text = cell_text
+                                for p in cell.paragraphs:
+                                    for run in p.runs:
+                                        run.font.size = Pt(10)
+                                    # Bold first row (header)
+                                    if ri == 0:
+                                        for run in p.runs:
+                                            run.bold = True
+            # List items
+            elif stripped.startswith('- '):
+                p = doc.add_paragraph(stripped[2:], style='List Bullet')
+            elif re.match(r'^\d+\.\s', stripped):
+                p = doc.add_paragraph(re.sub(r'^\d+\.\s', '', stripped), style='List Number')
+            # Empty line
+            elif stripped == '':
+                doc.add_paragraph('')
+            # Regular paragraph with bold/italic
+            else:
+                p = doc.add_paragraph()
+                _add_formatted_runs(p, stripped)
+
+            i += 1
 
         buf = io.BytesIO()
         doc.save(buf)
