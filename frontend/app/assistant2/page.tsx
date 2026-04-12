@@ -607,9 +607,14 @@ export default function Assistant2Page() {
     setTrTargetLangs(prev => prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang])
   }
 
+  // ── Helper: convert text to DOCX blob for WordDocumentViewer ──
+  const textToDocxBlob = async (text: string, title?: string): Promise<Blob | null> => {
+    try {
+      return await api.assistant2.textToDocx(text, title || 'Natija')
+    } catch { return null }
+  }
+
   // ── Actions ──
-  // All AI operations work on extracted text (markdown for DOCX).
-  // DOCX is shown via WordDocumentViewer for preview only.
   const doTranslate = async () => {
     if (!trText.trim()) return
     if (trTargetLangs.length === 0) return
@@ -617,6 +622,13 @@ export default function Assistant2Page() {
     try {
       const res = await api.assistant2.translate(trText, trSourceLang, trTargetLangs)
       setTrResults(res.translations)
+      // Convert results to DOCX for WordDocumentViewer display
+      const docxResults: Record<string, Blob> = {}
+      for (const [lang, text] of Object.entries(res.translations)) {
+        const blob = await textToDocxBlob(text, `Tarjima (${lang})`)
+        if (blob) docxResults[lang] = blob
+      }
+      if (Object.keys(docxResults).length > 0) setTrResultDocx(docxResults)
     } catch (e: any) {
       setTrError(e.detail || e.message || 'Xatolik yuz berdi')
     } finally {
@@ -630,6 +642,9 @@ export default function Assistant2Page() {
     try {
       const res = await api.assistant2.edit(edText, edLang)
       setEdResult(res.edited)
+      // Convert result to DOCX for display
+      const blob = await textToDocxBlob(res.edited, 'Tahrirlangan matn')
+      if (blob) setEdResultDocx(blob)
     } catch (e: any) {
       setEdError(e.detail || e.message || 'Xatolik yuz berdi')
     } finally {
@@ -788,13 +803,19 @@ export default function Assistant2Page() {
                             }}>
                             <GraduationCap size={13} /> O&apos;qitish
                           </button>
-                          <ExportMenu text={text} lang={lang} onDocxBlob={null} />
+                          <ExportMenu text={text} lang={lang} onDocxBlob={trResultDocx?.[lang] || null} />
                         </div>
                       </div>
 
-                      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                        <MarkdownView text={text} />
-                      </div>
+                      {trResultDocx?.[lang] ? (
+                        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxHeight: 400 }}>
+                          <WordDocumentViewer file={new File([trResultDocx[lang]], `tarjima_${lang}.docx`)} />
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                          <MarkdownView text={text} />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -860,17 +881,29 @@ export default function Assistant2Page() {
                       }}>
                       <GraduationCap size={13} /> O&apos;qitish
                     </button>
-                    <ExportMenu text={edResult} lang={edLang} onDocxBlob={null} />
+                    <ExportMenu text={edResult} lang={edLang} onDocxBlob={edResultDocx} />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div style={{ background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--danger)', marginBottom: 8 }}>Asl matn</div>
-                      <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edText} /></div>
+                      {edDocxFile ? (
+                        <div style={{ maxHeight: 350, overflow: 'hidden', borderRadius: 'var(--radius-sm)' }}>
+                          <WordDocumentViewer file={edDocxFile} />
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edText} /></div>
+                      )}
                     </div>
                     <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--success)', marginBottom: 8 }}>Tahrirlangan</div>
-                      <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edResult || ''} /></div>
+                      {edResultDocx ? (
+                        <div style={{ maxHeight: 350, overflow: 'hidden', borderRadius: 'var(--radius-sm)' }}>
+                          <WordDocumentViewer file={new File([edResultDocx], 'tahrirlangan.docx')} />
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: 300, overflowY: 'auto' }}><MarkdownView text={edResult || ''} /></div>
+                      )}
                     </div>
                   </div>
                 </div>
