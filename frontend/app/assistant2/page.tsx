@@ -219,6 +219,134 @@ function MarkdownView({ text }: { text: string }) {
 }
 
 // ═══════════════════════════════════════════════════
+// Quality Report Generator
+// ═══════════════════════════════════════════════════
+
+function generateQualityReport(result: QualityResult, type: 'translation' | 'edit'): string {
+  const lines: string[] = []
+  lines.push(`# SIFAT TEKSHIRUV HISOBOTI`)
+  lines.push(``)
+  lines.push(`**Turi:** ${type === 'translation' ? 'Tarjima sifati' : 'Tahrir sifati'}`)
+  lines.push(`**Sana:** ${new Date().toLocaleDateString('uz-UZ')}`)
+  lines.push(`**Umumiy ball:** ${result.umumiy_ball || 0} / 100`)
+  lines.push(``)
+  lines.push(`---`)
+  lines.push(``)
+
+  if (type === 'translation') {
+    const cats = [
+      { key: 'terminologiya', label: 'TERMINOLOGIYA' },
+      { key: 'toliqligi', label: "TO'LIQLIGI" },
+      { key: 'grammatika', label: 'GRAMMATIKA' },
+      { key: 'uslub', label: 'USLUB' },
+    ]
+    cats.forEach((cat, i) => {
+      const data = result[cat.key]
+      if (!data) return
+      lines.push(`## ${i + 1}. ${cat.label} — ${data.ball || 0}/100`)
+      lines.push(``)
+      if (data.muammolar?.length > 0) {
+        lines.push(`**Muammolar:**`)
+        data.muammolar.forEach((m: string, j: number) => lines.push(`${j + 1}. ${m}`))
+        lines.push(``)
+      }
+      if (data.tavsiyalar?.length > 0) {
+        lines.push(`**Tavsiyalar:**`)
+        data.tavsiyalar.forEach((t: string, j: number) => lines.push(`${j + 1}. ${t}`))
+        lines.push(``)
+      }
+      lines.push(`---`)
+      lines.push(``)
+    })
+  } else {
+    const cats = [
+      { key: 'ilmiy_aniqlik', label: 'ILMIY ANIQLIK' },
+      { key: 'ravonlik', label: 'RAVONLIK' },
+      { key: 'izchillik', label: 'IZCHILLIK' },
+      { key: 'farmatsevtik_standart', label: 'FARMATSEVTIK STANDART' },
+    ]
+    cats.forEach((cat, i) => {
+      const data = result[cat.key]
+      if (!data) return
+      lines.push(`## ${i + 1}. ${cat.label} — ${data.ball || 0}/100`)
+      lines.push(``)
+      if (data.izohlar?.length > 0) {
+        lines.push(`**Izohlar:**`)
+        data.izohlar.forEach((m: string, j: number) => lines.push(`${j + 1}. ${m}`))
+        lines.push(``)
+      }
+      lines.push(`---`)
+      lines.push(``)
+    })
+  }
+
+  if (result.xulosa) {
+    lines.push(`## XULOSA`)
+    lines.push(``)
+    lines.push(result.xulosa)
+    lines.push(``)
+  }
+
+  if (result.ijobiy_jihatlar?.length > 0) {
+    lines.push(`## IJOBIY JIHATLAR`)
+    lines.push(``)
+    result.ijobiy_jihatlar.forEach((j: string, i: number) => lines.push(`${i + 1}. ${j}`))
+    lines.push(``)
+  }
+
+  if (result.yaxshilanishlar?.length > 0) {
+    lines.push(`## YAXSHILANISHLAR`)
+    lines.push(``)
+    result.yaxshilanishlar.forEach((y: string, i: number) => lines.push(`${i + 1}. ${y}`))
+    lines.push(``)
+  }
+
+  lines.push(`---`)
+  lines.push(`*Pharma Expert AI — pharmtech.info*`)
+
+  return lines.join('\n')
+}
+
+function ReportDownload({ result, type }: { result: QualityResult; type: 'translation' | 'edit' }) {
+  const [exporting, setExporting] = useState('')
+  const report = generateQualityReport(result, type)
+
+  const doExport = async (fmt: string) => {
+    setExporting(fmt)
+    try {
+      if (fmt === 'txt') {
+        downloadText(report, `hisobot_${type}.txt`)
+      } else if (fmt === 'docx') {
+        const blob = await api.assistant2.textToDocx(report, `Sifat hisoboti (${type})`)
+        downloadBlob(blob, `hisobot_${type}.docx`)
+      } else if (fmt === 'pdf') {
+        const blob = await api.assistant2.exportPdf(report, 'uz', `Sifat hisoboti (${type})`)
+        downloadBlob(blob, `hisobot_${type}.pdf`)
+      }
+    } catch (e: any) { alert(`Export xatoligi: ${e.message}`) }
+    finally { setExporting('') }
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 12, justifyContent: 'center' }}>
+      {[{ f: 'docx', l: 'DOCX' }, { f: 'pdf', l: 'PDF' }, { f: 'txt', l: 'TXT' }].map(({ f, l }) => (
+        <button key={f} onClick={() => doExport(f)} disabled={!!exporting}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '8px 14px', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)',
+            cursor: exporting ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600,
+            color: 'var(--text-secondary)',
+          }}>
+          {exporting === f ? <Loader2 size={12} className="spin" /> : <Download size={12} />}
+          Hisobot ({l})
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════
 // Export Menu
 // ═══════════════════════════════════════════════════
 
@@ -586,15 +714,19 @@ export default function Assistant2Page() {
     }
   }
 
-  const saveLinguisticResults = async () => {
+  const saveLinguisticResults = async (saveAll = false) => {
     if (!lingPreview) return
-    const itemsToSave = lingPreview.results.filter((i: any) => !i.is_duplicate).map((i: any) => ({ ...i, status: 'active' }))
-    if (itemsToSave.length === 0) { alert('Barcha elementlar bazada mavjud'); setLingPreview(null); return }
+    const itemsToSave = saveAll
+      ? lingPreview.results.map((i: any) => ({ ...i, status: 'active' }))
+      : lingPreview.results.filter((i: any) => !i.is_duplicate).map((i: any) => ({ ...i, status: 'active' }))
+    if (itemsToSave.length === 0) { alert('Saqlash uchun element yo\'q'); setLingPreview(null); return }
     try {
-      await api.linguistic.save({ category: lingPreview.category, items: itemsToSave, text_id: '' })
-      alert(`${itemsToSave.length} ta element bazaga saqlandi`)
+      const res = await api.linguistic.save({ category: lingPreview.category, items: itemsToSave, text_id: '' })
+      alert(`${itemsToSave.length} ta element bazaga saqlandi! (${(res as any).count || itemsToSave.length})`)
       setLingPreview(null)
-    } catch { alert('Saqlashda xatolik') }
+    } catch (e: any) {
+      alert(`Saqlashda xatolik: ${e?.message || e?.detail || 'Noma\'lum xato'}`)
+    }
   }
 
   // ── File upload helper ──
@@ -816,13 +948,17 @@ export default function Assistant2Page() {
             )}
 
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={saveLinguisticResults}
+              <button onClick={() => saveLinguisticResults(false)}
                 style={{ flex: 1, padding: '10px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                Bazaga saqlash ({lingPreview.results.filter((i: any) => !i.is_duplicate).length} ta yangi)
+                Yangilarini saqlash ({lingPreview.results.filter((i: any) => !i.is_duplicate).length})
+              </button>
+              <button onClick={() => saveLinguisticResults(true)}
+                style={{ padding: '10px 16px', background: '#059669', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Barchasini saqlash ({lingPreview.results.length})
               </button>
               <button onClick={() => setLingPreview(null)}
                 style={{ padding: '10px 16px', background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                Bekor qilish
+                Bekor
               </button>
             </div>
           </div>
@@ -1102,7 +1238,7 @@ export default function Assistant2Page() {
                 </div>
               )}
 
-              {ctResult && <div style={{ marginTop: 20 }}><TranslationQualityDisplay result={ctResult} /></div>}
+              {ctResult && <div style={{ marginTop: 20 }}><TranslationQualityDisplay result={ctResult} /><ReportDownload result={ctResult} type="translation" /></div>}
             </div>
           )}
 
@@ -1145,7 +1281,7 @@ export default function Assistant2Page() {
                 </div>
               )}
 
-              {ceResult && <div style={{ marginTop: 20 }}><EditQualityDisplay result={ceResult} /></div>}
+              {ceResult && <div style={{ marginTop: 20 }}><EditQualityDisplay result={ceResult} /><ReportDownload result={ceResult} type="edit" /></div>}
             </div>
           )}
         </div>
