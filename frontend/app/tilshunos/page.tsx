@@ -277,7 +277,7 @@ export default function TilshunosPage() {
     }
     // Use the first suggestion (correct word) instead of the error word
     const issue = popup.issue
-    const suggestedWord = issue.suggestions?.[0] || issue.suggestion || issue.matched_text || text.substring(issue.from_index, issue.to_index)
+    const suggestedWord = issue.suggestion || (issue as any).suggestions?.[0] || issue.matched_text || text.substring(issue.from_index, issue.to_index)
     if (!suggestedWord || suggestedWord.length < 2) return
 
     // Fetch morphology for the suggested word via API
