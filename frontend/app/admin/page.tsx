@@ -39,7 +39,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [rules, setRules] = useState<any[]>([])
   const [rulesSearch, setRulesSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'seed'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'rules' | 'assistant' | 'seed'>('all')
   const [seedLog, setSeedLog] = useState<string[]>([])
   const [seedBusy, setSeedBusy] = useState<string | null>(null)
   const [dataFiles, setDataFiles] = useState<any>(null)
@@ -263,6 +263,7 @@ export default function AdminPage() {
            </button>
            <button onClick={() => setActiveTab('active')} style={tabStyle(activeTab === 'active')}>Tasdiqlanganlar</button>
            <button onClick={() => setActiveTab('rules')} style={tabStyle(activeTab === 'rules')}>Linguistik Qoidalar</button>
+           <button onClick={() => setActiveTab('assistant')} style={tabStyle(activeTab === 'assistant')}>🤖 Фармацевт ёрдамчиси</button>
            <button onClick={() => setActiveTab('seed')} style={tabStyle(activeTab === 'seed')}>🌱 Seed / Import</button>
         </div>
 
@@ -365,6 +366,51 @@ export default function AdminPage() {
           <div style={{ background: '#0F172A', color: '#E2E8F0', borderRadius: '12px', padding: '16px', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '320px', overflowY: 'auto' }}>
             {seedLog.length === 0 ? <span style={{ opacity: 0.5 }}>Лог бўш...</span> :
               seedLog.map((line, i) => <div key={i} style={{ marginBottom: '4px' }}>{line}</div>)}
+          </div>
+        </div>
+      ) : activeTab === 'assistant' ? (
+        <div style={{ background: 'white', borderRadius: '24px', border: '1px solid #E2E8F0', padding: '24px' }}>
+          <h3 style={{ fontWeight: 800, color: '#0F172A', marginBottom: '16px' }}>🤖 Фармацевт ёрдамчиси (AI Assistent)</h3>
+          <p style={{ color: '#64748B', fontSize: '0.85rem', marginBottom: '20px' }}>
+            AI ассистент тизими — таржима, илмий таҳрир, сифат назорати. Claude Sonnet модели билан ишлайди.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+            <div style={{ padding: 16, background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#166534', marginBottom: 8 }}>📝 Матн ишлаб чиқиш</div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.82rem', color: '#334155', lineHeight: 2 }}>
+                <li><strong>Таржима</strong> — UZ/RU/EN ўртасида фарм. терминология билан</li>
+                <li><strong>Илмий таҳрир</strong> — ДФ ва Ph.Eur. услубида</li>
+                <li><strong>DOCX формат</strong> — жадвал, расм, формула сақланади</li>
+              </ul>
+            </div>
+            <div style={{ padding: 16, background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1E40AF', marginBottom: 8 }}>🔍 Текшириш</div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.82rem', color: '#334155', lineHeight: 2 }}>
+                <li><strong>Таржима сифати</strong> — 4 мезон бўйича 0-100 балл</li>
+                <li><strong>Таҳрир сифати</strong> — 4 мезон бўйича 0-100 балл</li>
+                <li><strong>Экспорт</strong> — .txt, .docx, .pdf форматлар</li>
+              </ul>
+            </div>
+          </div>
+
+          <div style={{ padding: 16, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, marginBottom: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#92400E', marginBottom: 8 }}>🎓 Ўқитиш тизими</div>
+            <p style={{ fontSize: '0.82rem', color: '#334155', margin: 0 }}>
+              Фойдаланувчилар AI хатоларини белгилаб, тўғри вариантни киритади. Тузатишлар <code>sayqallash_rules</code> жадвалига сақланади
+              ва кейинги сўровларда AI промптига автоматик қоида сифатида қўшилади. Ҳозирги ўрганилган қоидалар сони: <strong>{stats?.sayqallash_rules || 0}</strong>
+            </p>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <a href="/assistant2" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '12px 24px', background: 'linear-gradient(135deg, #B48C64, #D4956B)',
+              color: 'white', borderRadius: 12, fontWeight: 700, fontSize: '0.9rem',
+              textDecoration: 'none', boxShadow: '0 4px 12px rgba(180,140,100,0.3)',
+            }}>
+              🤖 AI Ассистентга ўтиш →
+            </a>
           </div>
         </div>
       ) : activeTab === 'rules' ? (

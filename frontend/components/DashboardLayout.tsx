@@ -98,9 +98,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         flexDirection: 'column',
         transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: 'fixed',
+        top: 0,
+        left: 0,
         height: '100vh',
         zIndex: 100,
-        boxShadow: 'var(--shadow-sm)'
+        boxShadow: 'var(--shadow-sm)',
+        overflow: 'hidden',
       }}>
         {/* Logo Area */}
         <div style={{ 
